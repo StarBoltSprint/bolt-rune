@@ -46,6 +46,19 @@ export function doorAtPoint(
   return null;
 }
 
+/** Feet on the locked-hall floor. Pins sit in the portal glow; Bolt must not. */
+export const STOCK_STAND = {
+  spawn: { x: 0.5, y: 0.78 },
+  m1: { x: 0.34, y: 0.6 },
+  m2: { x: 0.66, y: 0.6 },
+} as const;
+
+export function stockStand(id: string): { x: number; y: number } {
+  if (id === "m1") return { x: STOCK_STAND.m1.x, y: STOCK_STAND.m1.y };
+  if (id === "m2") return { x: STOCK_STAND.m2.x, y: STOCK_STAND.m2.y };
+  return { x: STOCK_STAND.spawn.x, y: STOCK_STAND.spawn.y };
+}
+
 export function isHallFilm(u?: string | null) {
   if (!u) return false;
   const s = u.toLowerCase();

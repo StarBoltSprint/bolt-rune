@@ -233,6 +233,8 @@ export {
   isHallFilm,
   stockRoomBank,
   stockDoorHits,
+  stockStand,
+  STOCK_STAND,
   inDoorHit,
   doorAtPoint,
   type DoorHit,
