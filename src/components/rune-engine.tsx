@@ -2629,7 +2629,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   async function cookWalks(g: RuneGraph, resume = false) {
     liveForge.current = true;
     if (!resume) {
-      bank.current = new Map();
+      const keep = [...bank.current].filter(([k]) => k.startsWith("idle-") || k.startsWith("enter"));
+      bank.current = new Map(keep);
       cameFrom.current = "start";
     }
     setBeat("idle");
@@ -2705,6 +2706,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     latest.set(SPAWN.id, poseSpawn);
     pose.set(`${SPAWN.id}←start`, poseSpawn);
     goal.set(SPAWN.id, poseSpawn);
+    if (!bank.current.get("idle-spawn")?.url && poseSpawn) {
+      await cookIdleAt("spawn", poseSpawn);
+    }
+    const breath = bank.current.get("idle-spawn");
+    if (breath?.end) {
+      still = breath.end;
+      latest.set(SPAWN.id, breath.end);
+      pose.set(`${SPAWN.id}←start`, breath.end);
+      plateRef.current = breath.end;
+      setPlate(breath.end);
+    }
     for (const [key, val] of bank.current) {
       const m = /^(.+)←(.+)→(.+)$/.exec(key);
       if (!m) continue;
@@ -2832,6 +2844,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setFrost("shot · last frame");
       sfxForge("enter");
       await sleep(SHOT_MS);
+    }
+    if (!liveForge.current) return;
+    for (const n of ["m1", "m2"] as const) {
+      if (!liveForge.current) break;
+      const landed = latest.get(n) || pose.get(`${n}←spawn`) || nodeStill(n);
+      if (landed) await cookIdleAt(n, landed);
     }
     if (!liveForge.current) return;
     liveForge.current = false;
@@ -3023,6 +3041,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setFilmUrl(null);
       setStageSrc(shot);
       setPose(shot);
+      bank.current.set("idle-spawn", { url: filmUrl, end: shot });
+      persist({ phase: "refs", plate: shot, start: shot, thumb: shot });
       setFrost("shot · seed");
       sfxForge("enter");
       await sleep(360);
