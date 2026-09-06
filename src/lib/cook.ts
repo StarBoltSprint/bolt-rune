@@ -337,29 +337,32 @@ export const startRuneFilm = createServerFn({ method: "POST" })
     lastStart = now;
     const imageUrl = resolveRuneStill(data.still);
     const duration = data.duration === 6 || data.duration === 15 ? data.duration : 10;
-    const refs = (data.refs ?? []).slice(0, 5).map(resolveRuneStill);
+    const refs = (data.refs ?? [])
+      .slice(0, 5)
+      .map(resolveRuneStill)
+      .filter((u) => u && u !== imageUrl && !u.startsWith("blob:") && !(u.startsWith("data:") && u.length > 350_000));
     const rawPrompt = data.prompt.trim();
     const already = /STATIC CCTV|LOCKED-OFF|CAMERA LOCK|PORTAL CROSS/i.test(rawPrompt);
     const prompt = (already ? rawPrompt : `${CAM_LOCK} ${rawPrompt}`).slice(0, 4000);
     const resolution = data.res === "1080" ? "1080p" : "720p";
-    const base = {
-      model: "grok-imagine-video-1.5",
-      prompt,
-      image: { url: imageUrl },
-      duration,
-      aspect_ratio: "9:16",
-    };
-    const withRes = {
-      ...base,
-      resolution,
-      storage_options: keepStore(`bolt-${Date.now().toString(36)}.mp4`),
-    };
-    const variants: Record<string, unknown>[] = refs.length
-      ? [
-          { ...withRes, reference_images: refs.map((url) => ({ url })) },
-          withRes,
-        ]
-      : [withRes];
+    const store = keepStore(`bolt-${Date.now().toString(36)}.mp4`);
+    function plate(res?: string, withRefs = false) {
+      const body: Record<string, unknown> = {
+        model: "grok-imagine-video-1.5",
+        prompt,
+        image: { url: imageUrl },
+        duration,
+        aspect_ratio: "9:16",
+        storage_options: store,
+      };
+      if (res) body.resolution = res;
+      if (withRefs && refs.length) body.reference_images = refs.map((url) => ({ url }));
+      return body;
+    }
+    const variants: Record<string, unknown>[] = [plate(resolution, false)];
+    if (refs.length) variants.push(plate(resolution, true));
+    if (resolution === "1080p") variants.push(plate("720p", false));
+    variants.push(plate(undefined, false));
     try {
       let last = "";
       for (const body of variants) {
@@ -367,6 +370,7 @@ export const startRuneFilm = createServerFn({ method: "POST" })
           method: "POST",
           headers,
           body: JSON.stringify(body),
+          signal: AbortSignal.timeout(45000),
         });
         const raw = await res.text();
         last = raw;
@@ -528,7 +532,8 @@ export const pollCookPlate = createServerFn({ method: "POST" })
       }
       if (status === "failed" || status === "expired" || status === "error" || status === "cancelled") {
         inflight = Math.max(0, inflight - 1);
-        return { ok: true, status: "failed" };
+        const why = String(body.error || body.message || body.reason || status).slice(0, 80);
+        return { ok: true, status: "failed", url: undefined, pct: 0, frame: why };
       }
       return { ok: true, status: "pending", pct: readPct(body), frame: readFrame(body) };
     } catch {

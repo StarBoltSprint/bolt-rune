@@ -2941,30 +2941,31 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     let started: { ok: true; requestId: string } | { ok: false; error: string } | null = null;
     try {
       for (let t = 0; t < 16; t++) {
-        if (dead.current) return null;
+        if (dead.current) return hallUrl;
         try {
           started = await startRuneFilm({
-            data: { still: hallUrl, prompt: seedHallPrompt(worldHold.current, !!lookPackRef.current.find((p) => p.id === "same-hall")), duration: 6, refs: kit, res: lookResRef.current },
+            data: { still: hallUrl, prompt: seedHallPrompt(worldHold.current, !!lookPackRef.current.find((p) => p.id === "same-hall")), duration: 6, refs: kit.filter((u) => u.startsWith("http") || u.startsWith("/") || (u.startsWith("data:") && u.length < 350000)), res: "720" },
           });
         } catch {
           started = { ok: false, error: "net" };
         }
         if (started.ok) break;
         if (started.error === "echo-off") {
-          setFrost("Imagine is dark · tap retry");
-          return null;
+          setFrost("Imagine is dark · hall kept");
+          return hallUrl;
         }
         setFrost(started.error === "busy" || started.error === "cooldown" ? `Imagine busy · seed ${t + 1}` : `seed · ${started.error}`);
         await sleep(started.error === "busy" || started.error === "cooldown" ? 5000 + t * 1500 : 1200);
       }
       if (!started?.ok) {
         void freeRuneSlot({ data: {} }).catch(() => {});
-        setFrost("seed video failed · tap retry");
-        return null;
+        setFrost("seed film dropped · hall kept");
+        setLoadPct(100);
+        return hallUrl;
       }
       let filmUrl: string | null = null;
       for (let p = 0; p < 160; p++) {
-        if (dead.current) return null;
+        if (dead.current) return hallUrl;
         if (p) await sleep(p < 40 ? 1000 : 1400);
         let polled;
         try {
@@ -2977,17 +2978,22 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           setFrost(`seed · ${polled.error}`);
           continue;
         }
+        if (typeof polled.pct === "number") setLoadPct(Math.max(12, Math.min(90, polled.pct)));
         if (polled.status === "done" && polled.url) {
           filmUrl = polled.url;
           break;
         }
-        if (polled.status === "failed") break;
+        if (polled.status === "failed") {
+          setFrost(polled.frame ? `seed dropped · ${polled.frame}` : "seed film dropped · hall kept");
+          break;
+        }
         setFrost(`seed video · ${p + 1}`);
       }
       if (!filmUrl) {
         void freeRuneSlot({ data: {} }).catch(() => {});
-        setFrost("seed video failed · tap retry");
-        return null;
+        setFrost("seed film dropped · hall kept");
+        setLoadPct(100);
+        return hallUrl;
       }
       window.clearInterval(tick);
       setLoadPct(100);
@@ -3023,7 +3029,6 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       return shot;
     } finally {
       window.clearInterval(tick);
-      if (!dead.current) setLoadPct((p) => (p === 100 ? 100 : 0));
     }
   }
 
@@ -3131,6 +3136,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     refsMap.current.set("empty", hallUrl);
     for (const obj of plan) refsMap.current.set(obj.id, hallUrl);
     setRefs([...list]);
+    persist({ phase: "refs", plate: hallUrl, refs: list, start: hallUrl, thumb: hallUrl });
     const enterSrc = pick === "b" ? packB || packA : packA || packB;
     setStageSrc(enterSrc || hallUrl);
     if (dead.current) return;
@@ -3144,6 +3150,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       refsMap.current.set("room", enterSrc);
     }
     if (!seedShot) seedShot = await cookSeed(hallUrl, [boltUrl, hallUrl].filter((u): u is string => Boolean(u)));
+    if (!seedShot) seedShot = hallUrl;
     if (!seedShot) {
       setBeat("idle");
       beatRef.current = "idle";
