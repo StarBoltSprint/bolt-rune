@@ -342,8 +342,8 @@ export const startRuneFilm = createServerFn({ method: "POST" })
       .map(resolveRuneStill)
       .filter((u) => u && u !== imageUrl && !u.startsWith("blob:") && !(u.startsWith("data:") && u.length > 350_000));
     const rawPrompt = data.prompt.trim();
-    const already = /STATIC CCTV|LOCKED-OFF|CAMERA LOCK|PORTAL CROSS/i.test(rawPrompt);
-    const prompt = (already ? rawPrompt : `${CAM_LOCK} ${rawPrompt}`).slice(0, 4000);
+    const already = /STATIC CCTV|LOCKED-OFF|CAMERA LOCK|PORTAL CROSS|WIDE LOCKED CCTV|LOCKED CCTV/i.test(rawPrompt);
+    const prompt = (already ? rawPrompt : `${CAM_LOCK} ${rawPrompt}`).slice(0, 2200);
     const resolution = data.res === "1080" ? "1080p" : "720p";
     const store = keepStore(`bolt-${Date.now().toString(36)}.mp4`);
     function plate(res?: string, withRefs = false) {
@@ -403,8 +403,8 @@ export const startRuneExtend = createServerFn({ method: "POST" })
     lastStart = now;
     const duration = data.duration === 10 ? 10 : 6;
     const rawPrompt = data.prompt.trim();
-    const already = /STATIC CCTV|LOCKED-OFF|CAMERA LOCK|PORTAL CROSS/i.test(rawPrompt);
-    const prompt = (already ? rawPrompt : `${CAM_LOCK} ${rawPrompt}`).slice(0, 4000);
+    const already = /STATIC CCTV|LOCKED-OFF|CAMERA LOCK|PORTAL CROSS|WIDE LOCKED CCTV|LOCKED CCTV/i.test(rawPrompt);
+    const prompt = (already ? rawPrompt : `${CAM_LOCK} ${rawPrompt}`).slice(0, 2200);
     const variants: Record<string, unknown>[] = [
       {
         model: "grok-imagine-video-1.5",

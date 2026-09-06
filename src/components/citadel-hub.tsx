@@ -333,17 +333,25 @@ export function CitadelHub({
 
   return (
     <div className="relative min-h-dvh overflow-hidden bg-bg" data-count="7" style={{ touchAction: "manipulation" }}>
-      <img src="/films/citadel-tour.jpg?v=sharp" alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(7,8,12,0.22)_0%,transparent_18%,transparent_58%,rgba(7,8,12,0.62)_100%)]" />
+      <img src="/ui/citadel.jpg?v=aaa" alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
+      <video
+        src="/ui/citadel.mp4?v=aaa"
+        poster="/ui/citadel.jpg?v=aaa"
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+      />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-bg/40 via-transparent to-bg/75" />
       <div className="absolute right-5 top-[max(1.4rem,env(safe-area-inset-top))] z-[60]">
         <HallMark />
       </div>
       <a
         href={`/rune?drive=pilot`}
-        className={`absolute z-50 -translate-x-1/2 font-display text-[1.65rem] ${
-          mode === "pilot"
-            ? "text-[#9ef0e4] drop-shadow-[0_0_18px_rgba(158,240,228,0.7)]"
-            : "text-[#9ef0e4]/45"
+        className={`absolute z-50 -translate-x-1/2 font-mono text-[11px] uppercase tracking-[0.28em] ${
+          mode === "pilot" ? "text-ice" : "text-ice/40"
         }`}
         style={{ left: "22%", top: "34%", touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}
         onPointerUp={() => sfxForge("page")}
@@ -352,10 +360,8 @@ export function CitadelHub({
       </a>
       <a
         href={`/rune?drive=engine`}
-        className={`absolute z-50 -translate-x-1/2 font-display text-[1.65rem] ${
-          mode === "engine"
-            ? "text-[#f0d48a] drop-shadow-[0_0_18px_rgba(228,195,122,0.7)]"
-            : "text-[#f0d48a]/45"
+        className={`absolute z-50 -translate-x-1/2 font-mono text-[11px] uppercase tracking-[0.28em] ${
+          mode === "engine" ? "text-hold" : "text-hold/40"
         }`}
         style={{ left: "78%", top: "34%", touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}
         onPointerUp={() => sfxForge("page")}
@@ -368,7 +374,7 @@ export function CitadelHub({
           {now?.root.id ? (
             <a
               href={`/rune?session=${encodeURIComponent(now.root.id)}&drive=${mode}`}
-              className="flex min-h-14 items-center justify-center px-8 font-display text-4xl text-[#9ef0e4] drop-shadow-[0_0_18px_rgba(158,240,228,0.45)]"
+              className="crystal crystal-ice flex min-h-14 min-w-[12.5rem] items-center justify-center rounded-2xl px-8 font-display text-3xl"
               style={{ touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}
               onClick={(e) => {
                 e.preventDefault();
@@ -380,7 +386,7 @@ export function CitadelHub({
           ) : (
             <button
               type="button"
-              className="flex min-h-14 items-center justify-center px-8 font-display text-4xl text-[#9ef0e4] drop-shadow-[0_0_18px_rgba(158,240,228,0.45)]"
+              className="crystal crystal-ice flex min-h-14 min-w-[12.5rem] items-center justify-center rounded-2xl px-8 font-display text-3xl"
               style={{ touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}
               onPointerUp={(e) => {
                 e.stopPropagation();
@@ -394,7 +400,7 @@ export function CitadelHub({
           )}
           <a
             href={`/rune?tour=1&drive=${mode}&rooms=1&hall=1`}
-            className="flex min-h-14 items-center justify-center px-8 font-display text-4xl text-[#f0d48a] drop-shadow-[0_0_22px_rgba(228,195,122,0.55)]"
+            className="crystal crystal-gold flex min-h-14 min-w-[12.5rem] items-center justify-center rounded-2xl px-8 font-display text-3xl"
             style={{ touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}
             onPointerUp={() => sfxForge("page")}
           >
@@ -402,7 +408,7 @@ export function CitadelHub({
           </a>
           <button
             type="button"
-            className="relative z-50 flex min-h-16 min-w-[10rem] items-center justify-center px-10 font-display text-3xl text-white"
+            className="crystal crystal-quiet relative z-50 flex min-h-12 min-w-[10rem] items-center justify-center rounded-2xl px-8 font-display text-2xl"
             style={{ touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}
             onPointerUp={(e) => {
               e.stopPropagation();

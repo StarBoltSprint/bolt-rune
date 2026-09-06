@@ -150,6 +150,26 @@
   background: transparent;
   animation: door-sheen-gold 1.9s ease-in-out infinite;
 }
+
+.crystal {
+  border: 1px solid color-mix(in oklab, var(--color-fg) 16%, transparent);
+  background: color-mix(in oklab, var(--color-bg) 48%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 28px color-mix(in oklab, var(--color-bg) 55%, transparent);
+}
+.crystal-ice {
+  color: var(--color-ice);
+  border-color: color-mix(in oklab, var(--color-ice) 40%, transparent);
+}
+.crystal-gold {
+  color: var(--color-hold);
+  border-color: color-mix(in oklab, var(--color-hold) 42%, transparent);
+}
+.crystal-quiet {
+  color: var(--color-fg);
+  border-color: color-mix(in oklab, var(--color-fg) 14%, transparent);
+}
 @keyframes door-sheen-teal {
   0%, 100% {
     box-shadow: inset 0 0 0 1.5px rgba(142, 240, 226, 0.45);

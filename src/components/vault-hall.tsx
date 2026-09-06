@@ -331,7 +331,7 @@ export function VaultHall() {
 
   return (
     <div className="relative min-h-dvh overflow-hidden bg-bg" data-vault-hall="8" style={{ touchAction: "manipulation" }}>
-      <img src="/ui/forge.jpg?v=sci" alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-50" />
+      <img src="/ui/forge.jpg?v=aaa" alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-50" />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(7,8,12,0.72)_0%,rgba(7,8,12,0.45)_36%,rgba(7,8,12,0.82)_100%)]" />
       <div className="relative z-10 flex min-h-dvh flex-col px-5 pt-[max(1.4rem,env(safe-area-inset-top))] pb-[max(1.4rem,env(safe-area-inset-bottom))]">
         <div className="flex items-center justify-between gap-3">

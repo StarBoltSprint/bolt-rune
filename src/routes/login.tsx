@@ -10,7 +10,7 @@ function Login() {
   return (
     <main className="relative min-h-dvh overflow-hidden bg-bg" data-keep-hall="1">
       <img
-        src="/ui/forge.jpg?v=sci"
+        src="/ui/forge.jpg?v=aaa"
         alt=""
         className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-55"
       />
