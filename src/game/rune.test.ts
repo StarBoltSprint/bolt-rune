@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { HALL_LOOP, HALL_STILL, doorAtPoint, isHallFilm, stockDoorHits, stockRoomBank, stockStand } from "./stock-room.ts";
+import { createPathHref, pathEntry } from "./path-entry.ts";
 
 describe("stock living room", () => {
   it("isHallFilm accepts the locked hall still and living loop, not landing chrome", () => {
@@ -60,5 +61,17 @@ describe("stock living room", () => {
     const toA = Math.hypot(a.x - spawn.x, a.y - spawn.y);
     const toB = Math.hypot(b.x - spawn.x, b.y - spawn.y);
     assert.ok(toA > 0.16 && toB > 0.16);
+  });
+});
+
+describe("create path entry", () => {
+  it("omitted or stills=1 opens look / Forge, stills=0 keeps stock tap hall", () => {
+    assert.equal(pathEntry(undefined), "look");
+    assert.equal(pathEntry(true), "look");
+    assert.equal(pathEntry(false), "stock");
+    assert.equal(createPathHref("m1"), "/rune?first=m1&drive=engine&rooms=1&hall=1");
+    assert.equal(createPathHref("m2", "drive=pilot&rooms=1&hall=1"), "/rune?first=m2&drive=pilot&rooms=1&hall=1");
+    assert.ok(!createPathHref("m1").includes("stills="));
+    assert.ok(createPathHref("m1", "drive=engine&rooms=1&hall=1", false).endsWith("&stills=0"));
   });
 });

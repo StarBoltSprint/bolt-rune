@@ -16,7 +16,12 @@ export const Route = createFileRoute("/rune")({
       session: typeof s.session === "string" ? s.session : undefined,
       art: typeof s.art === "string" && s.art ? s.art : undefined,
       do: s.do === "more" ? ("more" as const) : s.do === "room" ? ("room" as const) : s.do === "reset" ? ("reset" as const) : ("play" as const),
-      stills: s.stills === "1" || s.stills === 1 || s.stills === true,
+      stills:
+        s.stills === "1" || s.stills === 1 || s.stills === true
+          ? true
+          : s.stills === "0" || s.stills === 0 || s.stills === false
+            ? false
+            : undefined,
       rooms: roomsN >= 1 && roomsN <= 8 ? roomsN : undefined,
       hall: hallN >= 1 && hallN <= 8 ? hallN : undefined,
     };
