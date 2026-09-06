@@ -9,3 +9,10 @@ export function createPathHref(first: "m1" | "m2", q = "drive=engine&rooms=1&hal
   if (stills === true) return `${href}&stills=1`;
   return href;
 }
+
+/** Human Forge keeps the live look pack. Bot forge uses sealed DEFAULT HALL + Bolt refs. */
+export type LookForgeKind = "start" | "bot";
+
+export function lookForgeStart(kind: LookForgeKind): { dataForge: LookForgeKind; sealed: boolean } {
+  return kind === "bot" ? { dataForge: "bot", sealed: true } : { dataForge: "start", sealed: false };
+}
