@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
-import type { RuneSession, RuneSessionMeta } from "@/game/rune-session";
+import type { HallSlice, RiftGate, RuneSession, RuneSessionMeta } from "@/game/rune-session";
 
 type Row = {
   id: string;
@@ -13,6 +13,9 @@ type Row = {
   thumb: string;
   rooms: number | null;
   hall: number | null;
+  from_id?: string | null;
+  via?: string | null;
+  title?: string | null;
   body?: string;
 };
 
@@ -41,7 +44,7 @@ function metaFrom(session: RuneSession): RuneSessionMeta {
     want: session.want || 2,
     walks: Array.isArray(session.bank) ? session.bank.filter((b) => b?.url).length : session.walks || 0,
     thumb: httpUrl(session.thumb) || httpUrl(session.plate) || "/refs/hall-doors.jpg",
-    rooms: session.rooms,
+    rooms: Array.isArray(session.halls) && session.halls.length ? session.halls.length : session.rooms,
     hall: session.hall,
     from: session.from,
     via: session.via,
@@ -116,6 +119,63 @@ async function dropCitadelFile(userId: string, id: string) {
   }
 }
 
+function keepGate(g?: RiftGate): RiftGate | undefined {
+  if (!g) return undefined;
+  const still = httpUrl(g.still);
+  const playlist = (g.playlist || []).map(httpUrl).filter(Boolean).slice(0, 24);
+  const loop = httpUrl(g.loop) || playlist[0] || "";
+  if (!still || !loop) return undefined;
+  const trans = httpUrl(g.trans);
+  const art = String(g.art || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+  return {
+    biome: String(g.biome || "").slice(0, 24),
+    name: String(g.name || "Rift").slice(0, 42),
+    still,
+    loop,
+    playlist: playlist.length ? playlist : undefined,
+    trans: trans || undefined,
+    art: art || undefined,
+  };
+}
+
+function keepHalls(halls?: HallSlice[]): HallSlice[] | undefined {
+  if (!Array.isArray(halls) || !halls.length) return undefined;
+  return halls
+    .slice(0, 8)
+    .map((h, i) => {
+      const bank = (h.bank || [])
+        .map((b) => ({ key: String(b.key || "").slice(0, 40), url: httpUrl(b.url), end: httpUrl(b.end) }))
+        .filter((b) => b.key && b.url)
+        .slice(0, 24);
+      const refs = (h.refs || [])
+        .map((r) => ({ id: String(r.id || "").slice(0, 24), name: String(r.name || "").slice(0, 32), src: httpUrl(r.src) }))
+        .filter((r) => r.src)
+        .slice(0, 16);
+      return {
+        n: Math.max(1, Math.min(8, Number(h.n) || i + 1)),
+        still: httpUrl(h.still) || httpUrl(h.plate) || httpUrl(h.start),
+        start: httpUrl(h.start) || undefined,
+        plate: httpUrl(h.plate) || undefined,
+        here: h.here,
+        cameFrom: h.cameFrom,
+        bank,
+        refs,
+        pins: Array.isArray(h.pins) ? h.pins.slice(0, 8) : [],
+        forged: Number(h.forged) || 0,
+        walkSecs: h.walkSecs ? ((h.walkSecs === 6 ? 6 : 10) as 6 | 10) : undefined,
+        rift: (() => {
+          const m1 = keepGate(h.rift?.m1);
+          const m2 = keepGate(h.rift?.m2);
+          if (!m1 && !m2) return undefined;
+          return { ...(m1 ? { m1 } : {}), ...(m2 ? { m2 } : {}) };
+        })(),
+        via: h.via,
+        next: h.next,
+      };
+    })
+    .filter((h) => h.still || h.bank.length);
+}
+
 function pack(session: RuneSession): { meta: RuneSessionMeta; body: string; session: RuneSession } {
   const bank = (session.bank || [])
     .map((b) => ({ key: String(b.key || "").slice(0, 40), url: httpUrl(b.url), end: httpUrl(b.end) }))
@@ -133,9 +193,9 @@ function pack(session: RuneSession): { meta: RuneSessionMeta; body: string; sess
     want: Math.max(1, Math.min(8, Number(session.want) || 2)),
     walks: bank.length,
     thumb: httpUrl(session.thumb) || httpUrl(session.plate) || "/refs/hall-doors.jpg",
-    rooms: session.rooms,
+    rooms: Array.isArray(session.halls) && session.halls.length ? session.halls.length : session.rooms,
     hall: session.hall,
-    walkSecs: session.walkSecs === 6 || session.walkSecs === 15 ? session.walkSecs : 10,
+    walkSecs: session.walkSecs === 6 ? 6 : 10,
     pins: Array.isArray(session.pins) ? session.pins.slice(0, 8) : [],
     plate: httpUrl(session.plate) || "/refs/hall-doors.jpg",
     start: httpUrl(session.start),
@@ -148,6 +208,13 @@ function pack(session: RuneSession): { meta: RuneSessionMeta; body: string; sess
     via: session.via,
     next: session.next,
     title: session.title,
+    rift: (() => {
+      const m1 = keepGate(session.rift?.m1);
+      const m2 = keepGate(session.rift?.m2);
+      if (!m1 && !m2) return undefined;
+      return { ...(m1 ? { m1 } : {}), ...(m2 ? { m2 } : {}) };
+    })(),
+    halls: keepHalls(session.halls),
   };
   const body = JSON.stringify(light);
   return {
@@ -164,11 +231,11 @@ export const listCitadels = createServerFn({ method: "GET" })
     try {
       const sql = await getSql();
       const rows = await sql<Row>`
-        select id, name, updated, phase, want, walks, thumb, rooms, hall
+        select id, name, updated, phase, want, walks, thumb, rooms, hall, from_id, via, title
         from citadels
         where user_id = ${context.userId}
         order by updated desc
-        limit 24
+        limit 48
       `;
       for (const r of rows) {
         if (!r.id) continue;
@@ -182,6 +249,9 @@ export const listCitadels = createServerFn({ method: "GET" })
           thumb: r.thumb || "/refs/hall-doors.jpg",
           rooms: r.rooms ?? undefined,
           hall: r.hall ?? undefined,
+          from: r.from_id || undefined,
+          via: r.via || undefined,
+          title: r.title || undefined,
         });
       }
     } catch {
@@ -196,7 +266,7 @@ export const listCitadels = createServerFn({ method: "GET" })
     } catch {
       /* */
     }
-    return [...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 24);
+    return [...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 48);
   });
 
 export const putCitadel = createServerFn({ method: "POST" })
@@ -209,8 +279,8 @@ export const putCitadel = createServerFn({ method: "POST" })
       const sql = await getSql();
       const m = data.meta;
       await sql`
-        insert into citadels (user_id, id, name, updated, phase, want, walks, thumb, rooms, hall, body)
-        values (${context.userId}, ${m.id}, ${m.name}, ${m.updated}, ${m.phase}, ${m.want}, ${m.walks}, ${m.thumb}, ${m.rooms ?? null}, ${m.hall ?? null}, ${data.body})
+        insert into citadels (user_id, id, name, updated, phase, want, walks, thumb, rooms, hall, from_id, via, title, body)
+        values (${context.userId}, ${m.id}, ${m.name}, ${m.updated}, ${m.phase}, ${m.want}, ${m.walks}, ${m.thumb}, ${m.rooms ?? null}, ${m.hall ?? null}, ${m.from ?? null}, ${m.via ?? null}, ${m.title ?? null}, ${data.body})
         on conflict (user_id, id) do update set
           name = excluded.name,
           updated = excluded.updated,
@@ -220,6 +290,9 @@ export const putCitadel = createServerFn({ method: "POST" })
           thumb = excluded.thumb,
           rooms = excluded.rooms,
           hall = excluded.hall,
+          from_id = excluded.from_id,
+          via = excluded.via,
+          title = excluded.title,
           body = excluded.body
       `;
       ok = true;

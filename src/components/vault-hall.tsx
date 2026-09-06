@@ -4,7 +4,7 @@ import { continuePrompt, readClipSpec, shiftPrompt, SHIFTS } from "@/game/cook";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/lib/cook";
 import { hangHall, listHall } from "@/lib/hall";
-import { listSessions } from "@/game/rune-session";
+import { bindCitadel } from "@/game/rooms";
 import { HallMark } from "@/components/hall-mark";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { FilmStage } from "@/components/film-stage";
@@ -82,14 +82,14 @@ export function VaultHall() {
   }
 
   function hangDoor(a: HungArtifact, door: "A" | "B") {
-    const cit = listSessions()[0];
-    const hall = Math.max(1, Math.min(8, cit?.hall || 1));
+    const cit = bindCitadel();
+    const hall = cit.hall;
     const hung = hangOnRoom(
       a.id,
       {
         door,
         still: ROOM_ONE_STILL,
-        citadel: cit?.id,
+        citadel: cit.citadel || undefined,
         hall,
       },
       hungRef.current,
@@ -99,8 +99,8 @@ export function VaultHall() {
     if (live) persistArt(live);
     sfxForge("enter");
     setFrost(
-      cit
-        ? `${cit.title || cit.name} · room ${hall} · door ${door}`
+      cit.citadel
+        ? `${cit.title || "Citadel"} · room ${hall} · door ${door}`
         : `Room ${hall} · door ${door} · Play / Load to walk it`,
     );
     window.setTimeout(() => setFrost(""), 2400);

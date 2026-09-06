@@ -40,7 +40,7 @@ function RunePage() {
   if (session) {
     return (
       <RuneEngine
-        boot={{ kind: "session", id: session, do: deed }}
+        boot={{ kind: "session", id: session, do: deed, hall }}
         onBack={() => {
           clearLivePlay();
           window.location.href = "/rune";

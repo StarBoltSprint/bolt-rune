@@ -25,6 +25,7 @@ import {
   pathWalks,
   otherDoor,
   idlePrompt,
+  breathPrompt,
   TOUR_PLATE,
   withSpawn,
   type RuneClip,
@@ -32,7 +33,7 @@ import {
   type RuneNode,
   type WalkSecs,
 } from "@/game/rune";
-import { freeRuneSlot, grabRuneFrame, pollCookPlate, startCookStill, startRuneFilm, startRuneStill, cacheClip, cacheStill } from "@/lib/cook";
+import { freeRuneSlot, grabRuneFrame, pollCookPlate, startCookStill, startRuneExtend, startRuneFilm, startRuneStill, cacheClip, cacheStill } from "@/lib/cook";
 import { BIOMES, biomePlaylist, riftFilm, riftPrompt, type BiomeId } from "@/game/cook";
 import { FilmStage } from "@/components/film-stage";
 import { dropRoom, hangArtifact, hangOnRoom, mergeHall, readArtifacts, uniqueClips, ROOM_ONE_STILL, type HungArtifact } from "@/game/artifacts";
@@ -55,6 +56,8 @@ import {
   type RiftGate,
 } from "@/game/rune-session";
 import { BootScreen } from "@/components/citadel-hub";
+import { hallN, liveSlice, putSlice, seedHalls } from "@/game/rooms";
+import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, loadDrive, retryLaw, saveDrive, stillLaws, type Drive } from "@/game/rune-brain";
 
 const FADE_MS = 1100;
@@ -173,7 +176,13 @@ function hallStillFrom(s: {
 
 function idleSkip(d: number) {
   if (!Number.isFinite(d) || d < 1.2) return 0.08;
+  // Walk + extend stitch: loop only the last ~6s of breath, never replay the walk.
+  if (d > 8.8) return Math.max(0.2, d - 6.15);
   return Math.min(0.16, Math.max(0.08, d * 0.03));
+}
+
+function clampWalk(n?: number): 6 | 10 {
+  return n === 6 ? 6 : 10;
 }
 
 const PLATES = [
@@ -555,6 +564,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const titleHold = useRef("");
   const viaHold = useRef("");
   const nextHold = useRef<{ m1?: string; m2?: string }>({});
+  const hallsHold = useRef<HallSlice[]>([]);
   const skipAsk = useRef("");
   const [enterAsk, setEnterAsk] = useState<"m1" | "m2" | null>(null);
   const [rift, setRift] = useState<{ m1?: RiftGate; m2?: RiftGate }>({});
@@ -693,6 +703,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   function persist(extra?: Partial<RuneSession>) {
     const ph = extra?.phase ?? phaseRef.current;
     if (ph === "count") return;
+    if (hallHold.current >= 1 && (bank.current.size || plateRef.current || startHold.current)) {
+      rememberSlice(snapHall());
+    }
     const snap: RuneSession = {
       id: sid.current,
       name: sessionName(wantRef.current, ph),
@@ -711,6 +724,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       title: extra?.title ?? (titleHold.current || undefined),
       via: extra?.via ?? (viaHold.current || undefined),
       next: extra?.next ?? (Object.keys(nextHold.current).length ? nextHold.current : undefined),
+      halls: extra?.halls ?? (hallsHold.current.length ? hallsHold.current : undefined),
       rift: extra?.rift ?? (riftRef.current.m1 || riftRef.current.m2 ? riftRef.current : undefined),
       here: extra?.here ?? hereRef.current,
       cameFrom: extra?.cameFrom ?? cameFrom.current,
@@ -721,8 +735,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       ...extra,
     };
     if (!snap.id) snap.id = newSessionId();
-    const hasFilm = (snap.bank || []).some((b) => b?.url);
-    if (!hasFilm && !snap.plate && !(snap.refs || []).length) return;
+    const parent = extra?.from ?? fromHold.current;
+    snap.from = parent && parent !== snap.id ? parent : undefined;
+    const hasFilm = (snap.bank || []).some((b) => b?.url) || (snap.halls || []).some((h) => (h.bank || []).some((b) => b?.url));
+    const isRoom = !!(snap.from || extra?.from || (snap.hall && snap.hall > 1) || (snap.halls && snap.halls.length > 1));
+    if (!hasFilm && !snap.plate && !(snap.refs || []).length && !isRoom) return;
     if ((extra?.phase ?? phaseRef.current) === "play") {
       markLivePlay(snap.id, snap.here, hallKeep.current || durableStill(snap.plate) || "");
     }
@@ -1091,7 +1108,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     wrapping.current = false;
     if ((id === "m1" || id === "m2") && hereRef.current === id && beatRef.current === "idle") {
-      const can = !!nextHold.current[id] || !!riftRef.current[id];
+      const can = destHall(id) > 0 || !!riftRef.current[id];
       if (can) {
         void goEnter(id);
         return;
@@ -1201,6 +1218,29 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       else if (el === filmB.current) setPaintB(false);
     }
     armFilm(el, url, loop);
+  }
+
+  function seekBreath(el: HTMLVideoElement | null) {
+    if (!el) return;
+    const d = el.duration;
+    if (!Number.isFinite(d) || d < 1.2) return;
+    const skip = idleSkip(d);
+    try {
+      if (Math.abs(el.currentTime - skip) > 0.12) el.currentTime = skip;
+    } catch {
+      /* */
+    }
+  }
+
+  function cueBreath(el: HTMLVideoElement | null, url: string) {
+    if (!el || !url) return;
+    armSlot(el, url, true);
+    const go = () => {
+      seekBreath(el);
+      void el.play().catch(() => {});
+    };
+    if (el.readyState >= 1 && Number.isFinite(el.duration) && el.duration > 0.6) go();
+    else el.addEventListener("loadedmetadata", go, { once: true });
   }
 
   function filmHasPaint(el: HTMLVideoElement | null) {
@@ -1485,6 +1525,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setFilmUrl(url);
       setLoopOn(loop);
       hid.loop = false;
+      if (loop) seekBreath(hid);
       void hid.play().catch(() => {});
       if (hid !== vis) showIncoming();
       setFilmOn(true);
@@ -1497,6 +1538,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       skipIn.current = skip;
       setFilmUrl(url);
       setLoopOn(loop);
+      if (loop) seekBreath(vis);
       void vis.play().catch(() => {});
       setFilmOn(true);
       setCoverFade(true);
@@ -1587,7 +1629,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const at = hereRef.current;
     if (id === at) {
       if ((id === "m1" || id === "m2") && beatRef.current === "idle") {
-        if (nextHold.current[id] || fromHold.current || riftRef.current[id]) {
+        if (destHall(id) > 0 || riftRef.current[id]) {
           void goEnter(id);
           return;
         }
@@ -1626,8 +1668,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     markLivePlay(sid.current, at, plateRef.current || lastLive.current || clip.end || "");
     sfxForge("page");
     await Promise.race([
-      playFilm(clip.url, (walkSecsRef.current + 4) * 1000, lastLive.current || plateRef.current, clip.end, true, idleFor(id)?.url),
-      sleep((walkSecsRef.current + 4) * 1000),
+      playFilm(clip.url, (clampWalk(walkSecsRef.current) + 4) * 1000, lastLive.current || plateRef.current, clip.end, true, idleFor(id)?.url),
+      sleep((clampWalk(walkSecsRef.current) + 4) * 1000),
     ]);
     if (token !== playTok.current) return;
     setPose(null);
@@ -1644,7 +1686,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (id === "m1" || id === "m2") {
       if (skipAsk.current !== id) {
         skipAsk.current = "";
-        if (nextHold.current[id] || fromHold.current || riftRef.current[id]) {
+        if (destHall(id) > 0 || riftRef.current[id]) {
           setEnterAsk(id);
           void prefetchExit(id);
         }
@@ -1667,6 +1709,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (idle?.url && hid && slotSrc(hid) === idle.url && filmHasPaint(hid)) {
       filmLoop.current = true;
       setLoopOn(true);
+      seekBreath(hid);
       void hid.play().catch(() => {});
       if (hid !== visFilm()) showIncoming();
       setFilmOn(true);
@@ -1861,39 +1904,137 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     });
   }
 
+  function destHall(door: "m1" | "m2"): number {
+    const n = hallN(nextHold.current[door]);
+    if (n && n !== hallHold.current) return n;
+    const slice = hallsHold.current[hallHold.current - 1];
+    const mapped = slice?.next?.[door];
+    if (mapped && mapped !== hallHold.current) return mapped;
+    if (riftRef.current[door]) return 0;
+    const nxt = hallsHold.current[hallHold.current];
+    if (nxt && (nxt.via === door || !nxt.via)) return nxt.n;
+    if (hallHold.current > 1 && (viaHold.current === door || !viaHold.current)) return hallHold.current - 1;
+    return 0;
+  }
+
+  function snapHall(n = hallHold.current): HallSlice {
+    return liveSlice(
+      {
+        hall: n,
+        start: startHold.current,
+        plate: plateRef.current,
+        thumb: hallKeep.current || "",
+        here: hereRef.current,
+        cameFrom: cameFrom.current,
+        bank: [...bank.current].map(([key, v]) => ({ key, url: v.url, end: v.end })),
+        refs: refsHold.current,
+        pins: pinsRef.current,
+        forged: forgedRef.current,
+        walkSecs: walkSecsRef.current,
+        rift: riftRef.current.m1 || riftRef.current.m2 ? { ...riftRef.current } : undefined,
+        via: viaHold.current || undefined,
+        next: nextHold.current,
+      },
+      n,
+    );
+  }
+
+  function rememberSlice(slice: HallSlice) {
+    hallsHold.current = putSlice(hallsHold.current, slice);
+    roomsHold.current = Math.max(1, hallsHold.current.length);
+  }
+
+  function applyHall(slice: HallSlice, playEnter = false) {
+    hallHold.current = slice.n;
+    viaHold.current = slice.via || "";
+    const m1 = slice.next?.m1 ? String(slice.next.m1) : undefined;
+    const m2 = slice.next?.m2 ? String(slice.next.m2) : undefined;
+    nextHold.current = { ...(m1 ? { m1 } : {}), ...(m2 ? { m2 } : {}) };
+    fromHold.current = slice.n > 1 ? sid.current : "";
+    const still = slice.start || slice.plate || slice.still || hallKeep.current || HALL_FALLBACK;
+    startHold.current = slice.start || still;
+    plateRef.current = slice.plate || still;
+    setPlate(plateRef.current);
+    hallKeep.current = plateRef.current;
+    lockHall(plateRef.current);
+    rememberHall(sid.current, plateRef.current);
+    bank.current = new Map((slice.bank || []).filter((b) => b?.key && b.url).map((b) => [b.key, { url: b.url, end: b.end || "" }]));
+    refsHold.current = slice.refs || [];
+    refsMap.current = new Map(refsHold.current.map((r) => [r.id, r.src]));
+    setRefs(refsHold.current);
+    pinsRef.current = slice.pins || [];
+    setPins(pinsRef.current);
+    forgedRef.current = slice.forged || 0;
+    setForged(forgedRef.current);
+    if (slice.walkSecs) {
+      const dur = clampWalk(slice.walkSecs);
+      walkSecsRef.current = dur;
+      setWalkSecs(dur);
+    }
+    const restored = hydrateRift(sid.current, slice.n, slice.rift || {}, readArtifacts());
+    riftRef.current = restored;
+    setRift(restored);
+    const g = compileCitadel(plateRef.current || HALL_FALLBACK, pinsRef.current, walkSecsRef.current);
+    setGraph(g);
+    graphRef.current = g;
+    const hereNow = playEnter ? SPAWN.id : slice.here || SPAWN.id;
+    setHere(hereNow);
+    hereRef.current = hereNow;
+    cameFrom.current = playEnter ? "enter" : slice.cameFrom || "start";
+    const node = withSpawn(pinsRef.current).find((p) => p.id === hereNow);
+    bolt.current = node ? { x: node.x, y: node.y } : { x: SPAWN.x, y: SPAWN.y };
+    skipEnter.current = !playEnter;
+    setEnterAsk(null);
+    setHallsOn(false);
+    syncWalks();
+  }
+
+  async function switchHall(n: number, playEnter = false) {
+    if (n < 1 || n > 8 || n === hallHold.current) {
+      if (n === hallHold.current) holdIdle();
+      return;
+    }
+    rememberSlice(snapHall());
+    const slice = hallsHold.current[n - 1];
+    if (!slice) return;
+    stopFilm();
+    setFilmUrl(null);
+    playing.current = false;
+    applyHall(slice, playEnter);
+    persist({
+      phase: "play",
+      hall: n,
+      rooms: hallsHold.current.length,
+      halls: hallsHold.current,
+      plate: plateRef.current,
+      start: startHold.current,
+    });
+    setPhase("play");
+    phaseRef.current = "play";
+    armed.current = true;
+    setFrost(playEnter ? "enter" : "tap a door");
+    sfxForge("enter");
+    if (playEnter) await playEnterThenIdle();
+    else holdIdle();
+  }
+
   function hallLine() {
-    const all = listSessions();
-    const byId = new Map(all.map((s) => [s.id, s]));
-    let root = sid.current;
-    const up = new Set<string>();
-    while (true) {
-      const s = byId.get(root);
-      if (!s?.from || !byId.has(s.from) || up.has(root)) break;
-      up.add(root);
-      root = s.from;
-    }
-    const childOf = new Map<string, string>();
-    for (const s of all) {
-      if (s.from && byId.has(s.from) && !childOf.has(s.from)) childOf.set(s.from, s.id);
-    }
+    const halls = hallsHold.current.length ? hallsHold.current : [{ n: hallHold.current || 1, still: "", bank: [], refs: [], pins: [] }];
     const line: { kind: "room" | "gate"; id: string; n: number; from?: string }[] = [];
-    let n = 1;
-    let cur: string | undefined = root;
-    const seen = new Set<string>();
-    while (cur && !seen.has(cur)) {
-      seen.add(cur);
-      line.push({ kind: "room", id: cur, n });
-      const child = childOf.get(cur);
-      if (!child) break;
-      line.push({ kind: "gate", id: child, n, from: cur });
-      cur = child;
-      n += 1;
+    for (const h of halls) {
+      if (h.n > 1) line.push({ kind: "gate", id: String(h.n), n: h.n - 1, from: String(h.n - 1) });
+      line.push({ kind: "room", id: String(h.n), n: h.n });
     }
     return line;
   }
 
   async function goHall(id: string) {
     setHallsOn(false);
+    const n = hallN(id);
+    if (n) {
+      await switchHall(n, false);
+      return;
+    }
     if (id === sid.current) return;
     persist({ phase: "play" });
     await openSession(id, true);
@@ -1901,6 +2042,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   async function goGate(childId: string, parentId?: string) {
     setHallsOn(false);
+    const n = hallN(childId);
+    if (n) {
+      await switchHall(n, true);
+      return;
+    }
     let url = "";
     let end = "";
     const local =
@@ -1911,37 +2057,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       url = local.url;
       end = local.end || "";
     }
-    if (!url) {
-      try {
-        const child = await loadSession(childId);
-        const hit = child?.bank?.find((b) => b.key === "enter→spawn");
-        if (hit?.url) {
-          url = hit.url;
-          end = hit.end || "";
-        }
-      } catch {
-        /* */
-      }
-    }
-    if (!url && parentId && sid.current !== parentId) {
-      try {
-        const parent = await loadSession(parentId);
-        const hit = parent?.bank?.find((b) => b.key.startsWith("exit-"));
-        if (hit?.url) {
-          url = hit.url;
-          end = hit.end || "";
-        }
-      } catch {
-        /* */
-      }
-    }
     if (url) {
       playOne(url, end, "transition");
       return;
-    }
-    if (parentId && sid.current !== parentId) {
-      persist({ phase: "play" });
-      await openSession(parentId, true);
     }
     setFrost("tap door twice to enter");
   }
@@ -2044,7 +2162,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setFilmUrl(url);
     setBeat("playvid");
     beatRef.current = "playvid";
-    const played = playFilm(url, walkSecsRef.current * 1000 + 400, fromStill);
+    const played = playFilm(url, clampWalk(walkSecsRef.current) * 1000 + 400, fromStill);
     const snapped = shotEnd(url, fromStill);
     await played;
     const landed = (await snapped) || fromStill;
@@ -2076,7 +2194,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setLoadPct(8);
     setFrost(`new take · breathe ${node}`);
     sfxForge("cook");
-    let url = await cookFilm(still, idlePrompt(""), [], `edit still ${node}`, 6);
+    const film = filmInto(node);
+    let url: string | null = null;
+    let fromExtend = false;
+    if (film) {
+      setFrost(`breath continues · ${node}`);
+      url = await cookExtend(film, breathPrompt(""), `edit breath ${node}`);
+      fromExtend = Boolean(url);
+    }
+    if (!url) url = await cookFilm(still, idlePrompt(""), [], `edit still ${node}`, 6);
     if (!url) url = await cookFilm(still, idlePrompt(""), [], `retry still ${node}`, 6);
     if (!url || !liveForge.current) {
       failStay("edit failed · tap retry");
@@ -2085,7 +2211,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setFilmUrl(url);
     setBeat("playvid");
     beatRef.current = "playvid";
-    const played = playFilm(url, 6400, still, null, false);
+    const played = playFilm(url, 6400, still, null, false, undefined, fromExtend);
     const snapped = shotEnd(url, still);
     await played;
     const frame = (await snapped) || still;
@@ -2391,7 +2517,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     });
   }
 
-  function playFilm(url: string, maxMs = 0, cover?: string | null, freeze?: string | null, skip = true, prefetch?: string | null) {
+  function playFilm(url: string, maxMs = 0, cover?: string | null, freeze?: string | null, skip = true, prefetch?: string | null, breath = false) {
     return new Promise<void>((resolve) => {
       const el = cueSlot();
       if (!el || !url) {
@@ -2401,8 +2527,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       const gen = playTok.current;
       const mine = ++loadGen.current;
       let settled = false;
-      const wait = maxMs > 0 ? maxMs : (walkSecsRef.current + 8) * 1000;
-      filmLoop.current = false;
+      const wait = maxMs > 0 ? maxMs : (clampWalk(walkSecsRef.current) + 8) * 1000;
+      filmLoop.current = breath;
       skipIn.current = skip;
       if (filmHasPaint(visFilm())) {
         setCoverFade(true);
@@ -2421,8 +2547,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         if (prefetch && left <= 0.9) {
           const hid = hidFilm();
           if (hid) {
-            if (slotSrc(hid) !== prefetch) armSlot(hid, prefetch, true);
-            void hid.play().catch(() => {});
+            if (slotSrc(hid) !== prefetch) cueBreath(hid, prefetch);
+            else {
+              seekBreath(hid);
+              void hid.play().catch(() => {});
+            }
           }
         }
         if (left <= 0.14 || live.ended) {
@@ -2446,6 +2575,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         if (playTok.current !== gen) return;
         settled = true;
         if (freeze && !filmLoop.current) freezeVis(true);
+        else if (freeze && breath) {
+          filmLoop.current = false;
+          freezeVis(true);
+        }
         el.removeEventListener("ended", fail);
         el.removeEventListener("error", fail);
         visFilm()?.removeEventListener("timeupdate", stamp);
@@ -2467,7 +2600,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           liftCover(gen);
           if (prefetch) {
             const hid = hidFilm();
-            if (hid && slotSrc(hid) !== prefetch) armSlot(hid, prefetch, true);
+            if (hid && slotSrc(hid) !== prefetch) cueBreath(hid, prefetch);
           }
         });
       };
@@ -2492,7 +2625,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             data: {
               still,
               prompt,
-              duration: secs ?? walkSecsRef.current,
+              duration: secs === 6 ? 6 : secs === 10 ? 10 : clampWalk(walkSecsRef.current),
               refs: kit,
               res: lookResRef.current,
             },
@@ -2531,6 +2664,76 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           }
           if (polled.status === "failed") break;
           setFrost(`Imagine is drawing ${label} · ${p + 1}`);
+        }
+      }
+    } finally {
+      window.clearInterval(tick);
+    }
+    return url;
+  }
+
+  function filmInto(node: string) {
+    for (const [k, v] of bank.current) {
+      if (!v?.url || !/^https:\/\//i.test(v.url)) continue;
+      if (/\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(v.url)) continue;
+      if (k.startsWith("idle-")) continue;
+      const core = k.includes("#") ? k.slice(0, k.indexOf("#")) : k;
+      if (core.endsWith(`→${node}`)) return v.url;
+    }
+    return "";
+  }
+
+  async function cookExtend(video: string, prompt: string, label: string): Promise<string | null> {
+    if (!/^https:\/\//i.test(video) || /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(video)) return null;
+    const tick = window.setInterval(() => {
+      setLoadPct((p) => (p >= 91 ? 91 : p + Math.floor(1 + Math.random() * 3)));
+    }, 800);
+    let started: { ok: true; requestId: string } | { ok: false; error: string } | null = null;
+    let url: string | null = null;
+    try {
+      for (let tryN = 0; tryN < 10; tryN++) {
+        if (!liveForge.current) return null;
+        try {
+          started = await startRuneExtend({
+            data: { video, prompt, duration: 6 },
+          });
+        } catch (err) {
+          started = { ok: false, error: err instanceof Error ? err.message : "net" };
+        }
+        if (started.ok) break;
+        if (started.error === "echo-off") {
+          setFrost("Imagine is dark · hall kept");
+          return null;
+        }
+        if (started.error === "no-extend") return null;
+        if (started.error === "busy" || started.error === "cooldown") {
+          setFrost("Imagine busy · waiting");
+          await sleep(5000 + tryN * 2000);
+          continue;
+        }
+        setFrost(started.error);
+        await sleep(1200);
+      }
+      if (started?.ok) {
+        for (let p = 0; p < 140; p++) {
+          if (!liveForge.current) return null;
+          if (p) await sleep(1200);
+          let polled;
+          try {
+            polled = await pollCookPlate({ data: { requestId: started.requestId } });
+          } catch {
+            continue;
+          }
+          if (!polled.ok) continue;
+          if (polled.status === "done" && polled.url) {
+            url = polled.url;
+            break;
+          }
+          if (polled.status === "failed") {
+            setFrost(`breath dropped · ${label}`);
+            break;
+          }
+          setFrost(`breath continues · ${label} · ${p + 1}`);
         }
       }
     } finally {
@@ -2591,7 +2794,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     return [extra, refsMap.current.get("bolt"), refsMap.current.get("m1"), refsMap.current.get("m2")].filter((u): u is string => !!u);
   }
 
-  async function cookIdleAt(node: string, still: string) {
+  async function cookIdleAt(node: string, still: string, fromFilm?: string) {
     const key = `idle-${node}`;
     if (bank.current.has(key) || !liveForge.current) return still;
     setNowClip({ kind: "idle", id: key, node, camera: "lock", morph: false });
@@ -2602,14 +2805,22 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setLoadPct(8);
     setFrost(`still · ${node} breathes`);
     sfxForge("cook");
-    let url = await cookFilm(still, idlePrompt(stillLaws()), [], `still ${node}`, 6);
+    const film = fromFilm || filmInto(node);
+    let url: string | null = null;
+    let fromExtend = false;
+    if (film) {
+      setFrost(`breath continues · ${node}`);
+      url = await cookExtend(film, breathPrompt(stillLaws()), `breath ${node}`);
+      fromExtend = Boolean(url);
+    }
+    if (!url) url = await cookFilm(still, idlePrompt(stillLaws()), [], `still ${node}`, 6);
     if (!url) url = await cookFilm(still, idlePrompt(stillLaws()), [], `retry still ${node}`, 6);
     if (!url || !liveForge.current) return still;
     setLoadPct(100);
     setFilmUrl(url);
     setBeat("playvid");
     beatRef.current = "playvid";
-    const played = playFilm(url, 6400, still, null, false);
+    const played = playFilm(url, 6400, still, null, false, undefined, fromExtend);
     const snapped = shotEnd(url, still);
     await played;
     if (!liveForge.current) return still;
@@ -2620,7 +2831,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setPose(frame);
     setBeat("shot");
     beatRef.current = "shot";
-    setFrost("shot · still");
+    setFrost(fromExtend ? "shot · breath continues" : "shot · still");
     sfxForge("enter");
     await sleep(SHOT_MS);
     return frame;
@@ -2707,7 +2918,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     pose.set(`${SPAWN.id}←start`, poseSpawn);
     goal.set(SPAWN.id, poseSpawn);
     if (!bank.current.get("idle-spawn")?.url && poseSpawn) {
-      await cookIdleAt("spawn", poseSpawn);
+      await cookIdleAt("spawn", poseSpawn, bank.current.get("enter→spawn")?.url);
     }
     const breath = bank.current.get("idle-spawn");
     if (breath?.end) {
@@ -2781,7 +2992,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       beatRef.current = "playvid";
       setPose(null);
       setFrost(`video · ${label}`);
-      const playMs = walkSecsRef.current * 1000 + 400;
+      const playMs = clampWalk(walkSecsRef.current) * 1000 + 400;
       const played = playFilm(url, playMs, fromStill);
       const snapped = shotEnd(url, fromStill);
       await played;
@@ -2816,7 +3027,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           setFilmUrl(url);
           setBeat("playvid");
           beatRef.current = "playvid";
-          const againPlay = playFilm(url, walkSecsRef.current * 1000 + 400, fromStill);
+          const againPlay = playFilm(url, clampWalk(walkSecsRef.current) * 1000 + 400, fromStill);
           const againShot = shotEnd(url, fromStill);
           await againPlay;
           if (!liveForge.current) return;
@@ -2844,6 +3055,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setFrost("shot · last frame");
       sfxForge("enter");
       await sleep(SHOT_MS);
+      if (!bank.current.get(`idle-${clip.to}`)?.url) {
+        await cookIdleAt(clip.to, landed, url);
+      }
     }
     if (!liveForge.current) return;
     for (const n of ["m1", "m2"] as const) {
@@ -3222,7 +3436,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       b: bridgeOn.b ? lookPackRef.current.find((p) => p.id === "door-b")?.src || bridge.b : "",
       pick: enterDoorRef.current,
     };
-    if (!keepSid && !fromHold.current) sid.current = newSessionId();
+    if (!keepSid && hallHold.current <= 1) sid.current = newSessionId();
     setPlate("");
     plateRef.current = "";
     setStageSrc(null);
@@ -3294,36 +3508,28 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     return [...head, ...rest];
   }
 
-  async function fillBridgeFrom(parentId?: string) {
+  async function fillBridgeFrom(_parentId?: string) {
     const ok = (u?: string) =>
       !!u && (u.startsWith("http") || u.startsWith("/") || u.startsWith("data:") || u.startsWith("blob:"));
+    const prev = hallsHold.current[hallHold.current - 2];
     let hall = plateRef.current || startHold.current || refsMap.current.get("hall") || refsMap.current.get("seed") || "";
     let a = lastAt("m1");
     let b = lastAt("m2");
-    if (parentId) {
-      try {
-        const p = await loadSession(parentId);
-        if (p) {
-          const lastFrom = (id: string) => {
-            const pose = p.refs?.find((r) => r.id === `pose-${id}`)?.src;
-            if (ok(pose)) return pose as string;
-            const idle = p.bank?.find((x) => x.key === `idle-${id}`)?.end;
-            if (ok(idle)) return idle as string;
-            const walk = p.bank?.find((x) => x.end && x.key.endsWith(`→${id}`));
-            return ok(walk?.end) ? (walk!.end as string) : "";
-          };
-          a = lastFrom("m1") || a;
-          b = lastFrom("m2") || b;
-          hall =
-            [p.start, p.plate, p.refs?.find((r) => r.id === "hall")?.src, p.refs?.find((r) => r.id === "seed")?.src].find(ok) ||
-            hall;
-          if (!hall) hall = a || b || "";
-          if (!a) a = (p.here === "m1" ? p.plate : "") || hall || "";
-          if (!b) b = (p.here === "m2" ? p.plate : "") || hall || "";
-        }
-      } catch {
-        /* */
-      }
+    if (prev) {
+      const lastFrom = (id: string) => {
+        const pose = prev.refs?.find((r) => r.id === `pose-${id}`)?.src;
+        if (ok(pose)) return pose as string;
+        const idle = prev.bank?.find((x) => x.key === `idle-${id}`)?.end;
+        if (ok(idle)) return idle as string;
+        const walk = prev.bank?.find((x) => x.end && x.key.endsWith(`→${id}`));
+        return ok(walk?.end) ? (walk!.end as string) : "";
+      };
+      a = lastFrom("m1") || a;
+      b = lastFrom("m2") || b;
+      hall = [prev.start, prev.plate, prev.still, prev.refs?.find((r) => r.id === "hall")?.src, prev.refs?.find((r) => r.id === "seed")?.src].find(ok) || hall;
+      if (!hall) hall = a || b || "";
+      if (!a) a = hall || "";
+      if (!b) b = hall || "";
     }
     const door: "a" | "b" = viaHold.current === "m2" && b ? "b" : a ? "a" : b ? "b" : "a";
     enterDoorRef.current = door;
@@ -3346,59 +3552,84 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     return "m1";
   }
 
+  function linkForward(pick: "m1" | "m2", dest: number) {
+    nextHold.current = { ...nextHold.current, [pick]: String(dest) };
+    const cur = hallsHold.current[hallHold.current - 1];
+    if (cur) {
+      hallsHold.current = putSlice(hallsHold.current, {
+        ...cur,
+        next: { ...(cur.next || {}), [pick]: dest },
+      });
+    }
+  }
+
   function spawnChild(pick: "m1" | "m2") {
-    const parent = sid.current;
-    const child = nextHold.current[pick] || newSessionId();
+    if (hallHold.current >= 8) return String(hallHold.current);
+    rememberSlice(snapHall());
     const roomsN = Math.min(8, Math.max(roomsHold.current, hallHold.current + 1));
-    nextHold.current = { ...nextHold.current, [pick]: child };
+    const childN = hallHold.current + 1;
+    linkForward(pick, childN);
     const cleared = { ...riftRef.current };
     delete cleared[pick];
     riftRef.current = cleared;
     setRift(cleared);
-    persist({ next: nextHold.current, rift: cleared, rooms: roomsN, phase: "play" });
-    sid.current = child;
-    fromHold.current = parent;
+    persist({ next: nextHold.current, rift: cleared, rooms: roomsN, halls: hallsHold.current, phase: "play" });
+    fromHold.current = sid.current;
     viaHold.current = pick;
-    hallHold.current += 1;
+    hallHold.current = childN;
     roomsHold.current = roomsN;
     nextHold.current = {};
     skipAsk.current = "";
     pathFirst.current = pick;
-    return child;
+    rememberSlice({
+      n: childN,
+      still: plateRef.current || startHold.current || "",
+      start: startHold.current || plateRef.current || "",
+      plate: plateRef.current || startHold.current || "",
+      bank: [],
+      refs: [],
+      pins: [],
+      via: pick,
+    });
+    persist({
+      hall: childN,
+      rooms: roomsN,
+      halls: hallsHold.current,
+      title: titleHold.current || undefined,
+      plate: plateRef.current || startHold.current || "",
+      start: startHold.current || plateRef.current || "",
+      bank: [],
+      next: undefined,
+      from: undefined,
+      via: pick,
+      phase: "look",
+    });
+    return String(childN);
   }
 
   async function stampParentExit(url: string, end: string) {
-    const parent = fromHold.current;
     const via = viaHold.current === "m2" ? "m2" : "m1";
-    if (!parent || !url) return;
-    bank.current.set(`exit-${via}`, { url, end });
-    try {
-      const p = await loadSession(parent);
-      if (!p) return;
-      const key = `exit-${via}`;
-      const nextBank = (p.bank || []).filter((b) => b.key !== key);
-      nextBank.push({ key, url, end: end || "" });
-      await saveSession({ ...p, bank: nextBank, updated: Date.now() });
-    } catch {
-      /* */
-    }
+    if (!url || hallHold.current < 2) return;
+    const prev = hallsHold.current[hallHold.current - 2];
+    if (!prev) return;
+    const key = `exit-${via}`;
+    const nextBank = (prev.bank || []).filter((b) => b.key !== key);
+    nextBank.push({ key, url, end: end || "" });
+    hallsHold.current = putSlice(hallsHold.current, { ...prev, bank: nextBank });
+    persist({ halls: hallsHold.current, phase: "play" });
   }
 
   async function prefetchExit(door: "m1" | "m2") {
     if (bank.current.get(`exit-${door}`)?.url) return;
-    const childId = nextHold.current[door];
-    if (!childId) return;
-    try {
-      const child = await loadSession(childId);
-      const hit =
-        child?.bank?.find((b) => b.key === "enter→spawn") ||
-        child?.bank?.find((b) => b.key === `${door}→spawn`);
-      if (!hit?.url) return;
-      bank.current.set(`exit-${door}`, { url: hit.url, end: hit.end || "" });
-      persist({ phase: "play" });
-    } catch {
-      /* */
-    }
+    const dest = destHall(door);
+    if (!dest) return;
+    const child = hallsHold.current[dest - 1];
+    const hit =
+      child?.bank?.find((b) => b.key === "enter→spawn") ||
+      child?.bank?.find((b) => b.key === `${door}→spawn`);
+    if (!hit?.url) return;
+    bank.current.set(`exit-${door}`, { url: hit.url, end: hit.end || "" });
+    persist({ phase: "play" });
   }
 
   async function goEnter(door?: "m1" | "m2") {
@@ -3406,8 +3637,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     viaHold.current = pick;
     setEnterAsk(null);
     setTray(false);
-    const childId = nextHold.current[pick];
-    const parentId = fromHold.current;
+    const dest = destHall(pick);
     const gate = riftRef.current[pick];
     entering.current = true;
     playing.current = true;
@@ -3417,26 +3647,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         await playRift(pick, gate);
         return;
       }
-      if (!childId && parentId) {
-        persist({ phase: "play" });
-        skipEnter.current = true;
-        holdNow();
-        await openSession(parentId, true);
+      if (dest && dest < hallHold.current) {
+        persist({ phase: "play", halls: putSlice(hallsHold.current, snapHall()) });
+        await switchHall(dest, false);
         return;
       }
-      if (!bank.current.get(`exit-${pick}`)?.url && childId) await prefetchExit(pick);
-      let clip = bank.current.get(`exit-${pick}`) || (childId ? bank.current.get("enter→spawn") : null);
-      if (!clip?.url && childId) {
-        try {
-          const child = await loadSession(childId);
-          const hit =
-            child?.bank?.find((b) => b.key === "enter→spawn") ||
-            child?.bank?.find((b) => b.key === `${pick}→spawn`);
-          if (hit?.url) clip = { url: hit.url, end: hit.end || "" };
-        } catch {
-          /* */
-        }
-      }
+      if (!bank.current.get(`exit-${pick}`)?.url && dest) await prefetchExit(pick);
+      const clip = bank.current.get(`exit-${pick}`) || (dest ? bank.current.get("enter→spawn") : null);
       if (clip?.url) {
         wrapping.current = false;
         setLoopOn(false);
@@ -3452,9 +3669,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         holdNow(clip.end || lastLive.current);
         skipEnter.current = true;
       }
-      if (childId) {
-        persist({ phase: "play" });
-        await openSession(childId, true);
+      if (dest && dest !== hallHold.current) {
+        persist({ phase: "play", halls: putSlice(hallsHold.current, snapHall()) });
+        await switchHall(dest, true);
         return;
       }
       enterNext(pick);
@@ -3818,6 +4035,16 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function keepHall() {
+    if (hallHold.current >= 8) {
+      skipEnter.current = true;
+      setPhase("play");
+      phaseRef.current = "play";
+      holdIdle();
+      setFrost("tap a door");
+      return;
+    }
+    const pick = doorPick();
+    const n = Math.min(8, hallHold.current + 1);
     skipEnter.current = true;
     setHallsOn(false);
     setRiftPick(null);
@@ -3825,6 +4052,27 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setEnterAsk(null);
     setFilmUrl(null);
     setFilmOn(false);
+    rememberSlice(snapHall());
+    linkForward(pick, n);
+    const copy: HallSlice = {
+      ...snapHall(),
+      n,
+      via: pick,
+      rift: undefined,
+      next: {},
+    };
+    rememberSlice(copy);
+    applyHall(copy, true);
+    persist({
+      phase: "play",
+      hall: n,
+      rooms: hallsHold.current.length,
+      halls: hallsHold.current,
+      plate: plateRef.current,
+      start: startHold.current,
+      from: undefined,
+      via: pick,
+    });
     setPhase("play");
     phaseRef.current = "play";
     armed.current = true;
@@ -3832,7 +4080,6 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     playTok.current += 1;
     lockHall(startHold.current || plateRef.current);
     holdIdle();
-    persist({ phase: "play", plate: plateRef.current, start: startHold.current });
     setFrost("tap a door");
     sfxForge("enter");
   }
@@ -3841,7 +4088,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const pick = doorPick();
     const a0 = lastAt("m1") || (hereRef.current === "m1" ? plateRef.current : "") || lastLive.current || "";
     const b0 = lastAt("m2") || (hereRef.current === "m2" ? plateRef.current : "") || "";
-    const hallKeep =
+    const hallKeepStill =
       plateRef.current ||
       startHold.current ||
       lastAt("spawn") ||
@@ -3852,10 +4099,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       a0 ||
       b0 ||
       "";
-    const a = a0 || hallKeep;
-    const b = b0 || hallKeep;
+    const a = a0 || hallKeepStill;
+    const b = b0 || hallKeepStill;
     const boltKeep = refsMap.current.get("bolt") || "";
-    const parent = sid.current;
     spawnChild(pick);
     setFilmUrl(null);
     setLockCover(null);
@@ -3875,14 +4121,14 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const door: "a" | "b" = pick === "m2" ? "b" : "a";
     enterDoorRef.current = door;
     setEnterDoor(door);
-    enterHold.current = { hall: hallKeep, a, b, pick: door };
-    setBridge({ hall: hallKeep, a, b });
-    setBridgeOn({ hall: !!hallKeep, a: door === "a" && !!a, b: door === "b" && !!b });
-    setLookPack(packBridge(hallKeep, a, b, !!hallKeep, door === "a" && !!a, door === "b" && !!b, []));
-    if (hallKeep) {
-      setPlate(hallKeep);
-      plateRef.current = hallKeep;
-      startHold.current = hallKeep;
+    enterHold.current = { hall: hallKeepStill, a, b, pick: door };
+    setBridge({ hall: hallKeepStill, a, b });
+    setBridgeOn({ hall: !!hallKeepStill, a: door === "a" && !!a, b: door === "b" && !!b });
+    setLookPack(packBridge(hallKeepStill, a, b, !!hallKeepStill, door === "a" && !!a, door === "b" && !!b, []));
+    if (hallKeepStill) {
+      setPlate(hallKeepStill);
+      plateRef.current = hallKeepStill;
+      startHold.current = hallKeepStill;
     }
     clearWish();
     setPhase("look");
@@ -3890,16 +4136,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     sfxForge("page");
     persist({
       phase: "look",
-      from: parent,
-      via: pick,
       hall: hallHold.current,
       rooms: roomsHold.current,
-      plate: hallKeep,
-      start: hallKeep,
+      halls: hallsHold.current,
+      plate: hallKeepStill,
+      start: hallKeepStill,
       bank: [],
       next: undefined,
+      from: undefined,
+      via: pick,
     });
-    void fillBridgeFrom(parent);
+    void fillBridgeFrom();
   }
 
   async function resetHall() {
@@ -3928,7 +4175,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setStageSrc(null);
     extraPath.current = false;
     enterHold.current = { hall: "", a: "", b: "", pick: enterDoorRef.current };
-    await fillBridgeFrom(fromHold.current);
+    await fillBridgeFrom();
     persist({ phase: "look", bank: [], forged: 0, plate: "", start: "", refs: [] });
     setPhase("look");
     phaseRef.current = "look";
@@ -3980,20 +4227,36 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setReelOn(false);
     setWant(s.want);
     wantRef.current = s.want;
-    setWalkSecs(s.walkSecs);
-    walkSecsRef.current = s.walkSecs;
+    setWalkSecs(clampWalk(s.walkSecs));
+    walkSecsRef.current = clampWalk(s.walkSecs);
     setPins(s.pins);
     pinsRef.current = s.pins;
     const startStill = hallStill || hallKeep.current;
     if (startStill) startHold.current = startStill;
     roomsHold.current = s.rooms || 1;
     hallHold.current = s.hall || 1;
-    fromHold.current = s.from || "";
+    fromHold.current = "";
     titleHold.current = s.title || "";
     viaHold.current = s.via || "";
     nextHold.current = s.next || {};
+    const kids = listSessions().filter((x) => x.from === s.id && x.id !== s.id);
+    let folded = seedHalls(s);
+    if ((s.halls?.length || 0) < 2 && kids.length) {
+      for (const k of kids) {
+        try {
+          const full = await loadSession(k.id);
+          if (full?.id) folded = putSlice(folded, liveSlice(full, folded.length + 1));
+        } catch {
+          /* */
+        }
+      }
+    }
+    hallsHold.current = folded;
+    roomsHold.current = Math.max(1, hallsHold.current.length);
+    const wantHall = Math.max(1, Math.min(roomsHold.current, (boot?.kind === "session" && boot.hall) || s.hall || 1));
+    hallHold.current = wantHall;
     const artsNow = readArtifacts();
-    const restored = hydrateRift(s.id, s.hall || 1, s.rift || {}, artsNow);
+    const restored = hydrateRift(s.id, wantHall, s.rift || {}, artsNow);
     riftRef.current = restored;
     setRift(restored);
     if (artsNow.length) setHungArts(artsNow);
@@ -4030,6 +4293,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         .filter((b) => b?.key && b.url)
         .map((b) => [b.key, { url: b.url, end: b.end }]),
     );
+    const slice = hallsHold.current[wantHall - 1];
+    if (slice && (wantHall > 1 || (slice.bank || []).length > (s.bank || []).length)) {
+      applyHall(slice, false);
+    }
+    if (hallsHold.current.length > 1) {
+      persist({ halls: hallsHold.current, rooms: hallsHold.current.length, hall: wantHall, from: undefined });
+    }
     const localEnd = [...bank.current.values()].map((v) => v.end).find((u) => u && u.startsWith("/films/") && !u.includes("hall-doors")) || "";
     if (!hangArt.current) {
     void (async () => {
@@ -4131,7 +4401,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       return;
     }
     if (have === 0) {
-      await fillBridgeFrom(s.from || fromHold.current);
+      await fillBridgeFrom();
       setPhase("look");
       phaseRef.current = "look";
       sfxForge("page");
@@ -4211,7 +4481,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function forge(secs?: WalkSecs) {
     if (pins.length < want) return;
-    const dur = secs ?? walkSecsRef.current;
+    const dur = clampWalk(secs ?? walkSecsRef.current);
     setWalkSecs(dur);
     walkSecsRef.current = dur;
     const g = compileCitadel(plate, pins, dur);
@@ -4240,10 +4510,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function pickSecs(n: WalkSecs) {
-    setWalkSecs(n);
-    walkSecsRef.current = n;
+    const dur = clampWalk(n);
+    setWalkSecs(dur);
+    walkSecsRef.current = dur;
     sfxForge("page");
-    forge(n);
+    forge(dur);
   }
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -4374,7 +4645,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   const planLine =
     phase === "time"
-      ? `${counts.walks} walks ${walkSecs}s · ${counts.generate} videos to forge · idle = breathe`
+      ? `${counts.walks} walks ${walkSecs}s · ${counts.generate} videos to forge · idle = breathe · never stops`
       : phase === "mark" && ready
         ? `${counts.idles} idle · ${counts.walks} walks · ${counts.generate} to forge`
         : "";
@@ -4685,9 +4956,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           className="relative z-10 self-start font-mono text-[10px] uppercase tracking-[0.42em] text-white/55"
           style={{ touchAction: "manipulation" }}
           onPointerUp={() => {
-            if (fromHold.current) {
-              skipEnter.current = true;
-              void openSession(fromHold.current, true);
+            if (hallHold.current > 1) {
+              void switchHall(hallHold.current - 1, false);
               return;
             }
             goBack();
@@ -4747,11 +5017,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             type="button"
             className="font-mono text-[10px] uppercase tracking-[0.42em] text-white/55"
             style={{ touchAction: "manipulation" }}
-            onPointerUp={() => goBack()}
+            onPointerUp={() => {
+              if (hallHold.current > 1) {
+                void switchHall(hallHold.current - 1, false);
+                return;
+              }
+              goBack();
+            }}
           >
             Back
           </button>
-          {fromHold.current ? (
+          {hallHold.current > 1 ? (
             <button
               type="button"
               className="font-mono text-[10px] uppercase tracking-[0.42em] text-[#f0d48a]"
@@ -4764,7 +5040,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         </div>
         <p className="relative z-10 mt-6 font-mono text-[10px] uppercase tracking-[0.48em] text-white/45">Citadel</p>
         <h1 className="relative z-10 mt-1 font-display text-[2.6rem] leading-none tracking-[0.04em] text-white/90 drop-shadow-[0_10px_28px_rgba(0,0,0,0.9)]">
-          Hall
+          Hall{hallHold.current > 1 ? ` ${hallHold.current}` : ""}
         </h1>
         <input
           ref={ear}
@@ -5233,9 +5509,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         onPointerUp={(e) => {
           e.stopPropagation();
           e.preventDefault();
-          if (fromHold.current) {
+          if (hallHold.current > 1) {
             skipEnter.current = true;
-            void openSession(fromHold.current, true);
+            void switchHall(hallHold.current - 1, false);
             return;
           }
           goBack();
@@ -5243,7 +5519,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       >
         Back
       </button>
-      {fromHold.current || hallHold.current > 1 ? (
+      {hallHold.current > 1 ? (
         <button
           type="button"
           className="absolute right-4 top-[max(0.7rem,env(safe-area-inset-top))] z-50 flex h-11 items-center rounded-full border border-white/20 bg-black/50 px-4 font-mono text-[11px] uppercase tracking-[0.18em] text-[#f0d48a]"
@@ -5535,7 +5811,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
                       key={`room-${h.id}`}
                       type="button"
                       className={`flex min-h-12 items-center font-display text-xl ${
-                        h.id === sid.current ? "text-[#9ef0e4]" : "text-white/80"
+                        h.n === hallHold.current ? "text-[#9ef0e4]" : "text-white/80"
                       }`}
                       style={{ touchAction: "manipulation" }}
                       onPointerUp={(e) => {
@@ -5696,7 +5972,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
                   {pathFirst.current === "m2" ? "Forge A" : "Forge B"}
                 </button>
               ) : null}
-              {hallHold.current < 8 || nextHold.current.m1 || nextHold.current.m2 ? (
+              {hallHold.current < 8 || destHall("m1") > 0 || destHall("m2") > 0 ? (
                 <button
                   type="button"
                   className="flex h-11 min-w-28 items-center justify-center rounded-full border border-[#e4c37a]/70 bg-[#e4c37a]/18 px-4 font-display text-base text-[#f0d48a]"
@@ -5706,11 +5982,14 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
                     e.preventDefault();
                     if (Date.now() - trayAt.current < 500) return;
                     setTray(false);
-                    if (nextHold.current.m1 || nextHold.current.m2) enterNext();
-                    else newHall();
+                    const dest = destHall(doorPick()) || destHall("m1") || destHall("m2");
+                    if (dest && dest !== hallHold.current && hallsHold.current[dest - 1]?.bank?.length) void switchHall(dest, true);
+                    else enterNext();
                   }}
                 >
-                  {nextHold.current.m1 || nextHold.current.m2 ? `Room ${hallHold.current + 1}` : "Add room"}
+                  {destHall(doorPick()) > hallHold.current || destHall("m1") > hallHold.current || destHall("m2") > hallHold.current
+                    ? `Room ${Math.max(destHall(doorPick()), destHall("m1"), destHall("m2"))}`
+                    : "Add room"}
                 </button>
               ) : null}
               <button
@@ -6076,12 +6355,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       )}
       {phase === "time" && (
         <p className="pointer-events-none absolute inset-x-8 top-[40%] text-center font-mono text-[11px] uppercase tracking-[0.22em] text-ice/80">
-          walk length · tap 6, 10 or 15
+          walk length · tap 6 or 10
         </p>
       )}
       {!pick && phase === "time" && (
         <div className="absolute inset-x-0 bottom-[max(1.2rem,env(safe-area-inset-bottom))] z-50 flex items-end justify-center gap-6 px-4" style={{ touchAction: "manipulation" }}>
-          {([6, 10, 15] as WalkSecs[]).map((n) => (
+          {([6, 10] as WalkSecs[]).map((n) => (
             <button
               key={n}
               type="button"

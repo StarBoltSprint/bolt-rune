@@ -1,5 +1,6 @@
 import { TOUR_PLATE } from "@/game/rune";
 import { listSessions, hydrateSessions, dumpRooms, dumpRoom, takeRooms, renameSession, lastPlay, type RuneSessionMeta } from "@/game/rune-session";
+import { packCitadels } from "@/game/rooms";
 import { saveDrive, type Drive } from "@/game/rune-brain";
 import { boltFull } from "@/lib/press";
 import { sfxForge } from "@/game/audio";
@@ -35,31 +36,7 @@ export function BootScreen({ pct = 8, label = "opening", plate }: { pct?: number
 }
 
 function groupCitadels(list: RuneSessionMeta[]) {
-  const byId = new Map(list.map((s) => [s.id, s]));
-  const nested = new Set<string>();
-  const kids = new Map<string, RuneSessionMeta[]>();
-  for (const s of list) {
-    if (s.from && byId.has(s.from) && s.from !== s.id) {
-      nested.add(s.id);
-      kids.set(s.from, [...(kids.get(s.from) || []), s]);
-    }
-  }
-  const roots = list.filter((s) => !nested.has(s.id));
-  const shown = roots.length ? roots : list;
-  return shown
-    .map((root) => {
-      const rooms = [root, ...(kids.get(root.id) || [])].sort(
-        (a, b) => (a.hall || 1) - (b.hall || 1) || (a.updated || 0) - (b.updated || 0),
-      );
-      const updated = Math.max(...rooms.map((r) => r.updated || 0));
-      return {
-        root,
-        rooms,
-        updated,
-        title: (root.title || root.name || "").trim() || "Citadel",
-      };
-    })
-    .sort((a, b) => b.updated - a.updated);
+  return packCitadels(list);
 }
 
 function PathArrows({ first }: { first: "m1" | "m2" }) {
@@ -334,7 +311,7 @@ export function CitadelHub({
     window.location.assign(path);
   }
 
-  function playSession(id: string, deed: "play" | "more" | "room" = "play") {
+  function playSession(id: string, deed: "play" | "more" | "room" = "play", hall?: number) {
     sfxForge("page");
     void nav({
       to: "/rune",
@@ -349,7 +326,7 @@ export function CitadelHub({
         first: undefined,
         stills: false,
         rooms: undefined,
-        hall: undefined,
+        hall: hall && hall >= 1 ? hall : undefined,
       },
     });
   }
@@ -629,12 +606,12 @@ export function CitadelHub({
                           {r.id === p.root.id ? " · start" : ""}
                         </p>
                         <a
-                          href={`/rune?session=${encodeURIComponent(r.id)}&drive=${mode}`}
+                          href={`/rune?session=${encodeURIComponent(p.root.id)}&drive=${mode}&hall=${r.hall || i + 1}`}
                           className="font-display text-lg text-[#9ef0e4]"
                           style={{ touchAction: "manipulation" }}
                           onClick={(e) => {
                             e.preventDefault();
-                            playSession(r.id);
+                            playSession(p.root.id, "play", r.hall || i + 1);
                           }}
                         >
                           Play

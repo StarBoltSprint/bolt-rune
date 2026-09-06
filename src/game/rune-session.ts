@@ -18,7 +18,7 @@ export type RunePhase = "look" | "gate" | "refs" | "forge" | "time" | "play" | "
 
 export type CitadelStart =
   | { kind: "path"; first: "m1" | "m2"; drive: "pilot" | "engine"; rooms?: number; hall?: number; stills?: boolean; art?: string }
-  | { kind: "session"; id: string; do?: "play" | "more" | "room" | "reset"; art?: string };
+  | { kind: "session"; id: string; do?: "play" | "more" | "room" | "reset"; art?: string; hall?: number };
 
 export type RiftGate = {
   biome: string;
@@ -28,6 +28,23 @@ export type RiftGate = {
   playlist?: string[];
   trans?: string;
   art?: string;
+};
+
+export type HallSlice = {
+  n: number;
+  still: string;
+  start?: string;
+  plate?: string;
+  here?: string;
+  cameFrom?: string;
+  bank: { key: string; url: string; end: string }[];
+  refs: { id: string; name: string; src: string }[];
+  pins: RuneNode[];
+  forged?: number;
+  walkSecs?: WalkSecs;
+  rift?: { m1?: RiftGate; m2?: RiftGate };
+  via?: string;
+  next?: { m1?: number; m2?: number };
 };
 
 export type RuneSessionMeta = {
@@ -60,6 +77,7 @@ export type RuneSession = RuneSessionMeta & {
   via?: string;
   next?: { m1?: string; m2?: string };
   rift?: { m1?: RiftGate; m2?: RiftGate };
+  halls?: HallSlice[];
 };
 
 function openDb(): Promise<IDBDatabase> {
@@ -132,7 +150,7 @@ function metaOf(s: Partial<RuneSession> & RuneSessionMeta): RuneSessionMeta {
     want: s.want || 2,
     walks,
     thumb: keepUrl(s.thumb) || keepUrl(s.plate) || "/refs/hall-doors.jpg",
-    rooms: s.rooms,
+    rooms: Array.isArray(s.halls) && s.halls.length ? s.halls.length : s.rooms,
     hall: s.hall,
     from: s.from,
     via: s.via,
@@ -305,7 +323,7 @@ function readCatalog(): RuneSessionMeta[] {
 }
 
 function writeCatalog(list: RuneSessionMeta[]) {
-  const tiny = list.slice(0, 24).map((s) => ({
+  const tiny = list.slice(0, 48).map((s) => ({
     id: s.id,
     name: s.name || "Room",
     updated: s.updated || Date.now(),
@@ -382,7 +400,7 @@ export function listSessions(): RuneSessionMeta[] {
         thumb: "/refs/hall-doors.jpg",
       });
     }
-    return [...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 24);
+    return [...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 48);
   } catch {
     return [];
   }
@@ -390,14 +408,14 @@ export function listSessions(): RuneSessionMeta[] {
 
 const LAST = "bolt-last-play";
 
-export function lastPlay(): { id: string; title?: string } | null {
+export function lastPlay(): { id: string; title?: string; hall?: number } | null {
   try {
     const raw =
       (typeof localStorage !== "undefined" ? localStorage.getItem(LAST) : null) ||
       (typeof sessionStorage !== "undefined" ? sessionStorage.getItem(LAST) : null);
     if (!raw) return null;
-    const v = JSON.parse(raw) as { id?: string; title?: string };
-    return v?.id ? { id: v.id, title: v.title } : null;
+    const v = JSON.parse(raw) as { id?: string; title?: string; hall?: number };
+    return v?.id ? { id: v.id, title: v.title, hall: v.hall } : null;
   } catch {
     return null;
   }
@@ -412,9 +430,9 @@ export function roomOneId() {
   return hit.id;
 }
 
-export function stampPlay(id: string, title?: string) {
+export function stampPlay(id: string, title?: string, hall?: number) {
   if (!id) return;
-  const raw = JSON.stringify({ id, title: title || "Citadel" });
+  const raw = JSON.stringify({ id, title: title || "Citadel", hall: hall && hall >= 1 ? hall : undefined });
   try {
     localStorage.setItem(LAST, raw);
   } catch {
@@ -460,6 +478,36 @@ export function clearLivePlay() {
   }
 }
 
+function keepHalls(halls?: HallSlice[], stills = false): HallSlice[] | undefined {
+  if (!Array.isArray(halls) || !halls.length) return undefined;
+  const src = stills ? keepStill : keepUrl;
+  return halls
+    .slice(0, 8)
+    .map((h, i) => ({
+      n: Math.max(1, Math.min(8, Number(h.n) || i + 1)),
+      still: src(h.still) || src(h.plate) || src(h.start) || "",
+      start: src(h.start) || undefined,
+      plate: src(h.plate) || undefined,
+      here: h.here,
+      cameFrom: h.cameFrom,
+      bank: (h.bank || [])
+        .map((b) => ({ key: b.key, url: keepUrl(b.url), end: stills ? keepStill(b.end) || keepUrl(b.end) : keepUrl(b.end) }))
+        .filter((b) => b.key && b.url)
+        .slice(0, 24),
+      refs: (h.refs || [])
+        .map((r) => ({ ...r, src: src(r.src) }))
+        .filter((r) => r.src)
+        .slice(0, 16),
+      pins: Array.isArray(h.pins) ? h.pins.slice(0, 8) : [],
+      forged: h.forged,
+      walkSecs: h.walkSecs ? ((h.walkSecs === 6 ? 6 : 10) as WalkSecs) : undefined,
+      rift: keepRift(h.rift),
+      via: h.via,
+      next: h.next,
+    }))
+    .filter((h) => h.still || h.bank.length || h.refs.length);
+}
+
 function lightOf(session: RuneSession): RuneSession {
   return {
     ...session,
@@ -473,6 +521,7 @@ function lightOf(session: RuneSession): RuneSession {
       .map((b) => ({ key: b.key, url: keepUrl(b.url), end: keepUrl(b.end) }))
       .filter((b) => b.key && b.url),
     rift: keepRift(session.rift),
+    halls: keepHalls(session.halls),
   };
 }
 
@@ -491,6 +540,7 @@ function packOf(session: RuneSession): RuneSession {
       .map((b) => ({ key: b.key, url: keepUrl(b.url), end: keepStill(b.end) }))
       .filter((b) => b.key && b.url),
     rift: keepRift(session.rift),
+    halls: keepHalls(session.halls, true),
   };
 }
 
@@ -522,9 +572,9 @@ function readStore(): RuneSession[] {
 }
 
 function richness(s: RuneSession) {
-  const clips = (s.bank || []).filter((b) => b?.url).length;
+  const clips = (s.bank || []).filter((b) => b?.url).length + (s.halls || []).reduce((n, h) => n + (h.bank || []).filter((b) => b?.url).length, 0);
   const refs = (s.refs || []).filter((r) => r?.src).length;
-  return clips * 1000 + refs * 10 + ((s.updated || 0) % 1000);
+  return clips * 1000 + refs * 10 + (s.halls?.length || 0) * 100 + ((s.updated || 0) % 1000);
 }
 
 function pickSession(a: RuneSession, b: RuneSession): RuneSession {
@@ -564,6 +614,7 @@ export function saveSessionSync(session: RuneSession): RuneSessionMeta {
     rooms: packed.rooms || kept.rooms,
     hall: packed.hall || kept.hall,
     title: packed.title || kept.title,
+    halls: (packed.halls?.length || 0) >= (kept.halls?.length || 0) ? packed.halls : kept.halls,
     updated: Math.max(packed.updated || 0, kept.updated || 0, Date.now()),
   };
   const meta = metaOf(merged);
@@ -572,7 +623,7 @@ export function saveSessionSync(session: RuneSession): RuneSessionMeta {
   index.unshift(meta);
   writeCatalog(index);
   writeStore([merged, ...readStore().filter((s) => s.id !== session.id)]);
-  stampPlay(session.id, session.title || session.name);
+  stampPlay(session.id, session.title || session.name, merged.hall);
   return meta;
 }
 
@@ -641,20 +692,11 @@ export async function renameSession(id: string, title: string) {
 }
 
 function relinkMetas(list: RuneSessionMeta[]): RuneSessionMeta[] {
-  const rows = list.map((s) => ({ ...s }));
-  const byId = new Map(rows.map((s) => [s.id, s]));
-  for (const s of rows) {
-    if (s.from && byId.has(s.from)) continue;
-    const hall = s.hall || 1;
-    if (hall <= 1) continue;
-    const parent =
-      rows
-        .filter((p) => p.id !== s.id && (p.hall || 1) === hall - 1)
-        .sort((a, b) => Math.abs((a.updated || 0) - (s.updated || 0)) - Math.abs((b.updated || 0) - (s.updated || 0)))[0] ||
-      rows.filter((p) => p.id !== s.id && !p.from && (p.hall || 1) === 1).sort((a, b) => (b.updated || 0) - (a.updated || 0))[0];
-    if (parent) s.from = parent.id;
-  }
-  return rows;
+  const byId = new Set(list.map((s) => s.id));
+  return list.map((s) => {
+    if (s.from && !byId.has(s.from)) return { ...s, from: undefined };
+    return s;
+  });
 }
 
 function mergeMeta(list: RuneSessionMeta[]) {

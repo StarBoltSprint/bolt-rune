@@ -511,6 +511,22 @@ export function idlePrompt(extra = "") {
     .join(" ");
 }
 
+export function breathPrompt(extra = "") {
+  return [
+    CAM_LOCK,
+    BOLT_ID,
+    DOOR_LOCK,
+    ROOM_LOCK,
+    "CONTINUE this film from the last frame. Do not cut. Do not restart. Do not generate a new shot.",
+    "The wolf ARRIVES and STOPS. He DOES NOT take another step. Feet stay on the same floor tiles. Same facing (from behind).",
+    "Only micro motion: chest breathing, white fur, light already in the shot. Same pose, same scale. No cape.",
+    "Hold this settled pose so the last seconds can loop forever. No walk, no morph, no extra wolves. No text. No UI.",
+    extra,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function doorTag(n: RuneNode) {
   if (n.id === "spawn" || (Math.abs(n.x - 0.5) < 0.15 && n.y > 0.68)) {
     return "the BOTTOM CENTER of the photo, behind the dog, facing both doorways";
