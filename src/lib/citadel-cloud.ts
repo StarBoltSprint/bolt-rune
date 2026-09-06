@@ -224,88 +224,114 @@ function pack(session: RuneSession): { meta: RuneSessionMeta; body: string; sess
   };
 }
 
+async function upsertCitadel(userId: string, packed: { meta: RuneSessionMeta; body: string; session: RuneSession }): Promise<boolean> {
+  if (!packed.meta.id || packed.body.length < 8) return false;
+  let ok = false;
+  try {
+    const sql = await getSql();
+    const m = packed.meta;
+    await sql`
+      insert into citadels (user_id, id, name, updated, phase, want, walks, thumb, rooms, hall, from_id, via, title, body)
+      values (${userId}, ${m.id}, ${m.name}, ${m.updated}, ${m.phase}, ${m.want}, ${m.walks}, ${m.thumb}, ${m.rooms ?? null}, ${m.hall ?? null}, ${m.from ?? null}, ${m.via ?? null}, ${m.title ?? null}, ${packed.body})
+      on conflict (user_id, id) do update set
+        name = excluded.name,
+        updated = excluded.updated,
+        phase = excluded.phase,
+        want = excluded.want,
+        walks = excluded.walks,
+        thumb = excluded.thumb,
+        rooms = excluded.rooms,
+        hall = excluded.hall,
+        from_id = excluded.from_id,
+        via = excluded.via,
+        title = excluded.title,
+        body = excluded.body
+    `;
+    ok = true;
+  } catch {
+    /* */
+  }
+  try {
+    await writeCitadelFile(userId, packed.session);
+    ok = true;
+  } catch {
+    /* */
+  }
+  return ok;
+}
+
+async function fetchCitadel(userId: string, id: string): Promise<RuneSession | null> {
+  if (!id) return null;
+  try {
+    const sql = await getSql();
+    const rows = await sql<Row>`
+      select body from citadels
+      where id = ${id} and user_id = ${userId}
+      limit 1
+    `;
+    const raw = rows[0]?.body;
+    if (raw) {
+      const row = JSON.parse(raw) as RuneSession;
+      if (row?.id) return row;
+    }
+  } catch {
+    /* */
+  }
+  return readCitadelFile(userId, id);
+}
+
+async function fetchCitadelList(userId: string): Promise<RuneSessionMeta[]> {
+  const byId = new Map<string, RuneSessionMeta>();
+  try {
+    const sql = await getSql();
+    const rows = await sql<Row>`
+      select id, name, updated, phase, want, walks, thumb, rooms, hall, from_id, via, title
+      from citadels
+      where user_id = ${userId}
+      order by updated desc
+      limit 48
+    `;
+    for (const r of rows) {
+      if (!r.id) continue;
+      byId.set(r.id, {
+        id: r.id,
+        name: r.name,
+        updated: Number(r.updated) || 0,
+        phase: (r.phase as RuneSessionMeta["phase"]) || "play",
+        want: Number(r.want) || 2,
+        walks: Number(r.walks) || 0,
+        thumb: r.thumb || "/refs/hall-doors.jpg",
+        rooms: r.rooms ?? undefined,
+        hall: r.hall ?? undefined,
+        from: r.from_id || undefined,
+        via: r.via || undefined,
+        title: r.title || undefined,
+      });
+    }
+  } catch {
+    /* */
+  }
+  try {
+    for (const s of await listCitadelFiles(userId)) {
+      if (!s.id) continue;
+      const prev = byId.get(s.id);
+      if (!prev || (s.updated || 0) >= (prev.updated || 0)) byId.set(s.id, metaFrom(s));
+    }
+  } catch {
+    /* */
+  }
+  return [...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 48);
+}
+
 export const listCitadels = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
-  .handler(async ({ context }): Promise<RuneSessionMeta[]> => {
-    const byId = new Map<string, RuneSessionMeta>();
-    try {
-      const sql = await getSql();
-      const rows = await sql<Row>`
-        select id, name, updated, phase, want, walks, thumb, rooms, hall, from_id, via, title
-        from citadels
-        where user_id = ${context.userId}
-        order by updated desc
-        limit 48
-      `;
-      for (const r of rows) {
-        if (!r.id) continue;
-        byId.set(r.id, {
-          id: r.id,
-          name: r.name,
-          updated: Number(r.updated) || 0,
-          phase: (r.phase as RuneSessionMeta["phase"]) || "play",
-          want: Number(r.want) || 2,
-          walks: Number(r.walks) || 0,
-          thumb: r.thumb || "/refs/hall-doors.jpg",
-          rooms: r.rooms ?? undefined,
-          hall: r.hall ?? undefined,
-          from: r.from_id || undefined,
-          via: r.via || undefined,
-          title: r.title || undefined,
-        });
-      }
-    } catch {
-      /* */
-    }
-    try {
-      for (const s of await listCitadelFiles(context.userId)) {
-        if (!s.id) continue;
-        const prev = byId.get(s.id);
-        if (!prev || (s.updated || 0) >= (prev.updated || 0)) byId.set(s.id, metaFrom(s));
-      }
-    } catch {
-      /* */
-    }
-    return [...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 48);
-  });
+  .handler(async ({ context }): Promise<RuneSessionMeta[]> => fetchCitadelList(context.userId));
 
 export const putCitadel = createServerFn({ method: "POST" })
   .validator((input: { session: RuneSession }) => pack(input.session))
   .middleware([authMiddleware])
   .handler(async ({ context, data }): Promise<{ ok: boolean }> => {
-    if (!data.meta.id || data.body.length < 8) return { ok: false };
-    let ok = false;
-    try {
-      const sql = await getSql();
-      const m = data.meta;
-      await sql`
-        insert into citadels (user_id, id, name, updated, phase, want, walks, thumb, rooms, hall, from_id, via, title, body)
-        values (${context.userId}, ${m.id}, ${m.name}, ${m.updated}, ${m.phase}, ${m.want}, ${m.walks}, ${m.thumb}, ${m.rooms ?? null}, ${m.hall ?? null}, ${m.from ?? null}, ${m.via ?? null}, ${m.title ?? null}, ${data.body})
-        on conflict (user_id, id) do update set
-          name = excluded.name,
-          updated = excluded.updated,
-          phase = excluded.phase,
-          want = excluded.want,
-          walks = excluded.walks,
-          thumb = excluded.thumb,
-          rooms = excluded.rooms,
-          hall = excluded.hall,
-          from_id = excluded.from_id,
-          via = excluded.via,
-          title = excluded.title,
-          body = excluded.body
-      `;
-      ok = true;
-    } catch {
-      /* */
-    }
-    try {
-      await writeCitadelFile(context.userId, data.session);
-      ok = true;
-    } catch {
-      /* */
-    }
-    return { ok };
+    return { ok: await upsertCitadel(context.userId, data) };
   });
 
 export const getCitadel = createServerFn({ method: "GET" })
@@ -313,25 +339,7 @@ export const getCitadel = createServerFn({ method: "GET" })
     id: safeId(input?.id ?? ""),
   }))
   .middleware([authMiddleware])
-  .handler(async ({ context, data }): Promise<RuneSession | null> => {
-    if (!data.id) return null;
-    try {
-      const sql = await getSql();
-      const rows = await sql<Row>`
-        select body from citadels
-        where id = ${data.id} and user_id = ${context.userId}
-        limit 1
-      `;
-      const raw = rows[0]?.body;
-      if (raw) {
-        const row = JSON.parse(raw) as RuneSession;
-        if (row?.id) return row;
-      }
-    } catch {
-      /* */
-    }
-    return readCitadelFile(context.userId, data.id);
-  });
+  .handler(async ({ context, data }): Promise<RuneSession | null> => fetchCitadel(context.userId, data.id));
 
 export const dropCitadel = createServerFn({ method: "POST" })
   .validator((input: { id: string }) => ({
@@ -348,4 +356,39 @@ export const dropCitadel = createServerFn({ method: "POST" })
       /* */
     }
     return { ok: true };
+  });
+
+function guestOwner(guest: string) {
+  const id = safeId(guest);
+  return id ? `g-${id}` : "";
+}
+
+export const listGuestCitadels = createServerFn({ method: "GET" })
+  .validator((input: { guest: string }) => ({ guest: safeId(input?.guest ?? "") }))
+  .handler(async ({ data }): Promise<RuneSessionMeta[]> => {
+    const owner = guestOwner(data.guest);
+    if (!owner) return [];
+    return fetchCitadelList(owner);
+  });
+
+export const putGuestCitadel = createServerFn({ method: "POST" })
+  .validator((input: { guest: string; session: RuneSession }) => ({
+    guest: safeId(input?.guest ?? ""),
+    packed: pack(input.session),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    const owner = guestOwner(data.guest);
+    if (!owner) return { ok: false };
+    return { ok: await upsertCitadel(owner, data.packed) };
+  });
+
+export const getGuestCitadel = createServerFn({ method: "GET" })
+  .validator((input: { guest: string; id: string }) => ({
+    guest: safeId(input?.guest ?? ""),
+    id: safeId(input?.id ?? ""),
+  }))
+  .handler(async ({ data }): Promise<RuneSession | null> => {
+    const owner = guestOwner(data.guest);
+    if (!owner) return null;
+    return fetchCitadel(owner, data.id);
   });

@@ -1,5 +1,5 @@
 import type { RuneNode, WalkSecs } from "@/game/rune";
-import { dropCitadel, getCitadel, listCitadels, putCitadel } from "@/lib/citadel-cloud";
+import { dropCitadel, getCitadel, getGuestCitadel, listCitadels, listGuestCitadels, putCitadel, putGuestCitadel } from "@/lib/citadel-cloud";
 
 const DB = "bolt-rune-sessions";
 const TABLE = "sessions";
@@ -9,10 +9,43 @@ const STORE = "bolt-rune-store-v1";
 const MEM = "bolt-rune-mem-v1";
 const COOKIE = "bolt-rooms-v1";
 const BACKUP = "bolt-rune-backup-v1";
+const GUEST = "bolt-guest-v1";
 const VER = 1;
 
 let ram: RuneSession[] = [];
 let persistAsked = false;
+
+function guestId() {
+  if (typeof window === "undefined") return "";
+  const fromCookie = () => {
+    try {
+      const hit = document.cookie.split("; ").find((c) => c.startsWith(`${GUEST}=`));
+      if (hit) return decodeURIComponent(hit.slice(GUEST.length + 1)).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+    } catch {
+      /* */
+    }
+    return "";
+  };
+  let id = "";
+  try {
+    id = (localStorage.getItem(GUEST) || sessionStorage.getItem(GUEST) || fromCookie() || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+  } catch {
+    id = fromCookie();
+  }
+  if (!id) id = `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  try {
+    localStorage.setItem(GUEST, id);
+    sessionStorage.setItem(GUEST, id);
+  } catch {
+    /* */
+  }
+  try {
+    document.cookie = `${GUEST}=${encodeURIComponent(id)}; max-age=31536000; path=/; SameSite=Lax`;
+  } catch {
+    /* */
+  }
+  return id;
+}
 
 export type RunePhase = "look" | "gate" | "refs" | "forge" | "time" | "play" | "mark";
 
@@ -647,6 +680,12 @@ export async function saveSession(session: RuneSession): Promise<void> {
   } catch {
     /* */
   }
+  try {
+    const guest = guestId();
+    if (guest) await putGuestCitadel({ data: { guest, session: packed } });
+  } catch {
+    /* */
+  }
 }
 
 export async function loadSession(id: string): Promise<RuneSession | null> {
@@ -671,6 +710,15 @@ export async function loadSession(id: string): Promise<RuneSession | null> {
   try {
     const cloud = await getCitadel({ data: { id } });
     if (cloud?.id) found.push(cloud);
+  } catch {
+    /* */
+  }
+  try {
+    const guest = guestId();
+    if (guest) {
+      const cloud = await getGuestCitadel({ data: { guest, id } });
+      if (cloud?.id) found.push(cloud);
+    }
   } catch {
     /* */
   }
@@ -779,6 +827,15 @@ export async function hydrateSessions(onList?: (rows: RuneSessionMeta[]) => void
   try {
     const cloud = await wait(listCitadels(), 2500, [] as RuneSessionMeta[]);
     if (cloud.length) onList?.(mergeMeta(cloud));
+  } catch {
+    /* */
+  }
+  try {
+    const guest = guestId();
+    if (guest) {
+      const cloud = await wait(listGuestCitadels({ data: { guest } }), 2500, [] as RuneSessionMeta[]);
+      if (cloud.length) onList?.(mergeMeta(cloud));
+    }
   } catch {
     /* */
   }

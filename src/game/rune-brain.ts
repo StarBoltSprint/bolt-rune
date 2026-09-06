@@ -198,22 +198,37 @@ export function brainLine() {
 
 function sample(src: string): Promise<Uint8ClampedArray | null> {
   return new Promise((resolve) => {
+    if (!src) {
+      resolve(null);
+      return;
+    }
     const im = new Image();
     im.crossOrigin = "anonymous";
+    let done = false;
+    const finish = (v: Uint8ClampedArray | null) => {
+      if (done) return;
+      done = true;
+      resolve(v);
+    };
     im.onload = () => {
       const c = document.createElement("canvas");
       c.width = 48;
       c.height = 80;
       const ctx = c.getContext("2d");
       if (!ctx) {
-        resolve(null);
+        finish(null);
         return;
       }
-      ctx.drawImage(im, 0, 0, 48, 80);
-      resolve(ctx.getImageData(0, 0, 48, 80).data);
+      try {
+        ctx.drawImage(im, 0, 0, 48, 80);
+        finish(ctx.getImageData(0, 0, 48, 80).data);
+      } catch {
+        finish(null);
+      }
     };
-    im.onerror = () => resolve(null);
+    im.onerror = () => finish(null);
     im.src = src;
+    window.setTimeout(() => finish(null), 1200);
   });
 }
 

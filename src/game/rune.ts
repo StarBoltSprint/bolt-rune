@@ -1,3 +1,5 @@
+import { genePrompt } from "@/game/rune-brain";
+
 export type RuneNode = {
   id: string;
   name: string;
@@ -43,7 +45,7 @@ export const LAWS = [
   "breath is feet glued — never a walk back to spawn",
   "always two doors, never one gate",
   "hall frozen — only the dog moves",
-  "play screen is silent — hall, Bolt, doors",
+  "citadel lives in Keep — relaunch must not empty the hall",
 ] as const;
 
 export function withSpawn(pins: RuneNode[]): RuneNode[] {
@@ -373,28 +375,19 @@ export function cleanWish(raw: string) {
 
 export function seedHallPrompt(wish = "", keepHall = false) {
   const room = cleanWish(wish);
-  if (keepHall) {
-    return [
-      CAM_LOCK,
-      BOLT_ID,
-      TWO_DOORS,
-      "START IMAGE is the hall 1:1. Both doors stay CLOSED. Place that cream-ivory Swiss shepherd BOTTOM CENTER, from behind, REAL dog size. He only breathes. Last frame = first frame (loop). Copy the dog reference 1:1. No walk. No text.",
-      room ? `Room already has: ${room}.` : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-  }
   return [
     CAM_LOCK,
     AAA_LOCK,
     BOLT_ID,
     DOOR_LOCK,
     TWO_DOORS,
-    room
-      ? `START IMAGE is this 9:16 hall STYLE only: ${room}. Keep two doors LEFT and RIGHT.`
-      : "START IMAGE is the Thunderwolf sci-fi hall: teal door LEFT, gold door RIGHT, dark metal, not a church.",
+    ROOM_LOCK,
+    "START IMAGE is THIS hall photograph 1:1. Same walls, plants, doors, light, materials. FORBIDDEN: house, corridor, suburban room, white paneled doors, beige walls.",
+    keepHall || room ? `This hall already is: ${room || "the start photo"}. Do not invent a new room.` : "Thunderwolf sci-fi hall. Dark metal. Not a church. Not a house.",
     "Place that cream-ivory Swiss shepherd BOTTOM CENTER, from behind, REAL dog size. He only breathes. Last frame = first frame (loop). Copy the dog reference 1:1. No walk. No person. No text.",
-  ].join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 export function emptyHallPrompt(wish = "") {
@@ -460,12 +453,12 @@ export function placeDoorPrompt(name: string) {
 
 export function lockDoorsPrompt() {
   return [
-    "Photoreal 9:16 hall. Image 1 is the hall. Copy camera 1:1: same walls, floor, plants, light.",
-    "Image 2 is the TEAL door cutout on black. Image 3 is the GOLD door cutout on black. Ignore black pixels.",
+    "IMAGE 1 is THE hall. Copy it 1:1. Same walls, floor, plants, light, materials, door frames.",
+    "Do NOT restyle. Do NOT turn it into a house, suburban room, church, or a different citadel.",
     TWO_DOORS,
-    "Paste THAT teal door into the LEFT bay. Paste THAT gold door into the RIGHT bay. Doors, not windows. Opaque closed leaves.",
-    "FORBIDDEN: one monumental central gate. Keep a strip of wall between the two doors.",
-    "NO wolf. NO dog. Empty floor. Do not invent new door designs. No text. No UI.",
+    "CLOSE the two doors already in IMAGE 1: opaque leaves. Keep THIS hall's frames. LEFT may read teal, RIGHT gold — same architecture.",
+    "FORBIDDEN: replace the room from another photo. FORBIDDEN: one central gate.",
+    "Empty floor. No dog. No text. No UI. Photoreal 9:16.",
   ].join(" ");
 }
 
@@ -487,10 +480,10 @@ export function poseBoltPrompt(side: "LEFT" | "RIGHT") {
 
 export function placeBoltPrompt() {
   return [
-    "Image 1 is the EMPTY hall. Keep camera, walls, two CLOSED doors 1:1. Do not restyle.",
-    "Image 2 is StarBoltSprint: cream-ivory White Swiss Shepherd, amber eyes, tall pink-inside ears. Ignore the dark background.",
-    "Place THAT exact dog BOTTOM CENTER, from behind, facing the two doors, REAL dog size (not giant). Same cream fur, same ears. One dog.",
-    "Do not redraw a new dog. Do not change the hall. Photoreal 9:16. No text. No UI.",
+    "IMAGE EDIT of IMAGE 1 only. IMAGE 1 is the citadel hall photograph. Keep it 1:1: same walls, plants, doors, light, materials, camera.",
+    "FORBIDDEN: house, beige corridor, suburban room, white paneled doors, wood laminate floor. Do not replace the hall.",
+    "Add ONE cream-ivory Swiss Shepherd BOTTOM CENTER, from behind, REAL dog size, facing the two doors already in IMAGE 1.",
+    "Empty floor except the dog. No text. No UI. Photoreal 9:16.",
   ].join(" ");
 }
 
@@ -570,6 +563,7 @@ export function walkPrompt(from: RuneNode, to: RuneNode, emptyStart = false, ext
     : `Dog walks ${horiz} on the FLOOR to the ${side} CLOSED door. Eight strides. Stay in frame. Never through. Last frame: beside that ${side} door, ${look}. STOP. Do not walk back to center.`;
   return [
     CAM_LOCK,
+    genePrompt(),
     AAA_LOCK,
     BOLT_ID,
     DOOR_LOCK,

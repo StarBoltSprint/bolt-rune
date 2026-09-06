@@ -115,8 +115,18 @@ export function CitadelHub({
     setHubReady(true);
     void hydrateSessions((rows) => {
       if (rows.length) setHub(rows);
-    }).then((rows) => {
+    }).then(async (rows) => {
       if (rows.length) setHub(rows);
+      const last = lastPlay();
+      if (last?.id && !listSessions().some((s) => s.id === last.id)) {
+        try {
+          const { loadSession } = await import("@/game/rune-session");
+          const got = await loadSession(last.id);
+          if (got?.id) setHub(listSessions());
+        } catch {
+          /* */
+        }
+      }
       setHunt(false);
     });
   }, []);
@@ -283,19 +293,37 @@ export function CitadelHub({
   }
 
   const packs = groupCitadels(hub);
+  const last = typeof window !== "undefined" ? lastPlay() : null;
   const shown =
     packs.length > 0
       ? packs
-      : hub.map((s) => ({
-          root: s,
-          rooms: [s],
-          updated: s.updated || 0,
-          title: (s.title || s.name || "").trim() || "Citadel",
-        }));
-  const last = typeof window !== "undefined" ? lastPlay() : null;
-  const now = shown[0] || (last?.id
-    ? { root: { id: last.id } as RuneSessionMeta, rooms: [] as RuneSessionMeta[], updated: 0, title: last.title || "Citadel" }
-    : null);
+      : hub.length
+        ? hub.map((s) => ({
+            root: s,
+            rooms: [s],
+            updated: s.updated || 0,
+            title: (s.title || s.name || "").trim() || "Citadel",
+          }))
+        : last?.id
+          ? [
+              {
+                root: {
+                  id: last.id,
+                  name: last.title || "Citadel",
+                  title: last.title,
+                  updated: Date.now(),
+                  phase: "play" as const,
+                  want: 2,
+                  walks: 0,
+                  thumb: "",
+                },
+                rooms: [],
+                updated: Date.now(),
+                title: last.title || "Citadel",
+              },
+            ]
+          : [];
+  const now = shown[0] || null;
   const nowTitle = now?.title || "Citadel";
 
   async function saveName(id: string, raw: string) {
@@ -641,23 +669,30 @@ export function CitadelHub({
             >
               Keep all
             </button>
-            <label
-              className="relative flex min-h-11 items-center px-2 font-mono text-[10px] uppercase tracking-[0.22em] text-white/55"
+            <button
+              type="button"
+              className="min-h-11 px-3 font-mono text-[10px] uppercase tracking-[0.22em] text-white/55"
               style={{ touchAction: "manipulation" }}
+              onPointerUp={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                fileRef.current?.click();
+              }}
             >
               Load file
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".json,application/json,text/plain,*/*"
-                className="absolute inset-0 cursor-pointer opacity-0"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  e.target.value = "";
-                  if (file) void loadRooms(file);
-                }}
-              />
-            </label>
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json,application/json,text/plain"
+              className="hidden"
+              tabIndex={-1}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void loadRooms(file);
+              }}
+            />
           </div>
         </div>
       ) : null}

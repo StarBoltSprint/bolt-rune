@@ -571,7 +571,7 @@ export const grabRuneFrame = createServerFn({ method: "POST" })
         const rel = src.replace(/^\//, "");
         writeFileSync(mp4, readFileSync(join(process.cwd(), "public", rel)));
       } else {
-        const res = await fetch(src);
+        const res = await fetch(src, { signal: AbortSignal.timeout(12000) });
         if (!res.ok) return { ok: false, error: `fetch ${res.status}` };
         const buf = Buffer.from(await res.arrayBuffer());
         if (buf.length < 2000) return { ok: false, error: "tiny" };
