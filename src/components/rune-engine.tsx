@@ -7,7 +7,6 @@ import {
   clipLabel,
   compileCitadel,
   forgeQueue,
-  nearestNode,
   theaterMs,
   walkMs,
   walkPrompt,
@@ -34,6 +33,8 @@ import {
   HALL_STILL,
   isHallFilm,
   stockRoomBank,
+  stockDoorHits,
+  doorAtPoint,
   withSpawn,
   type RuneClip,
   type RuneGraph,
@@ -312,6 +313,7 @@ function filmBox(rect: DOMRect, ar: number) {
 }
 
 type DoorHit = { x: number; y: number; w: number; h: number };
+const STOCK_HITS = stockDoorHits();
 
 const doorScan = typeof document !== "undefined" ? document.createElement("canvas") : null;
 
@@ -523,6 +525,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const plateShot = useRef(false);
   const wantIdle = useRef(false);
   const liveForge = useRef(false);
+  const quietCook = useRef(false);
   const runId = useRef(0);
   const armed = useRef(false);
   const playing = useRef(false);
@@ -598,8 +601,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const [riftBloom, setRiftBloom] = useState<{ still: string; name: string; door: "m1" | "m2"; open: boolean } | null>(null);
   const [sprint, setSprint] = useState<{ film: ReturnType<typeof riftFilm>; door: "m1" | "m2"; name: string } | null>(null);
   const [hungArts, setHungArts] = useState<HungArtifact[]>(() => (typeof window === "undefined" ? [] : readArtifacts()));
-  const [doorHit, setDoorHit] = useState<{ m1: DoorHit; m2: DoorHit } | null>(null);
-  const doorHitRef = useRef<{ m1: DoorHit; m2: DoorHit } | null>(null);
+  const [doorHit, setDoorHit] = useState<{ m1: DoorHit; m2: DoorHit } | null>(() => STOCK_HITS);
+  const doorHitRef = useRef<{ m1: DoorHit; m2: DoorHit } | null>(STOCK_HITS);
+  const [picBox, setPicBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [bridge, setBridge] = useState<{ hall: string; a: string; b: string }>({ hall: "", a: "", b: "" });
   const [bridgeOn, setBridgeOn] = useState({ hall: true, a: true, b: true });
   const [enterDoor, setEnterDoor] = useState<"a" | "b">("a");
@@ -922,8 +926,36 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setDoorHit(next);
   }
 
+  function measurePic() {
+    const root = layer.current;
+    if (!root) return;
+    const rect = root.getBoundingClientRect();
+    const pic = img.current;
+    const vid = visFilm();
+    const ratio =
+      pic && pic.naturalWidth > 8
+        ? pic.naturalWidth / pic.naturalHeight
+        : vid && vid.videoWidth > 8
+          ? vid.videoWidth / vid.videoHeight
+          : 9 / 16;
+    setPicBox(filmBox(rect, ratio));
+  }
+
   useEffect(() => {
-    return;
+    if (phase !== "play") return;
+    measurePic();
+    scanDoors();
+    const onResize = () => measurePic();
+    window.addEventListener("resize", onResize);
+    const t = window.setInterval(() => {
+      measurePic();
+      scanDoors();
+    }, 900);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.clearInterval(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, filmUrl, plate, beat]);
 
   useEffect(() => {
@@ -1174,7 +1206,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   function goTo(id: string) {
     if (riftPickRef.current || riftDraftRef.current) return;
     if (entering.current) return;
-    if (phaseRef.current === "play" && (beatRef.current === "idle" || beatRef.current === "shot")) {
+    if (phaseRef.current === "play") {
+      if (playing.current || beatRef.current === "playvid" || beatRef.current === "walk") {
+        queued.current = id;
+        return;
+      }
       liveForge.current = false;
       playing.current = false;
       wrapping.current = false;
@@ -1197,7 +1233,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       beatRef.current === "cook"
     ) {
       queued.current = id;
-      setFrost(phaseRef.current === "play" ? `next` : `next · ${id}`);
+      setFrost(`next · ${id}`);
       return;
     }
     wrapping.current = false;
@@ -1242,19 +1278,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function doorAt(nx: number, ny: number): string | null {
-    if (ny < 0.12 || ny > 0.92) return null;
-    const pins = withSpawn(pinsRef.current);
-    const near = nearestNode(pins, nx, ny, 0.18);
-    if (near) return near.id;
-    const spawn = pins.find((p) => p.id === "spawn") || SPAWN;
-    if (Math.hypot(nx - spawn.x, ny - spawn.y) < 0.2) return "spawn";
-    const m1 = pins.find((p) => p.id === "m1");
-    const m2 = pins.find((p) => p.id === "m2");
-    if (m1 && m2 && ny < 0.64) {
-      const mid = (m1.x + m2.x) / 2;
-      return nx < mid ? "m1" : "m2";
-    }
-    return null;
+    return doorAtPoint(nx, ny, doorHitRef.current || STOCK_HITS, SPAWN);
   }
 
   function visFilm() {
@@ -1704,6 +1728,49 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     el.addEventListener("loadeddata", go, { once: true });
   }
 
+  function replayWalk(url: string, maxMs: number) {
+    return new Promise<void>((resolve) => {
+      const vis = visFilm();
+      if (!vis || !url) {
+        resolve();
+        return;
+      }
+      setLiving("walk", walkSecsRef.current);
+      filmLoop.current = false;
+      skipIn.current = false;
+      vis.loop = false;
+      const gen = playTok.current;
+      const mine = ++loadGen.current;
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        vis.removeEventListener("ended", done);
+        vis.removeEventListener("timeupdate", onTime);
+        window.clearTimeout(t);
+        resolve();
+      };
+      const onTime = () => {
+        if (loadGen.current !== mine || playTok.current !== gen) return;
+        const d = vis.duration;
+        if (Number.isFinite(d) && d - vis.currentTime <= 0.14) done();
+      };
+      vis.addEventListener("ended", done);
+      vis.addEventListener("timeupdate", onTime);
+      try {
+        if (vis.currentTime > 0.04) vis.currentTime = 0;
+      } catch {
+        /* */
+      }
+      void vis.play().catch(() => {});
+      setFilmUrl(url);
+      setLoopOn(false);
+      setFilmOn(true);
+      setCoverFade(true);
+      const t = window.setTimeout(done, maxMs);
+    });
+  }
+
   function holdIdle() {
     wrapping.current = false;
     playing.current = false;
@@ -1804,9 +1871,14 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     sfxForge("page");
     const nextIdle = idleFor(id, at);
     const breathUrl = nextIdle?.url && nextIdle.url !== clip.url ? nextIdle.url : null;
+    const wait = (clampWalk(walkSecsRef.current) + 4) * 1000;
+    const vis = visFilm();
+    const sameLoop = !!(vis && slotSrc(vis) === clip.url && filmHasPaint(vis));
     await Promise.race([
-      playFilm(clip.url, (clampWalk(walkSecsRef.current) + 4) * 1000, lastLive.current || plateRef.current, clip.end, true, breathUrl),
-      sleep((clampWalk(walkSecsRef.current) + 4) * 1000),
+      sameLoop
+        ? replayWalk(clip.url, wait)
+        : playFilm(clip.url, wait, lastLive.current || plateRef.current, clip.end, true, breathUrl),
+      sleep(wait),
     ]);
     if (token !== playTok.current) return;
     setPose(null);
@@ -2816,15 +2888,18 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     });
   }
 
-  async function cookFilm(still: string, prompt: string, kit: string[], label: string, secs?: 6 | 10 | 15): Promise<string | null> {
-    const tick = window.setInterval(() => {
-      setLoadPct((p) => (p >= 91 ? 91 : p + Math.floor(1 + Math.random() * 3)));
-    }, 800);
+  async function cookFilm(still: string, prompt: string, kit: string[], label: string, secs?: 6 | 10 | 15, quiet = false): Promise<string | null> {
+    const tick = quiet
+      ? 0
+      : window.setInterval(() => {
+          setLoadPct((p) => (p >= 91 ? 91 : p + Math.floor(1 + Math.random() * 3)));
+        }, 800);
     let started: { ok: true; requestId: string } | { ok: false; error: string } | null = null;
     let url: string | null = null;
+    const blocked = () => (quiet ? dead.current : !liveForge.current);
     try {
       for (let tryN = 0; tryN < 12; tryN++) {
-        if (!liveForge.current) return null;
+        if (blocked()) return null;
         try {
           started = await startRuneFilm({
             data: {
@@ -2840,20 +2915,20 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         }
         if (started.ok) break;
         if (started.error === "echo-off") {
-          setFrost("Imagine is dark");
+          if (!quiet) setFrost("Imagine is dark");
           return null;
         }
         if (started.error === "busy" || started.error === "cooldown") {
-          setFrost("Imagine busy · waiting");
+          if (!quiet) setFrost("Imagine busy · waiting");
           await sleep(5000 + tryN * 2000);
           continue;
         }
-        setFrost(started.error);
+        if (!quiet) setFrost(started.error);
         await sleep(1200);
       }
       if (started?.ok) {
         for (let p = 0; p < 140; p++) {
-          if (!liveForge.current) return null;
+          if (blocked()) return null;
           if (p) await sleep(1200);
           let polled;
           try {
@@ -2867,11 +2942,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             break;
           }
           if (polled.status === "failed") break;
-          setFrost(`Imagine is drawing ${label} · ${p + 1}`);
+          if (!quiet) setFrost(`Imagine is drawing ${label} · ${p + 1}`);
         }
       }
     } finally {
-      window.clearInterval(tick);
+      if (tick) window.clearInterval(tick);
     }
     return url;
   }
@@ -4723,6 +4798,49 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     void dropSession(id).then(() => setHub(listSessions()));
   }
 
+  /** Background Imagine recook of the 6 room clips. Never steals beat — stock stays tapable. */
+  async function cookRoomQuiet() {
+    if (quietCook.current || dead.current) return;
+    quietCook.current = true;
+    const first = pathFirst.current || "m1";
+    const walks = pathWalks(first);
+    const still = hallKeep.current || HALL_STILL;
+    const list = withSpawn(pinsRef.current);
+    try {
+      for (const w of walks) {
+        if (dead.current) return;
+        const key = `${w.from}←${w.via}→${w.to}`;
+        const have = bank.current.get(key) || bank.current.get(`${w.from}→${w.to}`);
+        if (have?.url && !isHallFilm(have.url)) continue;
+        const from = list.find((n) => n.id === w.from) ?? SPAWN;
+        const to = list.find((n) => n.id === w.to) ?? SPAWN;
+        const url = await cookFilm(
+          still,
+          walkPrompt(from, to, w.from === "spawn", [gazeLaw(to.id), brainLaws()].filter(Boolean).join(" "), false),
+          [],
+          `${w.from}→${w.to}`,
+          6,
+          true,
+        );
+        if (!url) return;
+        bank.current.set(key, { url, end: still });
+        bank.current.set(`${w.from}→${w.to}`, { url, end: still });
+        syncWalks();
+      }
+      for (const n of ["spawn", "m1", "m2"] as const) {
+        if (dead.current) return;
+        const have = bank.current.get(`idle-${n}`);
+        if (have?.url && !isHallFilm(have.url)) continue;
+        const url = await cookFilm(still, idlePrompt(gazeLaw(n)), [], `still ${n}`, 6, true);
+        if (!url) return;
+        bank.current.set(`idle-${n}`, { url, end: still });
+        syncWalks();
+      }
+    } finally {
+      quietCook.current = false;
+    }
+  }
+
   /** New citadel play: locked hall camera, living breath/walks inside that frame. */
   function enterLivingRoom(first: "m1" | "m2") {
     pathFirst.current = first;
@@ -4736,6 +4854,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     filmCapRef.current = 6;
     setPins(doors);
     pinsRef.current = doors;
+    doorHitRef.current = STOCK_HITS;
+    setDoorHit(STOCK_HITS);
     lockHall(HALL_STILL);
     hallKeep.current = HALL_STILL;
     startHold.current = HALL_STILL;
@@ -4787,10 +4907,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     markLivePlay(sid.current, SPAWN.id, HALL_STILL);
     holdIdle();
     window.setTimeout(() => {
+      measurePic();
+      scanDoors();
       if (phaseRef.current === "play" && !playing.current) holdIdle();
     }, 160);
     sfxForge("enter");
     for (const v of bank.current.values()) warmUrl(v.url);
+    void cookRoomQuiet();
   }
 
   begin.current = () => {
@@ -5624,6 +5747,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       data-shots={shots.length}
       data-forged={forged}
       data-here={here}
+      data-door-hit={doorHit ? "1" : "0"}
       data-marks={pins.length}
       data-rift={rift.m1 || rift.m2 ? "1" : "0"}
       data-pick={pick ? "1" : "0"}
@@ -5663,6 +5787,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             el.style.top = `${box.y}px`;
             el.style.width = `${box.w}px`;
             el.style.height = `${box.h}px`;
+            setPicBox(box);
+            scanDoors();
           }}
           className="pointer-events-none absolute inset-0 h-full w-full object-contain object-center"
         />
@@ -5878,42 +6004,51 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         </button>
       ) : null}
       {phase === "play" ? (
-        <div
-          className="pointer-events-none absolute left-1/2 top-1/2 z-[80] -translate-x-1/2 -translate-y-1/2"
-          style={{
-            width: "min(100%, calc(100dvh * 9 / 16))",
-            height: "min(100%, calc(100dvw * 16 / 9))",
-          }}
-        >
-          {(pins.length ? pins : [
-            { id: "m1", name: "teal", x: 0.22, y: 0.48 },
-            { id: "m2", name: "gold", x: 0.78, y: 0.48 },
-          ])
-            .filter((p) => p.id === "m1" || p.id === "m2")
-            .map((p) => (
+        <div className="pointer-events-none absolute inset-0 z-[80]" data-doors="1">
+          {(["m1", "m2"] as const).map((id) => {
+            const hit = (doorHit || STOCK_HITS)[id];
+            const layerRect = layer.current?.getBoundingClientRect();
+            const box =
+              picBox ||
+              (layerRect
+                ? filmBox(layerRect, 9 / 16)
+                : typeof window !== "undefined"
+                  ? filmBox({ width: window.innerWidth, height: window.innerHeight, left: 0, top: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON() {} }, 9 / 16)
+                  : null);
+            const left = box ? box.x + hit.x * box.w : id === "m1" ? "8%" : "54%";
+            const top = box ? box.y + hit.y * box.h : "24%";
+            const width = box ? hit.w * box.w : "38%";
+            const height = box ? hit.h * box.h : "44%";
+            return (
               <button
-                key={p.id}
+                key={id}
                 type="button"
-                aria-label={p.id}
+                aria-label={id}
+                data-door={id}
                 className="pointer-events-auto absolute"
                 style={{
-                  left: p.id === "m1" ? "0%" : "50%",
-                  top: "16%",
-                  width: "50%",
-                  height: "64%",
+                  left,
+                  top,
+                  width,
+                  height,
                   touchAction: "manipulation",
                   WebkitTapHighlightColor: "transparent",
-                  background: "transparent",
+                  background: "rgba(0,0,0,0.01)",
                 }}
                 onPointerDown={(e) => {
-                  e.stopPropagation();
+                  e.preventDefault();
+                  goTo(id);
                 }}
                 onPointerUp={(e) => {
                   e.stopPropagation();
-                  goTo(p.id);
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  goTo(id);
                 }}
               />
-            ))}
+            );
+          })}
         </div>
       ) : null}
       {phase === "play" ? null : (

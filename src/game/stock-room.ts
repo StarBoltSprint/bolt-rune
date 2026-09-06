@@ -3,6 +3,49 @@ export const HALL_STILL = "/films/citadel-tour.jpg?v=sharp";
 /** Living film inside that same locked frame (Bolt breathes; camera does not move). */
 export const HALL_LOOP = "/ui/citadel.mp4?v=aaa";
 
+export type DoorHit = { x: number; y: number; w: number; h: number };
+
+/**
+ * Picture-space portal boxes for the locked hall still / loop.
+ * Measured on citadel-tour (teal ~0.13–0.41 × 0.30–0.62, gold ~0.60–0.83 × 0.30–0.62)
+ * and padded so a finger on the octagon never falls through to spawn.
+ */
+export function stockDoorHits(): { m1: DoorHit; m2: DoorHit } {
+  return {
+    m1: { x: 0.08, y: 0.24, w: 0.38, h: 0.44 },
+    m2: { x: 0.54, y: 0.24, w: 0.38, h: 0.44 },
+  };
+}
+
+export function inDoorHit(b: DoorHit, nx: number, ny: number) {
+  return nx >= b.x && nx <= b.x + b.w && ny >= b.y && ny <= b.y + b.h;
+}
+
+/**
+ * Hit-test a picture-space point against Door A / Door B (and spawn only
+ * when the tap is clearly on Bolt, not a portal).
+ */
+export function doorAtPoint(
+  nx: number,
+  ny: number,
+  hits?: { m1: DoorHit; m2: DoorHit } | null,
+  spawn = { x: 0.5, y: 0.78 },
+): "m1" | "m2" | "spawn" | null {
+  if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return null;
+  const stock = stockDoorHits();
+  const a = inDoorHit(stock.m1, nx, ny) || (hits ? inDoorHit(hits.m1, nx, ny) : false);
+  const b = inDoorHit(stock.m2, nx, ny) || (hits ? inDoorHit(hits.m2, nx, ny) : false);
+  if (a && b) return nx < 0.5 ? "m1" : "m2";
+  if (a) return "m1";
+  if (b) return "m2";
+  if (ny >= 0.22 && ny <= 0.72) {
+    if (nx < 0.48) return "m1";
+    if (nx > 0.52) return "m2";
+  }
+  if (Math.hypot(nx - spawn.x, ny - spawn.y) < 0.12) return "spawn";
+  return null;
+}
+
 export function isHallFilm(u?: string | null) {
   if (!u) return false;
   const s = u.toLowerCase();
