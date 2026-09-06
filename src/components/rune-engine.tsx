@@ -40,6 +40,8 @@ import {
   facingOf,
   faceRow,
   standFace,
+  walkPos,
+  walkCycleCol,
   withSpawn,
   type RuneClip,
   type RuneGraph,
@@ -359,6 +361,7 @@ function drawBoltSprite(
   walking: boolean,
   now: number,
   face: ReturnType<typeof facingOf>,
+  gaitCol = 0,
 ) {
   const sheet = sheetOf("walk");
   const x = pos.x * w;
@@ -367,18 +370,18 @@ function drawBoltSprite(
   const far = 0.56;
   const depth = Math.max(0, Math.min(1, (near - pos.y) / (near - far)));
   const scale = 1 - depth * 0.42;
-  const bw = w * 0.2 * scale;
+  const bw = w * 0.16 * scale;
   const bh = bw * 1.12;
   if (sheet && sheet.naturalWidth > 8) {
     const cols = 4;
     const rows = 4;
     const row = faceRow(face);
-    const col = walking ? Math.floor(now / 110) % cols : 0;
+    const col = walking ? gaitCol % cols : 0;
     const cw = sheet.naturalWidth / cols;
     const ch = sheet.naturalHeight / rows;
     ctx.save();
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(sheet, col * cw, row * ch, cw, ch, x - bw / 2, y - bh * 0.88, bw, bh);
+    ctx.drawImage(sheet, col * cw, row * ch, cw, ch, x - bw / 2, y - bh, bw, bh);
     ctx.restore();
     return;
   }
@@ -1163,13 +1166,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     function stepWalk() {
       const moving = walk.current;
       if (!moving) return;
-      const k = Math.min(1, moving.t / moving.dur);
-      const e = 1 - (1 - k) * (1 - k);
-      bolt.current = {
-        x: moving.x0 + (moving.x1 - moving.x0) * e,
-        y: moving.y0 + (moving.y1 - moving.y0) * e,
-      };
-      if (k < 1) return;
+      const stepped = walkPos({ x: moving.x0, y: moving.y0 }, { x: moving.x1, y: moving.y1 }, moving.t, moving.dur);
+      bolt.current = { x: stepped.x, y: stepped.y };
+      if (stepped.k < 1) return;
       walk.current = null;
       setHere(moving.to);
       hereRef.current = moving.to;
@@ -1272,7 +1271,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       const list = withSpawn(pinsRef.current);
       if (ph === "play" && stockSprite.current) {
         if (walk.current || hereRef.current !== "spawn") hideBakedBolt(ctx, w, h);
-        drawBoltSprite(ctx, w, h, bolt.current, !!walk.current, now, walkFace.current);
+        const moving = walk.current;
+        const dist = moving ? Math.hypot(moving.x1 - moving.x0, moving.y1 - moving.y0) : 0;
+        const gait = moving ? walkCycleCol(walkPos({ x: moving.x0, y: moving.y0 }, { x: moving.x1, y: moving.y1 }, moving.t, moving.dur).k, dist) : 0;
+        drawBoltSprite(ctx, w, h, bolt.current, !!moving, now, walkFace.current, gait);
       } else if (beatRef.current !== "shot" && beatRef.current !== "playvid" && beatRef.current !== "cook") {
         if (ph !== "play") {
           drawGraph(ctx, w, h, list, graphRef.current, ph, nowClipRef.current, forgedRef.current, now);

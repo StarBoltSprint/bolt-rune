@@ -339,7 +339,16 @@ export function objectRefPrompt(node: RuneNode) {
 }
 
 export const CAM_LOCK =
-  "WIDE LOCKED CCTV of the WHOLE hall. Always both doors, walls, floor. Start image = the room. ZERO camera move: no zoom, pan, tilt, orbit, follow, side-profile cinematic, close-up crop. Dog walks INSIDE the frame. Camera does NOT follow him (follow-cam = artifacts only). Same lens, crop, door size every frame. FORBIDDEN: orbit, follow-cam, side cinematic that hides a door.";
+  "WIDE LOCKED CCTV of the WHOLE hall. Always both doors, walls, floor. Start image = the room. ZERO camera move: no zoom, pan, tilt, orbit, follow, side-profile cinematic, close-up crop. The dog is a SMALL figure INSIDE that locked frame — never a side-profile hero shot that fills the frame. Camera does NOT follow him (follow-cam = artifacts only). Same lens, crop, door size every frame. FORBIDDEN: orbit, follow-cam, side cinematic that hides a door.";
+
+export const HALL_SHOT =
+  "The SHOT stays the locked WHOLE hall. Both doors stay visible. The dog is a SMALL figure on the floor. FORBIDDEN as the shot: side-profile close-up, hero side view, cinematic side crop.";
+
+export const TRAVEL_FACE =
+  "While translating, NOSE and CHEST point the SAME way as the motion. Move left → face left. Move right → face right. Move toward the far wall → rear/stand. Moonwalk (move left while facing right, or move right while facing left) is REJECT.";
+
+export const GAIT_LOCK =
+  "Paws plant on the SAME floor tiles as the start still. Stride length matches how far he travels. No foot-slide, no skating, no hovering. REAL dog size, not giant."
 
 export const AAA_LOCK =
   "LOOK: Unreal 5 AAA, Nanite, Lumen, photoreal PBR. Not 2D, cartoon, anime, illustration. Skin AAA. Camera stays the wide locked hall.";
@@ -545,7 +554,9 @@ export function idlePrompt(extra = "") {
     BOLT_ID,
     DOOR_LOCK,
     ROOM_LOCK,
-    "Start image = frame 1 1:1. ZERO walk. Feet glued to those tiles. Chest breathes only. Last frame = first frame (loop). FORBIDDEN: strides, return to center, reverse, new pose, camera move. No text.",
+    HALL_SHOT,
+    GAIT_LOCK,
+    "Start image = frame 1 1:1. ZERO walk. Feet glued to those tiles. Chest breathes only. Last frame = first frame (loop). FORBIDDEN: strides, return to center, reverse, new pose, camera move, side-profile close-up. No text.",
     extra,
   ]
     .filter(Boolean)
@@ -559,7 +570,9 @@ export function breathPrompt(extra = "") {
     BOLT_ID,
     DOOR_LOCK,
     ROOM_LOCK,
-    "CONTINUE this film. He is ALREADY stopped. ZERO new steps. Feet glued. Chest only. FORBIDDEN: walk to center, reverse, new pose. Last frame = first frame. No text.",
+    HALL_SHOT,
+    GAIT_LOCK,
+    "CONTINUE this film. He is ALREADY stopped. ZERO new steps. Feet glued. Chest only. FORBIDDEN: walk to center, reverse, new pose, side-profile close-up. Last frame = first frame. No text.",
     extra,
   ]
     .filter(Boolean)
@@ -581,10 +594,13 @@ export function walkPrompt(from: RuneNode, to: RuneNode, emptyStart = false, ext
       ? "STOP. Feet glued beside the LEFT door. He then LOOKS RIGHT at the other door (A looks at B)."
       : "STOP. Feet glued beside the RIGHT door. He then LOOKS LEFT at the other door (B looks at A).";
   const land = lockHome
-    ? `Dog walks ${travel.horiz} on the FLOOR to the ${side} CLOSED door. HEAD and BODY FACE ${travel.face.toUpperCase()} — the travel direction — every walking frame. Never moonwalk. Never face the opposite way while translating. Stay in frame. Never through. Last frame = HOME still (2nd image) 1:1. ${landLook} He is BACK. No extra steps. Do not walk to center.`
-    : `Dog walks ${travel.horiz} on the FLOOR to the ${side} CLOSED door. Eight strides. HEAD and BODY FACE ${travel.face.toUpperCase()} — the travel direction — every walking frame. Never moonwalk. Never face the opposite way while translating. Stay in frame. Never through. Last frame: beside that ${side} door. ${landLook} Do not walk back to center.`;
+    ? `Dog walks ${travel.horiz} on the FLOOR to the ${side} CLOSED door, staying a SMALL figure in the locked hall. HEAD and BODY FACE ${travel.face.toUpperCase()} — the travel direction — every walking frame. Never moonwalk. Never face the opposite way while translating. Stay in frame. Never through. Last frame = HOME still (2nd image) 1:1. ${landLook} He is BACK. No extra steps. Do not walk to center.`
+    : `Dog walks ${travel.horiz} on the FLOOR to the ${side} CLOSED door, staying a SMALL figure in the locked hall. Eight planted strides. HEAD and BODY FACE ${travel.face.toUpperCase()} — the travel direction — every walking frame. Never moonwalk. Never face the opposite way while translating. Stay in frame. Never through. Last frame: beside that ${side} door. ${landLook} Do not walk back to center.`;
   return [
     CAM_LOCK,
+    HALL_SHOT,
+    TRAVEL_FACE,
+    GAIT_LOCK,
     genePrompt(),
     AAA_LOCK,
     BOLT_ID,
@@ -653,6 +669,35 @@ export function travelOf(from: RuneNode, to: RuneNode): { face: RuneFacing; hori
           ? "FORWARD toward the far wall"
           : "toward the camera";
   return { face, horiz };
+}
+
+/** True when facing fights translation (move left + face right, etc.). */
+export function isMoonwalk(face: RuneFacing, dx: number, dy: number) {
+  const travel = facingOf(dx, dy);
+  if (travel === "left") return face === "right";
+  if (travel === "right") return face === "left";
+  if (travel === "up") return face === "down";
+  return face === "up";
+}
+
+export const WALK_SHEET_COLS = 4;
+/** Picture-space distance covered by one 4-frame walk cycle. */
+export const WALK_CYCLE_DIST = 0.11;
+
+export function walkProgress(t: number, dur: number) {
+  if (dur <= 0) return 1;
+  return Math.max(0, Math.min(1, t / dur));
+}
+
+/** Linear plant — ease-out makes the cycle skate at the end. */
+export function walkPos(from: { x: number; y: number }, to: { x: number; y: number }, t: number, dur: number) {
+  const k = walkProgress(t, dur);
+  return { x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k, k };
+}
+
+export function walkCycleCol(k: number, dist: number, cols = WALK_SHEET_COLS) {
+  const cycles = Math.max(2, dist / WALK_CYCLE_DIST);
+  return Math.floor(Math.max(0, Math.min(0.999, k)) * cycles * cols) % cols;
 }
 
 export function walkMs(from: RuneNode, to: RuneNode) {

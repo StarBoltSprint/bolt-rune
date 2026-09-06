@@ -96,7 +96,7 @@ export function genePrompt(g: Gene = loadBrain().gene): string {
       ? "Same snow-white Swiss Shepherd, no cape, same doors, same stones. Zero morph. Never tan, beige, cream, ivory, grey, or saddle."
       : "Same snow-white Swiss Shepherd, no cape, same doors. No morph. Never tan.";
   const dest = g.dest > 1 ? "Last frame: he is already standing at the destination, not still walking." : "";
-  return [cam, `The dog takes at least ${g.strides} full strides across the floor, facing the travel direction.`, morph, dest].filter(Boolean).join(" ");
+  return [cam, `The dog takes at least ${g.strides} full strides across the floor, facing the travel direction. NOSE points that way every walking frame. Never moonwalk. Paws plant — no foot-slide.`, morph, dest].filter(Boolean).join(" ");
 }
 
 export function loadDrive(): Drive {
@@ -185,7 +185,7 @@ export function brainLaws(): string {
 
 export function retryLaw(grade: Grade): string {
   if (grade === "camera") return "REJECT any camera move. Architecture is welded. Only the dog translates inside the locked whole hall.";
-  if (grade === "stuck") return "The dog MUST walk. At least eight strides. Face the travel direction. Last frame is a different place than frame one.";
+  if (grade === "stuck") return "The dog MUST walk. At least eight planted strides. Face the travel direction. Never moonwalk. Last frame is a different place than frame one.";
   if (grade === "messy") return "No morph. Same snow-white dog, same doors, same hall. Only position changes. Never tan.";
   return "";
 }

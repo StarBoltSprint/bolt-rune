@@ -7,17 +7,23 @@ import {
   BOLT_FACE,
   BOLT_ID,
   CAM_LOCK,
+  GAIT_LOCK,
+  HALL_SHOT,
   SPAWN,
+  TRAVEL_FACE,
   boltKit,
   faceRow,
   facingOf,
   gazeLaw,
   idlePrompt,
+  isMoonwalk,
   placeBoltPrompt,
   poseBoltPrompt,
   seedHallPrompt,
   standFace,
   travelOf,
+  walkCycleCol,
+  walkPos,
   walkPrompt,
 } from "./rune.ts";
 import { genePrompt, retryLaw, stillLaws } from "./rune-brain.ts";
@@ -123,10 +129,14 @@ describe("Imagine prompt rails", () => {
     const still = idlePrompt(gazeLaw("m1"));
     assert.match(still, /WHOLE hall/);
     assert.match(still, /Feet glued/);
+    assert.match(still, /SMALL figure/);
+    assert.match(still, /side-profile close-up/);
     assert.match(gazeLaw("m1"), /FACE the RIGHT door/);
     assert.match(gazeLaw("m2"), /FACE the LEFT door/);
     assert.match(gazeLaw("spawn"), /rear\/stand/);
     assert.doesNotMatch(gazeLaw("m1"), /PROFILE/);
+    assert.match(HALL_SHOT, /SMALL figure/);
+    assert.match(GAIT_LOCK, /foot-slide|skating/);
   });
 
   it("walk prompts face travel, then A/B stand look — no moonwalk language", () => {
@@ -136,9 +146,13 @@ describe("Imagine prompt rails", () => {
     assert.match(ab, /RIGHT across the frame/);
     assert.match(ab, /LOOKS LEFT at the other door/);
     assert.match(ab, /Never moonwalk/);
+    assert.match(ab, /SMALL figure/);
+    assert.match(ab, /foot-slide|Paws plant/);
+    assert.match(TRAVEL_FACE, /Move left → face left/);
     assert.match(ba, /FACE LEFT/);
     assert.match(ba, /LEFT across the frame/);
     assert.match(genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 }), /facing the travel direction/);
+    assert.match(genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 }), /foot-slide/);
     assert.doesNotMatch(ab, /The wolf /);
     assert.doesNotMatch(retryLaw("stuck"), /wolf/i);
   });
@@ -202,6 +216,25 @@ describe("sprite walk facing", () => {
     assert.equal(standFace("spawn"), "up");
     assert.equal(facingOf(0.32, 0), "right");
     assert.equal(facingOf(-0.32, 0), "left");
+    assert.equal(isMoonwalk("right", -0.32, 0), true);
+    assert.equal(isMoonwalk("left", -0.32, 0), false);
+    assert.equal(isMoonwalk("left", 0.32, 0), true);
+    assert.equal(isMoonwalk("right", 0.32, 0), false);
+  });
+
+  it("walk cycle columns track translation, not a free-running clock", () => {
+    const a = { x: 0.34, y: 0.6 };
+    const b = { x: 0.66, y: 0.6 };
+    const mid = walkPos(a, b, 500, 1000);
+    assert.equal(mid.k, 0.5);
+    assert.ok(Math.abs(mid.x - 0.5) < 1e-9);
+    assert.equal(mid.y, 0.6);
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    assert.equal(walkCycleCol(0, dist), 0);
+    const early = walkCycleCol(0.2, dist);
+    const late = walkCycleCol(0.8, dist);
+    assert.notEqual(early, late);
+    assert.ok(late >= 0 && late <= 3);
   });
 });
 
