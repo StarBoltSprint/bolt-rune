@@ -99,6 +99,8 @@ describe("enter graph · hang any artefact on any door", () => {
     assert.equal(rift.m2, undefined);
     const miss = hydrateRift("cit-4", 5, {}, hung);
     assert.equal(miss.m1, undefined);
+    const otherCitadel = hydrateRift("cit-other", 4, {}, hung);
+    assert.equal(otherCitadel.m1?.art, id);
   });
 
   it("gateFromHung is a biome gate, not biome:open with a citadel still", () => {

@@ -174,9 +174,10 @@ function hallMatches(room: HungRoom, hall: number) {
   return true;
 }
 
-function citadelMatches(room: HungRoom, citadel: string) {
-  if (!room.citadel || !citadel) return true;
-  return room.citadel === citadel;
+function citadelMatches(_room: HungRoom, _citadel: string) {
+  /* Hall number is the bind. Citadel id is a hint — a new living-hall
+     session must still walk a hang on that room's door. */
+  return true;
 }
 
 /** Latest hang on a door wins. Hall number is the bind; citadel is a hint. */
