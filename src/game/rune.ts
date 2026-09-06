@@ -1,4 +1,4 @@
-import { genePrompt } from "@/game/rune-brain";
+import { genePrompt } from "./rune-brain.ts";
 
 export type RuneNode = {
   id: string;
@@ -226,7 +226,7 @@ export function otherDoor(first: "m1" | "m2"): "m1" | "m2" {
   return first === "m1" ? "m2" : "m1";
 }
 
-export { pathEntry, createPathHref } from "./path-entry";
+export { pathEntry, createPathHref } from "./path-entry.ts";
 
 export const TOUR_PLATE = "/films/citadel-tour.jpg?v=sharp";
 export {
@@ -240,7 +240,7 @@ export {
   inDoorHit,
   doorAtPoint,
   type DoorHit,
-} from "./stock-room";
+} from "./stock-room.ts";
 
 export function pct(n: number) {
   return `${Math.max(0, Math.min(100, Math.round(n * 100)))}%`;
@@ -339,7 +339,7 @@ export function objectRefPrompt(node: RuneNode) {
 }
 
 export const CAM_LOCK =
-  "WIDE LOCKED CCTV of the WHOLE hall. Always both doors, walls, floor. Start image = the room. ZERO camera move: no zoom, pan, tilt, orbit, follow. Dog walks INSIDE the frame. Camera does NOT follow him (follow-cam = artifacts only). Same lens, crop, door size every frame.";
+  "WIDE LOCKED CCTV of the WHOLE hall. Always both doors, walls, floor. Start image = the room. ZERO camera move: no zoom, pan, tilt, orbit, follow, side-profile cinematic, close-up crop. Dog walks INSIDE the frame. Camera does NOT follow him (follow-cam = artifacts only). Same lens, crop, door size every frame. FORBIDDEN: orbit, follow-cam, side cinematic that hides a door.";
 
 export const AAA_LOCK =
   "LOOK: Unreal 5 AAA, Nanite, Lumen, photoreal PBR. Not 2D, cartoon, anime, illustration. Skin AAA. Camera stays the wide locked hall.";
@@ -348,7 +348,7 @@ export const BOLT_FACE = "/refs/bolt-face.jpg";
 export const BOLT_BODY = "/refs/bolt-body.jpg";
 
 export const BOLT_ID =
-  "ONE dog only: StarBoltSprint. White Swiss Shepherd, cream-ivory fur, tall pricked ears pink inside, amber eyes, black nose, dense coat, bushy tail. REAL dog size, not giant. No cape, no wolf, no grey, no second dog. Copy the dog reference 1:1. Do not redraw.";
+  "ONE dog only: StarBoltSprint. White Swiss Shepherd / White German Shepherd. FULL solid WHITE coat — zero tan, beige, cream patches, saddle, mask, grey, or black markings. Tall pricked ears pink inside, amber eyes, black nose, dense white fur, bushy white tail. REAL dog size, not giant. No cape, no wolf, no second dog. Copy the white-coat dog 1:1. Do not redraw. Do not paint tan.";
 
 export function boltKit(extra: (string | null | undefined)[] = []) {
   const out: string[] = [];
@@ -398,7 +398,7 @@ export function seedHallPrompt(wish = "", keepHall = false) {
     ROOM_LOCK,
     "START IMAGE is THIS hall photograph 1:1. Same walls, plants, doors, light, materials. FORBIDDEN: house, corridor, suburban room, white paneled doors, beige walls.",
     keepHall || room ? `This hall already is: ${room || "the start photo"}. Do not invent a new room.` : "Thunderwolf sci-fi hall. Dark metal. Not a church. Not a house.",
-    "Place that cream-ivory Swiss shepherd BOTTOM CENTER, from behind, REAL dog size. He only breathes. Last frame = first frame (loop). Copy the dog reference 1:1. No walk. No person. No text.",
+    "Place that FULL WHITE Swiss shepherd BOTTOM CENTER, from behind, REAL dog size. Solid white coat — no tan, beige, saddle, or mask. He only breathes. Last frame = first frame (loop). Copy the dog reference 1:1. No walk. No person. No text.",
   ]
     .filter(Boolean)
     .join(" ");
@@ -445,9 +445,9 @@ export function enterHallPrompt(side: "LEFT" | "RIGHT", wish = "") {
   return [
     "PORTAL CROSS. Do NOT lock the camera for the whole clip.",
     "FRAME 1 is the START IMAGE only. Copy it 1:1 at t=0: same room, same walls, same light, same doorway, same dog pose. Do not start in a different hall. Do not jump to image 2 at t=0.",
-    "The white Swiss Shepherd is already at the " +
+    "The FULL WHITE Swiss Shepherd is already at the " +
       side +
-      " doorway of THIS room (the start image). He walks FORWARD into that same doorway, through it, one continuous walk. He never morphs. No cape. No second dog. No human.",
+      " doorway of THIS room (the start image). Solid white coat — no tan. He walks FORWARD into that same doorway, through it, one continuous walk. He never morphs. No cape. No second dog. No human.",
     "Image 2 is ONLY the destination hall, used after he crosses the threshold. After the portal, that hall is what we see. Two doors face the camera.",
     "Last frames: he stands at the BOTTOM CENTER of hall 2, back to camera, facing two CLOSED opaque doors. No view through those doors.",
     add ? `Hall 2 already contains: ${add}` : "Hall 2 matches image 2.",
@@ -480,15 +480,15 @@ export function poseBoltPrompt(side: "LEFT" | "RIGHT") {
   const door = side === "LEFT" ? "LEFT doorway already in image 1" : "RIGHT doorway already in image 1";
   const gaze =
     side === "LEFT"
-      ? "PROFILE. He LOOKS RIGHT at the other door (A looks at B). Never from behind. Never the left wall. Never spawn."
-      : "PROFILE. He LOOKS LEFT at the other door (B looks at A). Never from behind. Never the right wall. Never spawn.";
+      ? "He stands at the LEFT door and LOOKS RIGHT at the other door (A looks at B). CAMERA stays the locked whole hall — both doors stay visible. FORBIDDEN: side-profile close-up, orbit, follow."
+      : "He stands at the RIGHT door and LOOKS LEFT at the other door (B looks at A). CAMERA stays the locked whole hall — both doors stay visible. FORBIDDEN: side-profile close-up, orbit, follow.";
   return [
     "IMAGE EDIT. Image 1 is the hall photograph with both doorways and the dog. Copy camera 1:1: same crop, same walls, same floor, same two doorways.",
-    "Image 2 is StarBoltSprint, the cream-ivory Swiss shepherd cutout. Ignore the dark pixels. No cape.",
+    "Image 2 is StarBoltSprint, the FULL WHITE Swiss shepherd cutout. Ignore the dark pixels. No cape. No tan.",
     "Keep BOTH doorways identical to image 1. Do not redesign them. Do not paint them. Do not restyle the hall.",
     "Remove the dog from wherever he is in image 1. No ghost. One dog only.",
     `Place THAT exact dog standing at the ${door}, REAL dog size, feet on the SAME floor as image 1, beside the doorway, not inside it. ${gaze}`,
-    "Cream-ivory fur, amber eyes, pricked ears. Never grey. Never a wolf. No cape. No extra dogs. No text. No UI. Photoreal 9:16.",
+    "FULL WHITE coat, amber eyes, pricked ears. Never tan, beige, saddle, mask, or grey. Never a wolf. No cape. No extra dogs. No text. No UI. Photoreal 9:16.",
   ].join(" ");
 }
 
@@ -496,13 +496,13 @@ export function placeBoltPrompt() {
   return [
     "IMAGE EDIT of IMAGE 1 only. IMAGE 1 is the citadel hall photograph. Keep it 1:1: same walls, plants, doors, light, materials, camera.",
     "FORBIDDEN: house, beige corridor, suburban room, white paneled doors, wood laminate floor. Do not replace the hall.",
-    "Add ONE cream-ivory Swiss Shepherd BOTTOM CENTER, from behind, REAL dog size, facing the two doors already in IMAGE 1.",
+    "Add ONE FULL WHITE Swiss Shepherd BOTTOM CENTER, from behind, REAL dog size, facing the two doors already in IMAGE 1. Solid white coat — no tan, beige, saddle, or mask.",
     "Empty floor except the dog. No text. No UI. Photoreal 9:16.",
   ].join(" ");
 }
 
 export function boltRefPrompt() {
-  return "Isolated StarBoltSprint, White Swiss Shepherd, cream-ivory fur, amber eyes, tall pricked ears pink inside, black nose, full body, REAL dog size, on a PURE BLACK background. Only the dog. No room, no cape. Photoreal. No text.";
+  return "Isolated StarBoltSprint, White Swiss Shepherd, FULL solid WHITE coat — zero tan, beige, cream, saddle, mask, or grey. Amber eyes, tall pricked ears pink inside, black nose, full body, REAL dog size, on a PURE BLACK background. Only the dog. No room, no cape. Photoreal. No text.";
 }
 
 export function roomRefPrompt(pins: RuneNode[]) {
@@ -521,12 +521,12 @@ export function roomRefPrompt(pins: RuneNode[]) {
 }
 
 export function gazeLaw(id: string) {
-  if (id === "spawn") return "Pose: BOTTOM CENTER, from behind, facing both CLOSED doors. Feet glued.";
+  if (id === "spawn") return "Pose: BOTTOM CENTER, rear/stand, facing both CLOSED doors. Feet glued. CAMERA stays the locked whole hall.";
   if (id === "m1")
-    return "Pose: beside LEFT door, PROFILE. He LOOKS at the RIGHT door (A looks at B). Never from behind. Never the left wall. Never spawn.";
+    return "Pose: stand beside LEFT door, feet glued. Body and head FACE the RIGHT door (A looks at B). CAMERA stays locked whole-hall CCTV — both doors visible. FORBIDDEN: side-profile close-up, orbit, follow, crop that hides a door.";
   if (id === "m2")
-    return "Pose: beside RIGHT door, PROFILE. He LOOKS at the LEFT door (A). B looks at A. Never from behind. Never the right wall. Never spawn.";
-  return "Feet glued. He looks at the other door. Never spawn.";
+    return "Pose: stand beside RIGHT door, feet glued. Body and head FACE the LEFT door (B looks at A). CAMERA stays locked whole-hall CCTV — both doors visible. FORBIDDEN: side-profile close-up, orbit, follow, crop that hides a door.";
+  return "Feet glued. He looks at the other door. CAMERA stays the locked whole hall.";
 }
 
 export function idlePrompt(extra = "") {
@@ -566,15 +566,14 @@ function doorTag(n: RuneNode) {
 export function walkPrompt(from: RuneNode, to: RuneNode, emptyStart = false, extra = "", lockHome = false) {
   const side = to.x < 0.5 ? "LEFT" : "RIGHT";
   const other = side === "LEFT" ? "RIGHT" : "LEFT";
-  const horiz =
-    to.x + 0.06 < from.x ? "LEFT across the frame" : to.x > from.x + 0.06 ? "RIGHT across the frame" : "straight ahead";
-  const look =
+  const travel = travelOf(from, to);
+  const landLook =
     side === "LEFT"
-      ? "PROFILE looking RIGHT at the other door (A looks at B)"
-      : "PROFILE looking LEFT at the other door (B looks at A)";
+      ? "STOP. Feet glued beside the LEFT door. He then LOOKS RIGHT at the other door (A looks at B)."
+      : "STOP. Feet glued beside the RIGHT door. He then LOOKS LEFT at the other door (B looks at A).";
   const land = lockHome
-    ? `Dog walks ${horiz} on the FLOOR to the ${side} CLOSED door. Stay in frame. Never through. Last frame = HOME still (2nd image) 1:1, ${look}. STOP. He is BACK. No extra steps. Do not walk to center.`
-    : `Dog walks ${horiz} on the FLOOR to the ${side} CLOSED door. Eight strides. Stay in frame. Never through. Last frame: beside that ${side} door, ${look}. STOP. Do not walk back to center.`;
+    ? `Dog walks ${travel.horiz} on the FLOOR to the ${side} CLOSED door. HEAD and BODY FACE ${travel.face.toUpperCase()} — the travel direction — every walking frame. Never moonwalk. Never face the opposite way while translating. Stay in frame. Never through. Last frame = HOME still (2nd image) 1:1. ${landLook} He is BACK. No extra steps. Do not walk to center.`
+    : `Dog walks ${travel.horiz} on the FLOOR to the ${side} CLOSED door. Eight strides. HEAD and BODY FACE ${travel.face.toUpperCase()} — the travel direction — every walking frame. Never moonwalk. Never face the opposite way while translating. Stay in frame. Never through. Last frame: beside that ${side} door. ${landLook} Do not walk back to center.`;
   return [
     CAM_LOCK,
     genePrompt(),
@@ -619,6 +618,34 @@ export function facingOf(dx: number, dy: number): RuneFacing {
   return dy >= 0 ? "down" : "up";
 }
 
+/** walk.png 4×4: row 0 front/down, row 1 left, row 2 right, row 3 rear/up. */
+export function faceRow(face: RuneFacing): number {
+  if (face === "down") return 0;
+  if (face === "left") return 1;
+  if (face === "right") return 2;
+  return 3;
+}
+
+/** Door A looks at B; Door B looks at A; spawn faces both doors. */
+export function standFace(id: string): RuneFacing {
+  if (id === "m1") return "right";
+  if (id === "m2") return "left";
+  return "up";
+}
+
+export function travelOf(from: RuneNode, to: RuneNode): { face: RuneFacing; horiz: string } {
+  const face = facingOf(to.x - from.x, to.y - from.y);
+  const horiz =
+    face === "left"
+      ? "LEFT across the frame"
+      : face === "right"
+        ? "RIGHT across the frame"
+        : face === "up"
+          ? "FORWARD toward the far wall"
+          : "toward the camera";
+  return { face, horiz };
+}
+
 export function walkMs(from: RuneNode, to: RuneNode) {
   const d = Math.hypot(to.x - from.x, to.y - from.y);
   return Math.round(Math.min(2400, Math.max(520, d * 2100)));
@@ -642,7 +669,7 @@ export function citadelPrompt(wish: string) {
   return [
     "Unreal 5 AAA photoreal 9:16 still. CAMERA LOCKED on the WHOLE hall. Dog is inside the room, not a follow-cam. Not cartoon. Sci-fi citadel, never a sprint, never a church.",
     "Dark metal, black glass floor, teal and gold rift light, nebula viewport. No text, no UI, no logos, no chrome HUD.",
-    "StarBoltSprint stands in the room at REAL dog size: cream-ivory White Swiss Shepherd, amber eyes, pricked ears, no cape, never a wolf, never grey, never a second dog.",
+    "StarBoltSprint stands in the room at REAL dog size: FULL WHITE Swiss Shepherd / German Shepherd, amber eyes, pricked ears, no cape, never a wolf, never tan, never grey, never a second dog.",
     "The room has 3 to 6 clearly separated tapable objects: rift-portals, relics, consoles, forges.",
     "Same creature, same room, same light. Player room:",
     seed || "Thunderwolf Citadel sci-fi hall floating in space: teal rift-portal, gold rift-portal, nebula through a viewport.",

@@ -38,6 +38,8 @@ import {
   stockStand,
   doorAtPoint,
   facingOf,
+  faceRow,
+  standFace,
   withSpawn,
   type RuneClip,
   type RuneGraph,
@@ -347,13 +349,6 @@ function hideBakedBolt(ctx: CanvasRenderingContext2D, w: number, h: number) {
   ctx.beginPath();
   ctx.ellipse(x, h * 0.78, w * 0.36, h * 0.26, 0, 0, Math.PI * 2);
   ctx.fill();
-}
-
-function faceRow(face: ReturnType<typeof facingOf>) {
-  if (face === "down") return 0;
-  if (face === "right") return 1;
-  if (face === "left") return 2;
-  return 3;
 }
 
 function drawBoltSprite(
@@ -1179,6 +1174,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setHere(moving.to);
       hereRef.current = moving.to;
       bolt.current = { x: moving.x1, y: moving.y1 };
+      walkFace.current = standFace(moving.to);
       if (walkWait.current) {
         const done = walkWait.current;
         walkWait.current = null;
@@ -1265,6 +1261,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       const h = el!.height;
       ctx.clearRect(0, 0, w, h);
       el!.dataset.bolt = `${bolt.current.x.toFixed(3)},${bolt.current.y.toFixed(3)}`;
+      el!.dataset.face = walkFace.current;
+      const root = el!.closest("[data-rune=engine]");
+      if (root instanceof HTMLElement) root.dataset.face = walkFace.current;
       const ph = phaseRef.current;
       if (ph === "count" || ph === "refs") {
         raf.current = window.requestAnimationFrame(draw);
@@ -1869,6 +1868,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         if (walkWait.current) {
           walk.current = null;
           bolt.current = { x: dest.x, y: dest.y };
+          walkFace.current = standFace(to);
           const done = walkWait.current;
           walkWait.current = null;
           done();
@@ -1928,6 +1928,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setFrost(phaseRef.current === "play" ? "" : "tap a door");
     idleArmed.current = true;
     const idle = idleFor(hereRef.current);
+    walkFace.current = standFace(hereRef.current);
     if (isHallFilm(idle?.url) && hereRef.current !== "spawn") stockSprite.current = true;
     else if (hereRef.current === "spawn") stockSprite.current = false;
     if (idle?.url) {
@@ -2047,6 +2048,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     hereRef.current = id;
     cameFrom.current = at;
     bolt.current = { x: to.x, y: to.y };
+    walkFace.current = standFace(id);
     setLit(null);
     playing.current = false;
     idleArmed.current = true;
