@@ -4,17 +4,19 @@
  * without spinning up server functions.
  */
 
-import { SHOT_REJECT } from "./rune.ts";
+import { HALL_PROMPT_MAX, SHOT_REJECT } from "./rune.ts";
 
 export const IMAGINE_IMAGE = "grok-imagine-image-2.0";
 export const IMAGINE_VIDEO = "grok-imagine-video-1.5";
 
-/** cook.ts slices to this. Hall-cook REJECT must stay in the kept prefix. */
+/** Absolute cook.ts / Imagine cap. Hall cooks stay under HALL_PROMPT_BUDGET. */
 export const IMAGINE_PROMPT_MAX = 2200;
+/** Shipped hall video/still prompts must fit with margin under the 2200 slice. */
+export const HALL_PROMPT_BUDGET = HALL_PROMPT_MAX;
 
 /**
- * Hall cooks: put SHOT_REJECT first so the 2200 slice cannot drop it.
- * Non-hall prompts (door cutouts, sprint vault) are sliced as-is.
+ * Hall cooks: put SHOT_REJECT first so the slice cannot drop it.
+ * Non-hall prompts (door cutouts, sprint vault) keep the 2200 cap.
  */
 export function clipImaginePrompt(raw: string, max = IMAGINE_PROMPT_MAX) {
   const text = String(raw || "").replace(/\s+/g, " ").trim();
@@ -22,7 +24,7 @@ export function clipImaginePrompt(raw: string, max = IMAGINE_PROMPT_MAX) {
   const hall = /profile-hero|WHOLE hall|locked full-hall|REJECT LIST/i.test(text);
   if (!hall) return text.slice(0, max);
   const rest = text.split(SHOT_REJECT).join(" ").replace(/\s+/g, " ").trim();
-  return `${SHOT_REJECT} ${rest}`.slice(0, max);
+  return `${SHOT_REJECT} ${rest}`.slice(0, Math.min(max, HALL_PROMPT_BUDGET));
 }
 
 export function runeStillJobs(input: {

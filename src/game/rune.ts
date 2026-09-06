@@ -336,27 +336,41 @@ export function objectRefPrompt(node: RuneNode) {
   return `Photoreal close-up of the object at the ${regionName(node.x, node.y)} of a dark citadel hall. Only that object. No wolf, no text.`;
 }
 
-/** Lead every hall cook. Soft “small figure” lines were ignored — this REJECT list must be unmissable. */
+/** Shipped hall cooks must stay under this so cook.ts 2200 cannot truncate rails. */
+export const HALL_PROMPT_MAX = 2100;
+
+/** Lead every hall cook. Must stay first — cook slices video prompts at 2100. */
 export const SHOT_REJECT =
   "REJECT LIST — never output: profile close-up, profile-hero, side hero, medium shot of the dog, tracking cam, orbit, push-in, wolf morph, fox morph.";
 
+export function fitHallPrompt(...parts: (string | false | undefined)[]) {
+  const text = parts
+    .filter((p): p is string => Boolean(p))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length <= HALL_PROMPT_MAX) return text;
+  const rest = text.split(SHOT_REJECT).join(" ").replace(/\s+/g, " ").trim();
+  return `${SHOT_REJECT} ${rest}`.slice(0, HALL_PROMPT_MAX);
+}
+
 export const DOG_SCALE =
-  "SCALE: the dog is a SMALL figure in the LOWER center — never more than 20% of frame height. Both doors stay fully visible the entire clip.";
+  "Dog is a SMALL figure in the LOWER center, ≤20% frame height. Both doors visible the entire clip.";
 
 export const HALL_SHOT =
-  `${SHOT_REJECT} LEGAL SHOT ONLY: locked full-hall CCTV of the WHOLE hall. Both doors visible every frame. Dog SMALL in the LOWER center (≤20% frame height). Camera welded — never orbit, never push in, never track, never profile-hero. ${DOG_SCALE}`;
+  `${SHOT_REJECT} LEGAL SHOT: locked CCTV of the WHOLE hall. ${DOG_SCALE} Welded camera — no orbit, no push-in, no track.`;
 
 export const CAM_LOCK =
-  `${HALL_SHOT} Start image = the room. Same lens, crop, door size every frame. HALL FROZEN — only the dog moves. Both doors CLOSED (teal LEFT, gold RIGHT). ZERO camera move.`;
+  `${HALL_SHOT} Start=room 1:1. Same lens/crop. HALL FROZEN. Only the dog moves. Both doors CLOSED.`;
 
 export const TRAVEL_FACE =
-  "BODY heading (not a camera cue): while he walks, nose and chest point the travel direction. Walk left → nose left. Walk right → nose right. Walk toward the far wall → rear. Moonwalk is REJECT. Heading does not change the shot — still locked full hall, dog ≤20% height.";
+  "BODY heading ≠ shot: Walk left → nose left. Walk right → nose right. Toward far wall → rear. Moonwalk REJECT.";
 
 export const GAIT_LOCK =
-  "Paws plant on the SAME floor tiles as the start still. Stride length matches how far he travels. No foot-slide, no skating, no hovering. REAL dog size, not giant.";
+  "Paws plant. Stride = travel. No foot-slide, no skating. REAL dog size.";
 
 export const STAND_LOCK =
-  "STAND: rear / back-to-camera or 3/4-from-behind. Never a side-profile hero. Glance toward a door is allowed; reframing to a profile close-up is REJECT.";
+  "STAND: rear / back-to-camera or 3/4-from-behind. Not a profile-hero.";
 
 export const AAA_LOCK =
   "LOOK: Unreal 5 AAA, Nanite, Lumen, photoreal PBR. Not 2D, cartoon, anime, illustration. Skin AAA. Camera stays the wide locked hall.";
@@ -369,7 +383,7 @@ export const BOLT_BODY = "/refs/bolt-white.jpg";
 const TAINTED_BOLT = new Set(["/refs/bolt-face.jpg", "/refs/bolt-body.jpg", "/refs/bolt.jpg"]);
 
 export const BOLT_ID =
-  "ONE dog only: StarBoltSprint. White Swiss Shepherd (Berger Blanc Suisse) only — never a classic German Shepherd (those have tan and a black saddle). FULL solid snow-white coat — zero tan, beige, cream, ivory, sable, saddle, mask, grey, black ears, or shepherd markings. Tall pricked ears pink inside, amber eyes, black nose, dense white fur, bushy white tail. REAL dog size, not giant. No cape, no wolf, no second dog. TEXT COAT WINS: if any reference shows cream, ivory, tan, or a saddle, REPAINT the fur snow-white. Do not copy markings from a reference. Do not paint tan.";
+  "ONE dog: StarBoltSprint. White Swiss Shepherd only — never a classic German Shepherd. FULL solid snow-white coat — zero tan, beige, cream, ivory, sable, saddle, mask, grey. TEXT COAT WINS: REPAINT cream/tan/saddle snow-white. No wolf, no fox, no second dog. REAL dog size.";
 
 /** Identity still only. Drop cream side-profile / face crops so @ref cannot override the coat. */
 export function boltKit(extra: (string | null | undefined)[] = []) {
@@ -413,16 +427,14 @@ export function cleanWish(raw: string) {
 
 export function seedHallPrompt(wish = "", keepHall = false) {
   const room = cleanWish(wish);
-  return [
+  return fitHallPrompt(
     CAM_LOCK,
     STAND_LOCK,
     BOLT_ID,
-    "START IMAGE is THIS hall photograph 1:1. Same walls, plants, doors, light, materials. FORBIDDEN: house, corridor, suburban room, white paneled doors, beige walls.",
-    keepHall || room ? `This hall already is: ${room || "the start photo"}. Do not invent a new room.` : "Thunderwolf sci-fi hall. Dark metal. Not a church. Not a house.",
-    "If the start image already has the dog, keep him SMALL in the LOWER center (≤20% frame height), rear / back-to-camera, and REPAINT the coat snow-white. If the floor is empty, place the snow-white Swiss Shepherd SMALL in the LOWER center, from behind, REAL dog size. Solid white coat — no tan, beige, cream, ivory, saddle, or mask. He only breathes. Last frame = first frame (loop). TEXT COAT WINS over any reference. No walk. No person. No text.",
-  ]
-    .filter(Boolean)
-    .join(" ");
+    "START IMAGE is THIS hall 1:1. FORBIDDEN: house, corridor, suburban room, white paneled doors.",
+    keepHall || room ? `This hall already is: ${room || "the start photo"}.` : "Thunderwolf sci-fi hall. Dark metal.",
+    "Dog SMALL in LOWER center, rear / back-to-camera. REPAINT coat snow-white. Breathe only. Last=first (loop). TEXT COAT WINS. No walk. No text.",
+  );
 }
 
 export function emptyHallPrompt(wish = "") {
@@ -501,31 +513,27 @@ export function poseBoltPrompt(side: "LEFT" | "RIGHT") {
   const door = side === "LEFT" ? "LEFT doorway already in image 1" : "RIGHT doorway already in image 1";
   const gaze =
     side === "LEFT"
-      ? "SMALL figure beside the LEFT door, 3/4-from-behind, glance toward the RIGHT door (A looks at B). NOT a profile-hero."
-      : "SMALL figure beside the RIGHT door, 3/4-from-behind, glance toward the LEFT door (B looks at A). NOT a profile-hero.";
-  return [
+      ? "SMALL figure beside LEFT door, 3/4-from-behind, glance toward the RIGHT door (A looks at B)."
+      : "SMALL figure beside RIGHT door, 3/4-from-behind, glance toward the LEFT door (B looks at A).";
+  return fitHallPrompt(
     HALL_SHOT,
     STAND_LOCK,
-    "IMAGE EDIT. <IMAGE_0> is the FULL hall photograph — that crop IS the shot. Copy camera 1:1: same wide crop, same walls, same floor, same two doorways.",
-    "<IMAGE_1> is StarBoltSprint, the snow-white Swiss Shepherd cutout from behind. Ignore the dark pixels. No cape. TEXT COAT WINS — REPAINT cream/ivory/tan/saddle snow-white.",
-    "Keep BOTH doorways identical to <IMAGE_0>. Do not redesign them. Do not paint them. Do not restyle the hall. Do not zoom to the dog.",
-    "Remove the dog from wherever he is in <IMAGE_0>. No ghost. One dog only.",
-    `Paste THAT dog as a SMALL figure (≤20% frame height) at the ${door}, feet on the SAME floor as <IMAGE_0>, beside the doorway, not inside it. ${gaze}`,
-    "FULL snow-white coat, amber eyes, pricked ears. Never tan, beige, cream, ivory, sable, saddle, mask, or grey. Never a wolf. No cape. No extra dogs. No text. No UI. Photoreal 9:16.",
-  ].join(" ");
+    "IMAGE EDIT. <IMAGE_0> is the FULL hall — that crop IS the shot. Copy camera 1:1.",
+    "<IMAGE_1> is StarBoltSprint, snow-white Swiss Shepherd from behind. TEXT COAT WINS — REPAINT cream/tan/saddle snow-white.",
+    `Paste THAT dog SMALL (≤20% height) at the ${door}, same floor, not inside. ${gaze} No zoom. No ghost.`,
+    "FULL snow-white coat. Never tan, cream, saddle, or a wolf. No text. Photoreal 9:16.",
+  );
 }
 
 export function placeBoltPrompt() {
-  return [
+  return fitHallPrompt(
     HALL_SHOT,
     STAND_LOCK,
-    "IMAGE EDIT. <IMAGE_0> is the FULL hall photograph — that crop IS the shot. Keep it 1:1: same walls, plants, doors, light, materials, camera. Do not reframe, zoom, or crop to the dog.",
-    "<IMAGE_1> is StarBoltSprint, a rear / back-to-camera snow-white Swiss Shepherd sticker on black. Ignore black pixels. Paste THAT dog as a SMALL figure in the LOWER center (≤20% frame height).",
-    "Both CLOSED doors stay fully visible. He is rear / back-to-camera (or 3/4-from-behind), never a side hero, never a medium shot, never a profile-hero.",
-    "FORBIDDEN: house, beige corridor, suburban room, white paneled doors, wood laminate floor. Do not replace the hall.",
-    "TEXT COAT WINS: REPAINT any cream, ivory, tan, or saddle in the reference snow-white. FULL solid snow-white Swiss Shepherd — no tan, beige, cream, ivory, saddle, or mask. Do not invent a classic German Shepherd.",
-    "Empty floor except the tiny dog. No text. No UI. Photoreal 9:16.",
-  ].join(" ");
+    "IMAGE EDIT. <IMAGE_0> is the FULL hall — that crop IS the shot. Keep 1:1. Do not zoom to the dog.",
+    "<IMAGE_1> is StarBoltSprint, rear / back-to-camera snow-white Swiss Shepherd on black. Paste SMALL in LOWER center.",
+    "TEXT COAT WINS: REPAINT cream/tan/saddle snow-white. Never a classic German Shepherd. No tan, beige, cream, ivory, saddle, or mask.",
+    "FORBIDDEN: house, beige corridor, suburban room. Empty floor except the tiny dog. No text. Photoreal 9:16.",
+  );
 }
 
 export function boltRefPrompt() {
@@ -558,29 +566,23 @@ export function gazeLaw(id: string) {
 }
 
 export function idlePrompt(extra = "") {
-  return [
+  return fitHallPrompt(
     CAM_LOCK,
     STAND_LOCK,
-    GAIT_LOCK,
     BOLT_ID,
-    "Start image = frame 1 1:1. ZERO walk. Feet glued to those tiles. Chest breathes only. Last frame = first frame (loop). FORBIDDEN: strides, return to center, reverse, new pose, camera move. No text.",
+    "Frame 1 1:1. ZERO walk. Feet glued. Chest only. Last=first (loop). No text.",
     extra,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  );
 }
 
 export function breathPrompt(extra = "") {
-  return [
+  return fitHallPrompt(
     CAM_LOCK,
     STAND_LOCK,
-    GAIT_LOCK,
     BOLT_ID,
-    "CONTINUE this film. He is ALREADY stopped. ZERO new steps. Feet glued. Chest only. Rear or 3/4-from-behind. FORBIDDEN: walk to center, reverse, new pose. Last frame = first frame. No text.",
+    "CONTINUE. Already stopped. ZERO steps. Feet glued. Chest only. Last=first. No text.",
     extra,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  );
 }
 
 function doorTag(n: RuneNode) {
@@ -606,22 +608,18 @@ export function walkPrompt(from: RuneNode, to: RuneNode, emptyStart = false, ext
       : "STOP. SMALL figure beside the RIGHT door, 3/4-from-behind, glance toward the LEFT door (B looks at A).";
   const heading = headingLine(travel.face);
   const land = lockHome
-    ? `Dog walks ${travel.horiz} on the FLOOR as a SMALL figure (≤20% frame height) inside the locked hall. ${heading}. Never moonwalk. Stay in frame. Never through. Last frame = HOME still (2nd image) 1:1. ${landLook} He is BACK. No extra steps. Do not walk to center.`
-    : `Dog walks ${travel.horiz} on the FLOOR as a SMALL figure (≤20% frame height) inside the locked hall. Eight planted strides. ${heading}. Never moonwalk. Stay in frame. Never through. Last frame: beside that ${side} door. ${landLook} Do not walk back to center.`;
-  return [
+    ? `Walk ${travel.horiz}. SMALL figure. ${heading}. Never moonwalk. Last=HOME still 1:1. ${landLook} No walk to center.`
+    : `Walk ${travel.horiz}. SMALL figure. Eight planted strides. ${heading}. Never moonwalk. Last: ${landLook} No walk to center.`;
+  return fitHallPrompt(
     CAM_LOCK,
     TRAVEL_FACE,
     GAIT_LOCK,
     BOLT_ID,
-    emptyStart
-      ? "Frame 1 = start photo 1:1. Dog SMALL in LOWER center, rear / back-to-camera, two CLOSED doors visible."
-      : "Frame 1 = start photo 1:1. Same doors, same dog pose, same wide crop.",
-    `Start ${doorTag(from)}. Go ${doorTag(to)}. BOTH doors stay visible — do not crop away the ${other} door.`,
+    emptyStart ? "Frame 1 1:1. Dog SMALL in LOWER center, rear / back-to-camera." : "Frame 1 1:1. Same doors, same pose, same wide crop.",
+    `Start ${doorTag(from)}. Go ${doorTag(to)}. BOTH doors stay visible — do not crop the ${other} door.`,
     land,
     extra,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  );
 }
 
 export function homePoseLaw() {

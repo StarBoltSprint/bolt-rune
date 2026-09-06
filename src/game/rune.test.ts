@@ -30,7 +30,7 @@ import {
   walkPrompt,
 } from "./rune.ts";
 import { genePrompt, retryLaw, stillLaws } from "./rune-brain.ts";
-import { clipImaginePrompt, IMAGINE_PROMPT_MAX, runeFilmVariants, runeStillJobs } from "./imagine-payload.ts";
+import { clipImaginePrompt, HALL_PROMPT_BUDGET, IMAGINE_PROMPT_MAX, runeFilmVariants, runeStillJobs } from "./imagine-payload.ts";
 
 describe("stock living room", () => {
   it("isHallFilm accepts the locked hall still and living loop, not landing chrome", () => {
@@ -192,8 +192,33 @@ describe("Imagine prompt rails", () => {
     assert.match(walk, /BOTH doors stay visible/);
     const clipped = clipImaginePrompt(`${walk} ${"pad ".repeat(800)}`);
     assert.ok(clipped.startsWith("REJECT LIST"));
-    assert.ok(clipped.length <= IMAGINE_PROMPT_MAX);
+    assert.ok(clipped.length <= HALL_PROMPT_BUDGET);
+    assert.ok(HALL_PROMPT_BUDGET <= IMAGINE_PROMPT_MAX);
     for (const re of forbids) assert.match(clipped, re);
+  });
+
+  it("walk / idle / breath stay ≤ 2100 so the cook slice cannot drop rails", () => {
+    const shipped = [
+      idlePrompt(),
+      idlePrompt(gazeLaw("m1")),
+      idlePrompt([gazeLaw("m1"), stillLaws()].join(" ")),
+      breathPrompt(),
+      breathPrompt(gazeLaw("m1")),
+      walkPrompt(SPAWN, m1, true),
+      walkPrompt(SPAWN, m1, true, gazeLaw("m1")),
+      walkPrompt(m1, m2, false, gazeLaw("m2")),
+      walkPrompt(m1, m2, false, [gazeLaw("m2"), genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 })].join(" ")),
+      walkPrompt(m1, m2, false, [gazeLaw("m2"), genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 })].join(" "), true),
+      walkPrompt(m1, m2, false, `${gazeLaw("m2")} ${genePrompt({ cam: 4, strides: 16, morph: 4, dest: 3 })} ${"lesson ".repeat(80)}`, true),
+      placeBoltPrompt(),
+      seedHallPrompt(),
+    ];
+    for (const p of shipped) {
+      assert.ok(p.length <= HALL_PROMPT_BUDGET, `prompt ${p.length} > ${HALL_PROMPT_BUDGET}`);
+      assert.match(p.slice(0, 200), /REJECT LIST/);
+      assert.match(p.slice(0, 400), /profile-hero/);
+      assert.match(p.slice(0, 900), /snow-white|Swiss Shepherd/);
+    }
   });
 
   it("create path look → Forge contract is unchanged", () => {

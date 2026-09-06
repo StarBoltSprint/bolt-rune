@@ -89,14 +89,14 @@ function evolve(g: Gene, grade: Grade): Gene {
 export function genePrompt(g: Gene = loadBrain().gene): string {
   const cam =
     g.cam >= 3
-      ? "TRIPOD WELDED. Pillars, door arches and floor vanishing point match the start image pixel-for-pixel. Zero camera move. Dog stays ≤20% height — no profile-hero."
-      : "LOCKED TRIPOD. Same framing as the start image. Architecture does not move. Dog stays ≤20% height — no profile-hero.";
+      ? "TRIPOD WELDED. Same arches/vanishing point. Zero camera move. Dog ≤20% height — no profile-hero."
+      : "LOCKED TRIPOD. Same framing. Dog ≤20% height — no profile-hero.";
   const morph =
     g.morph >= 2
-      ? "Same snow-white Swiss Shepherd, no cape, same doors, same stones. Zero morph. Never tan, beige, cream, ivory, grey, or saddle."
-      : "Same snow-white Swiss Shepherd, no cape, same doors. No morph. Never tan.";
-  const dest = g.dest > 1 ? "Last frame: he is already standing at the destination, not still walking." : "";
-  return [cam, `The dog takes at least ${g.strides} full strides across the floor as a SMALL figure. Body heading follows travel (nose points that way) — this is NOT a profile-hero. Never moonwalk. Paws plant — no foot-slide.`, morph, dest].filter(Boolean).join(" ");
+      ? "Same snow-white Swiss Shepherd, same doors. Zero morph. Never tan or saddle."
+      : "Same snow-white Swiss Shepherd. No morph. Never tan.";
+  const dest = g.dest > 1 ? "Last frame: already at the destination." : "";
+  return [cam, `At least ${g.strides} planted strides. Body heading follows travel. Never moonwalk. Paws plant — no foot-slide.`, morph, dest].filter(Boolean).join(" ");
 }
 
 export function loadDrive(): Drive {
@@ -165,7 +165,7 @@ export function digest(grade: Grade) {
 
 export function stillLaws(): string {
   const b = loadBrain();
-  const bits = ["No walking. No strides. The dog stays on the same floor tiles. Feet glued. SMALL figure, rear or 3/4-from-behind — no profile-hero. FULL snow-white coat — no tan, beige, cream, ivory, saddle, or mask."];
+  const bits = ["No walking. Feet glued. SMALL figure, rear or 3/4-from-behind — no profile-hero. FULL snow-white coat — no tan, beige, cream, ivory, saddle, or mask."];
   if (b.camera >= 2) bits.push("Pillars, floor vanishing point and door arches match the start image pixel-for-pixel.");
   if (b.messy >= 2) bits.push("Do not morph the dog or the doors. Same snow-white Swiss Shepherd, no cape, no tan, same stone.");
   return bits.join(" ");
@@ -184,9 +184,9 @@ export function brainLaws(): string {
 }
 
 export function retryLaw(grade: Grade): string {
-  if (grade === "camera") return "REJECT any camera move, profile-hero, orbit, or push-in. Architecture is welded. Only the dog translates as a SMALL figure inside the locked whole hall.";
-  if (grade === "stuck") return "The dog MUST walk. At least eight planted strides. Face the travel direction. Never moonwalk. Last frame is a different place than frame one.";
-  if (grade === "messy") return "No morph. Same snow-white dog, same doors, same hall. Only position changes. Never tan.";
+  if (grade === "camera") return "REJECT camera move, profile-hero, orbit, push-in. Only the dog translates in the locked hall.";
+  if (grade === "stuck") return "MUST walk. Eight planted strides. Heading = travel. Never moonwalk. Last frame ≠ frame one.";
+  if (grade === "messy") return "No morph. Same snow-white dog, same doors. Never tan.";
   return "";
 }
 
