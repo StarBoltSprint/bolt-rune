@@ -383,6 +383,69 @@ export const startRuneFilm = createServerFn({ method: "POST" })
     }
   });
 
+export const startRuneExtend = createServerFn({ method: "POST" })
+  .validator((input: { video: string; prompt: string; duration: 6 | 10 | 15 }) => input)
+  .handler(async ({ data }): Promise<StartOk | StartErr> => {
+    const headers = auth();
+    if (!headers) return { ok: false, error: "echo-off" };
+    const video = String(data.video || "").slice(0, 2000);
+    if (!/^https:\/\//i.test(video)) return { ok: false, error: "no-extend" };
+    if (/\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(video)) return { ok: false, error: "no-extend" };
+    const now = Date.now();
+    if (inflight > 0 && now - lastStart > STALE_MS) inflight = 0;
+    if (inflight > 0) return { ok: false, error: "busy" };
+    if (now - lastStart < MIN_GAP_MS) return { ok: false, error: "cooldown" };
+    inflight += 1;
+    lastStart = now;
+    const duration = data.duration === 10 ? 10 : 6;
+    const rawPrompt = data.prompt.trim();
+    const already = /STATIC CCTV|LOCKED-OFF|CAMERA LOCK|PORTAL CROSS/i.test(rawPrompt);
+    const prompt = (already ? rawPrompt : `${CAM_LOCK} ${rawPrompt}`).slice(0, 4000);
+    const variants: Record<string, unknown>[] = [
+      {
+        model: "grok-imagine-video-1.5",
+        prompt,
+        duration,
+        video: { url: video },
+        storage_options: keepStore(`bolt-${Date.now().toString(36)}.mp4`),
+      },
+      {
+        model: "grok-imagine-video-1.5",
+        prompt,
+        duration,
+        video: { url: video },
+      },
+      {
+        model: "grok-imagine-video",
+        prompt,
+        duration,
+        video: { url: video },
+      },
+    ];
+    try {
+      let last = "";
+      for (const body of variants) {
+        const res = await fetch(`${API}/videos/extensions`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(45000),
+        });
+        const raw = await res.text();
+        last = raw;
+        if (!res.ok) continue;
+        const parsed = JSON.parse(raw) as { request_id?: string; id?: string };
+        const requestId = parsed.request_id || parsed.id;
+        if (requestId) return { ok: true, requestId };
+      }
+      inflight = Math.max(0, inflight - 1);
+      return { ok: false, error: clipStillErr(last) };
+    } catch {
+      inflight = Math.max(0, inflight - 1);
+      return { ok: false, error: "net" };
+    }
+  });
+
 function resolveRuneStill(still: string) {
   if (still.startsWith("data:") || still.startsWith("http://") || still.startsWith("https://")) return still;
   const rel = still.replace(/^\//, "");

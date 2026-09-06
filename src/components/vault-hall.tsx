@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { dropClipAt, dropRoom, familiesOf, familyHead, filmOf, hangOnRoom, lastClip, mergeHall, readArtifacts, setPlaylist, uniqueClips, ROOM_ONE_STILL, type HungArtifact } from "@/game/artifacts";
 import { continuePrompt, readClipSpec, shiftPrompt, SHIFTS } from "@/game/cook";
 import { ClipSpecBar } from "@/components/clip-spec";
-import { grabRuneFrame, pollCookPlate, startRuneFilm } from "@/lib/cook";
+import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/lib/cook";
 import { hangHall, listHall } from "@/lib/hall";
 import { listSessions } from "@/game/rune-session";
 import { HallMark } from "@/components/hall-mark";
@@ -144,22 +144,33 @@ export function VaultHall() {
       const family = uniqueClips(live.playlist || []);
       const at = family.length - 1;
       const clip = family[at] || lastClip(live);
+      let extendUrl =
+        !dest && clip && /^https:\/\//i.test(clip) && !/\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(clip) ? clip : "";
       let still = a.still;
-      if (clip) {
+      async function grabEnd() {
+        if (!clip) return;
         bump(4, 18, "Grabbing the last frame");
         try {
           const grab = await Promise.race([
             grabRuneFrame({ data: { url: clip, at: "end", res: spec.res } }),
             new Promise<null>((r) => window.setTimeout(() => r(null), 14000)),
           ]);
-          if (abort.current) return;
           if (grab?.ok) still = grab.url;
         } catch {
           /* keep still */
         }
       }
+      if (!extendUrl && clip) await grabEnd();
       if (abort.current) return;
-      bump(12, 28, dest ? `Imagine shifts · ${spec.secs}s ${spec.res}p` : `Imagine continues · ${spec.secs}s ${spec.res}p`);
+      bump(
+        12,
+        28,
+        dest
+          ? `Imagine shifts · ${spec.secs}s ${spec.res}p`
+          : extendUrl
+            ? `Imagine continues the film · ${spec.secs === 10 ? 10 : 6}s`
+            : `Imagine continues · ${spec.secs}s ${spec.res}p`,
+      );
       const prompt = dest
         ? shiftPrompt(a.prompt || a.name, dest, spec.secs, family.length + 1)
         : continuePrompt(a.prompt || a.name, spec.secs, family.length + 1);
@@ -168,14 +179,22 @@ export function VaultHall() {
         if (abort.current) return;
         try {
           started = await Promise.race([
-            startRuneFilm({
-              data: {
-                still,
-                prompt,
-                duration: spec.secs,
-                res: spec.res,
-              },
-            }),
+            extendUrl
+              ? startRuneExtend({
+                  data: {
+                    video: extendUrl,
+                    prompt,
+                    duration: spec.secs,
+                  },
+                })
+              : startRuneFilm({
+                  data: {
+                    still,
+                    prompt,
+                    duration: spec.secs,
+                    res: spec.res,
+                  },
+                }),
             new Promise<{ ok: false; error: string }>((r) => window.setTimeout(() => r({ ok: false, error: "timeout" }), 55000)),
           ]);
         } catch (err) {
@@ -191,6 +210,13 @@ export function VaultHall() {
           await sleep(6000 + t * 1500);
           continue;
         }
+        if (extendUrl) {
+          extendUrl = "";
+          await grabEnd();
+          if (abort.current) return;
+          bump(12, 28, `Imagine continues · ${spec.secs}s ${spec.res}p`);
+          continue;
+        }
         bump(Math.max(12, pace.n), pace.n, started.error);
         await sleep(1600);
       }
@@ -199,7 +225,8 @@ export function VaultHall() {
         bump(36, 36, "Imagine busy · Cancel, then Continue again");
         return;
       }
-      bump(32, 99, "Imagine is forging clip " + (at + 2));
+      const stretching = Boolean(extendUrl);
+      bump(32, 99, stretching ? "Imagine continues the film" : "Imagine is forging clip " + (at + 2));
       const t0 = Date.now();
       const expect = spec.secs * (spec.res === "1080" ? 9000 : 4500);
       for (let p = 0; p < 200; p++) {
@@ -214,13 +241,13 @@ export function VaultHall() {
         }
         if (!polled.ok) continue;
         const timePct = 32 + Math.min(67, Math.round(((Date.now() - t0) / expect) * 67));
-        const live = Math.max(pace.n, polled.pct ?? timePct);
-        pace.n = Math.min(99, live);
+        const livePct = Math.max(pace.n, polled.pct ?? timePct);
+        pace.n = Math.min(99, livePct);
         setPct(pace.n);
         if (polled.frame) setFrameHint(polled.frame);
-        setFrost(polled.frame ? `frame ${polled.frame}` : `Imagine is forging clip ${at + 2}`);
+        setFrost(polled.frame ? `frame ${polled.frame}` : stretching ? "Imagine continues the film" : `Imagine is forging clip ${at + 2}`);
         if (polled.status === "done" && polled.url) {
-          const chain = uniqueClips([...family, polled.url]);
+          const chain = uniqueClips(stretching ? [...family.slice(0, Math.max(0, family.length - 1)), polled.url] : [...family, polled.url]);
           const next = setPlaylist(
             a.id,
             chain,
@@ -243,7 +270,7 @@ export function VaultHall() {
           pace.n = 100;
           setPct(100);
           setFrameHint("");
-          setFrost(`Clip ${at + 2} hung · ${spec.secs}s MP4`);
+          setFrost(stretching ? "same film · continued" : `Clip ${at + 2} hung · ${spec.secs}s MP4`);
           return;
         }
         if (polled.status === "failed") {
