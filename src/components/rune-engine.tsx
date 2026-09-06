@@ -331,12 +331,13 @@ function sheetOf(kind: "walk" | "idle") {
 function hideBakedBolt(ctx: CanvasRenderingContext2D, w: number, h: number) {
   const x = SPAWN.x * w;
   const y = SPAWN.y * h;
-  const g = ctx.createRadialGradient(x, y, w * 0.02, x, y, w * 0.16);
-  g.addColorStop(0, "rgba(6,8,12,0.92)");
-  g.addColorStop(1, "rgba(6,8,12,0)");
+  const g = ctx.createRadialGradient(x, y - h * 0.04, w * 0.03, x, y - h * 0.02, w * 0.2);
+  g.addColorStop(0, "rgba(5,7,10,0.96)");
+  g.addColorStop(0.55, "rgba(5,7,10,0.72)");
+  g.addColorStop(1, "rgba(5,7,10,0)");
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.ellipse(x, y - h * 0.02, w * 0.16, h * 0.11, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, y - h * 0.03, w * 0.2, h * 0.14, 0, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -505,7 +506,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const [want, setWant] = useState(2);
   const [filmCap, setFilmCap] = useState(3);
   const [pins, setPins] = useState<RuneNode[]>([]);
-  const [phase, setPhase] = useState<Phase>(hangArt.current || boot?.kind === "session" ? "play" : boot?.kind === "path" ? "look" : "count");
+  const [phase, setPhase] = useState<Phase>(
+    hangArt.current || boot?.kind === "session" || boot?.kind === "path" ? "play" : "count",
+  );
   const [walkSecs, setWalkSecs] = useState<WalkSecs>(10);
   const [graph, setGraph] = useState<RuneGraph | null>(null);
   const [here, setHere] = useState(SPAWN.id);
@@ -1269,7 +1272,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       ro.disconnect();
       window.cancelAnimationFrame(raf.current);
     };
-  }, []);
+    // Restart when play mounts the canvas (path boot used to first-paint look).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase === "play"]);
 
   function goTo(id: string) {
     if (riftPickRef.current || riftDraftRef.current) return;

@@ -114,6 +114,7 @@ async function runViewport(browser, vp) {
         throw new Error(`${vp.name}: Door A tap did not reach playvid ${JSON.stringify({ tapA, walkA, again })}`);
       }
     }
+    await page.waitForTimeout(480);
     await page.screenshot({ path: `${OUT}/${vp.name}-hall-walk-a.png`, fullPage: false });
     const afterA = await waitBeat(page, "idle", 8000);
     if (afterA.here !== "m1") {
@@ -133,6 +134,7 @@ async function runViewport(browser, vp) {
         throw new Error(`${vp.name}: Door B tap did not reach playvid ${JSON.stringify({ tapB, walkB, again })}`);
       }
     }
+    await page.waitForTimeout(480);
     await page.screenshot({ path: `${OUT}/${vp.name}-hall-walk-b.png`, fullPage: false });
     const afterB = await waitBeat(page, "idle", 8000);
     if (afterB.here !== "m2") {
