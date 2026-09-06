@@ -48,7 +48,7 @@ import {
   type RuneNode,
   type WalkSecs,
 } from "@/game/rune";
-import { biomeBotStart, lookForgeStart, lookHallLocked } from "@/game/path-entry";
+import { biomeBotStart, lookForgeStart, lookForgeWalkStyle, lookHallLocked } from "@/game/path-entry";
 import { freeRuneSlot, grabRuneFrame, pollCookPlate, startCookStill, startRuneExtend, startRuneFilm, startRuneStill, cacheClip, cacheStill } from "@/lib/cook";
 import { COOK_BUSY_FROST, COOK_BUSY_WAIT_MS, COOK_START_ACCEPTED_PCT, cookBusyNext, isCookSlotBlock } from "@/lib/cook-busy";
 import { BIOMES, biomePlaylist, riftFilm, riftPrompt, type BiomeId } from "@/game/cook";
@@ -643,8 +643,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   lookPackRef.current = lookPack;
   const lookHall = useRef<string | null>(null);
   const worldHold = useRef("");
-  const [forgePack, setForgePack] = useState<"live" | "sealed">("live");
+  const [forgePack, setForgePack] = useState<"live" | "sealed" | "hall">("live");
   const [forgeWish, setForgeWish] = useState("");
+  const hallStyleOnly = useRef(false);
   const [lookRes, setLookRes] = useState<"720" | "1080">("720");
   const lookResRef = useRef<"720" | "1080">("720");
   lookResRef.current = lookRes;
@@ -3447,7 +3448,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setFrost(`video ${i + 1}/${walks.length} · ${clip.from} → ${clip.to}`);
       sfxForge("cook");
       const label = `${clip.from} → ${clip.to}`;
-      const style = cleanWish(worldHold.current);
+      const style = lookForgeWalkStyle(hallStyleOnly.current ? "bot" : "start", cleanWish(worldHold.current));
       const extra = [style ? `Hall style from the still: ${style}.` : "", gazeLaw(to.id), brainLaws()].filter(Boolean).join(" ");
       let prompt = walkPrompt(from, to, clip.via === "start", extra, Boolean(home));
       let url = await cookFilm(fromStill, prompt, kit, label);
@@ -3967,16 +3968,19 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
   }
 
-  function startRefs(keepSid = false, pack: "live" | "sealed" = "live") {
+  function startRefs(keepSid = false, pack: "live" | "sealed" | "hall" = "live") {
     runId.current += 1;
     dead.current = false;
     cooking.current = false;
     liveForge.current = true;
+    hallStyleOnly.current = pack === "hall";
     void freeRuneSlot({ data: {} }).catch(() => {});
     if (pack === "sealed") {
       lookPackRef.current = [];
       setLookPack([]);
       lookHall.current = null;
+      enterHold.current = { hall: "", a: "", b: "", pick: enterDoorRef.current };
+    } else if (pack === "hall") {
       enterHold.current = { hall: "", a: "", b: "", pick: enterDoorRef.current };
     } else {
       enterHold.current = {
@@ -5909,7 +5913,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           <button
             type="button"
             data-forge={botForge.dataForge}
-            data-forge-pack={botForge.sealed ? "sealed" : "live"}
+            data-forge-pack={botForge.pack}
             className="flex h-12 w-full max-w-xs items-center justify-center font-display text-2xl text-[#9ef0e4] drop-shadow-[0_0_18px_rgba(158,240,228,0.4)]"
             style={{ touchAction: "manipulation" }}
             onPointerUp={() => {
@@ -5923,7 +5927,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
                 startRefs(false, "sealed");
                 return;
               }
-              startRefs(false, "live");
+              startRefs(false, "hall");
             }}
           >
             Grok Bot Forge

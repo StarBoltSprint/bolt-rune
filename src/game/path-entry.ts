@@ -10,8 +10,13 @@ export function createPathHref(first: "m1" | "m2", q = "drive=engine&rooms=1&hal
   return href;
 }
 
-/** Human Forge keeps the live look pack. Bot forge seals DEFAULT HALL unless a hall is LOCKed. */
+/**
+ * Human Forge keeps the live look pack (hall + walks).
+ * Bot custom is look-screen hall STYLE only (style → LOCK, mic, image).
+ * Graph + walk/breath stay engine. Unlocked bot = sealed DEFAULT HALL.
+ */
 export type LookForgeKind = "start" | "bot";
+export type LookForgePack = "live" | "sealed" | "hall";
 
 export type LookHallLock = {
   style?: string | null;
@@ -21,7 +26,7 @@ export type LookHallLock = {
 
 const BRIDGE_PACK = new Set(["same-hall", "door-a", "door-b"]);
 
-/** LOCK / custom still / voice / look-pack extras. CLEAR or empty → unlocked. */
+/** Look-screen style → LOCK (text / voice / image still). CLEAR or empty → unlocked. */
 export function lookHallLocked(lock?: LookHallLock | null): boolean {
   if (!lock) return false;
   if (String(lock.style || "").trim()) return true;
@@ -29,9 +34,20 @@ export function lookHallLocked(lock?: LookHallLock | null): boolean {
   return (lock.pack || []).some((p) => p?.src && !BRIDGE_PACK.has(p.id));
 }
 
-export function lookForgeStart(kind: LookForgeKind, lock?: LookHallLock | null): { dataForge: LookForgeKind; sealed: boolean } {
-  if (kind !== "bot") return { dataForge: "start", sealed: false };
-  return { dataForge: "bot", sealed: !lookHallLocked(lock) };
+/** Bot never rewrites walk/breath extras. Human live pack may carry hall style. */
+export function lookForgeWalkStyle(kind: LookForgeKind, style?: string | null): string {
+  if (kind === "bot") return "";
+  return String(style || "").trim();
+}
+
+export function lookForgeStart(
+  kind: LookForgeKind,
+  lock?: LookHallLock | null,
+): { dataForge: LookForgeKind; sealed: boolean; pack: LookForgePack } {
+  if (kind !== "bot") return { dataForge: "start", sealed: false, pack: "live" };
+  return lookHallLocked(lock)
+    ? { dataForge: "bot", sealed: false, pack: "hall" }
+    : { dataForge: "bot", sealed: true, pack: "sealed" };
 }
 
 /** Sealed biome cook — no OS filechooser. Mirrors lookForgeStart("bot"). */

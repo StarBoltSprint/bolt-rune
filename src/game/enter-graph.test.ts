@@ -138,7 +138,7 @@ describe("enter graph · hang any artefact on any door", () => {
   });
 
   it("bot biome / vault hang hooks stay sealed like Grok Bot Forge", () => {
-    assert.deepEqual(lookForgeStart("bot"), { dataForge: "bot", sealed: true });
+    assert.deepEqual(lookForgeStart("bot"), { dataForge: "bot", sealed: true, pack: "sealed" });
     assert.deepEqual(biomeBotStart(), { dataBiome: "bot", sealed: true });
     assert.deepEqual(vaultHangStart("bot"), { dataHang: "bot", sealed: true });
     assert.deepEqual(vaultHangStart("A"), { dataHang: "A", sealed: false });

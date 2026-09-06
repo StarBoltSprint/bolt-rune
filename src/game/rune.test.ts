@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HALL_LOOP, HALL_STILL, doorAtPoint, isHallFilm, stockDoorHits, stockRoomBank, stockStand } from "./stock-room.ts";
-import { biomeBotStart, createPathHref, lookForgeStart, lookHallLocked, pathEntry, vaultHangStart } from "./path-entry.ts";
+import { biomeBotStart, createPathHref, lookForgeStart, lookForgeWalkStyle, lookHallLocked, pathEntry, vaultHangStart } from "./path-entry.ts";
 import {
   BOLT_BODY,
   BOLT_FACE,
@@ -227,8 +227,8 @@ describe("Imagine prompt rails", () => {
   it("create path look → Forge contract is unchanged", () => {
     assert.equal(pathEntry(undefined), "look");
     assert.ok(!createPathHref("m1").includes("stills="));
-    assert.deepEqual(lookForgeStart("start"), { dataForge: "start", sealed: false });
-    assert.deepEqual(lookForgeStart("bot"), { dataForge: "bot", sealed: true });
+    assert.deepEqual(lookForgeStart("start"), { dataForge: "start", sealed: false, pack: "live" });
+    assert.deepEqual(lookForgeStart("bot"), { dataForge: "bot", sealed: true, pack: "sealed" });
     assert.deepEqual(biomeBotStart(), { dataBiome: "bot", sealed: true });
     assert.deepEqual(vaultHangStart("bot"), { dataHang: "bot", sealed: true });
     assert.deepEqual(vaultHangStart("A"), { dataHang: "A", sealed: false });
@@ -244,29 +244,33 @@ describe("Imagine prompt rails", () => {
     assert.equal(lookHallLocked({ style: "crystal ferns" }), true);
     assert.equal(lookHallLocked({ still: "blob:hall" }), true);
     assert.equal(lookHallLocked({ pack: [{ id: "pic-1", src: "blob:custom" }] }), true);
-    assert.deepEqual(lookForgeStart("bot"), { dataForge: "bot", sealed: true });
-    assert.deepEqual(lookForgeStart("bot", {}), { dataForge: "bot", sealed: true });
-    assert.deepEqual(lookForgeStart("bot", { style: "crystal ferns" }), { dataForge: "bot", sealed: false });
-    assert.deepEqual(lookForgeStart("bot", { still: "blob:locked-hall" }), { dataForge: "bot", sealed: false });
-    assert.deepEqual(lookForgeStart("bot", { pack: [{ id: "pic-1", src: "blob:custom" }] }), { dataForge: "bot", sealed: false });
-    assert.deepEqual(lookForgeStart("bot", { pack: [{ id: "same-hall", src: "x" }] }), { dataForge: "bot", sealed: true });
-    assert.deepEqual(lookForgeStart("start", { style: "crystal ferns" }), { dataForge: "start", sealed: false });
+    assert.deepEqual(lookForgeStart("bot"), { dataForge: "bot", sealed: true, pack: "sealed" });
+    assert.deepEqual(lookForgeStart("bot", {}), { dataForge: "bot", sealed: true, pack: "sealed" });
+    assert.deepEqual(lookForgeStart("bot", { style: "crystal ferns" }), { dataForge: "bot", sealed: false, pack: "hall" });
+    assert.deepEqual(lookForgeStart("bot", { still: "blob:locked-hall" }), { dataForge: "bot", sealed: false, pack: "hall" });
+    assert.deepEqual(lookForgeStart("bot", { pack: [{ id: "pic-1", src: "blob:custom" }] }), { dataForge: "bot", sealed: false, pack: "hall" });
+    assert.deepEqual(lookForgeStart("bot", { pack: [{ id: "same-hall", src: "x" }] }), { dataForge: "bot", sealed: true, pack: "sealed" });
+    assert.deepEqual(lookForgeStart("start", { style: "crystal ferns" }), { dataForge: "start", sealed: false, pack: "live" });
+    assert.equal(lookForgeWalkStyle("bot", "crystal ferns"), "");
+    assert.equal(lookForgeWalkStyle("start", "crystal ferns"), "crystal ferns");
   });
 
-  it("look screen Bot Forge follows lock → live pack, unlocked → sealed", () => {
+  it("look screen Bot Forge follows lock → hall style pack, unlocked → sealed", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     assert.match(src, /lookForgeStart\("bot", lookLock\)/);
     assert.match(src, /data-look-lock=/);
-    assert.match(src, /data-forge-pack=\{botForge\.sealed \? "sealed" : "live"\}/);
+    assert.match(src, /data-forge-pack=\{botForge\.pack\}/);
+    assert.match(src, /lookForgeWalkStyle\(hallStyleOnly/);
     const bot = src.slice(src.indexOf("data-forge={botForge.dataForge}"));
     const handler = bot.slice(0, bot.indexOf("Grok Bot Forge"));
     assert.match(handler, /lookForgeStart\("bot", \{/);
     assert.match(handler, /style: styleOn/);
     assert.match(handler, /if \(start\.sealed\)/);
-    assert.match(handler, /startRefs\(false, "live"\)/);
+    assert.match(handler, /startRefs\(false, "hall"\)/);
     assert.match(handler, /startRefs\(false, "sealed"\)/);
     assert.match(handler, /clearWish\(\)/);
+    assert.doesNotMatch(handler, /startRefs\(false, "live"\)/);
   });
 });
 

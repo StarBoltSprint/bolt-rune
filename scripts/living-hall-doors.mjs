@@ -125,8 +125,8 @@ async function runCreateLook(browser, vp) {
     await page.locator("[data-look] button", { hasText: /^Lock$/i }).click();
     await page.waitForTimeout(80);
     const locked = await engineState(page);
-    if (locked.lookLock !== "1" || locked.forgePack !== "live") {
-      throw new Error(`${vp.name}: LOCK did not switch Grok Bot Forge to live hall ${JSON.stringify(locked)}`);
+    if (locked.lookLock !== "1" || locked.forgePack !== "hall") {
+      throw new Error(`${vp.name}: LOCK did not switch Grok Bot Forge to hall style ${JSON.stringify(locked)}`);
     }
     await page.locator("[data-look] button", { hasText: /^Clear$/i }).click();
     await page.waitForTimeout(80);
@@ -160,8 +160,8 @@ async function runCreateLook(browser, vp) {
     await page.locator("[data-look] button", { hasText: /^Lock$/i }).click();
     await page.waitForTimeout(80);
     const lookBLocked = await engineState(page);
-    if (lookBLocked.lookLock !== "1" || lookBLocked.forgePack !== "live") {
-      throw new Error(`${vp.name}: Door B LOCK missed live bot pack ${JSON.stringify(lookBLocked)}`);
+    if (lookBLocked.lookLock !== "1" || lookBLocked.forgePack !== "hall") {
+      throw new Error(`${vp.name}: Door B LOCK missed hall-style bot pack ${JSON.stringify(lookBLocked)}`);
     }
     let picker = false;
     page.once("filechooser", () => {
@@ -176,7 +176,7 @@ async function runCreateLook(browser, vp) {
     if (!botCooking.forgePct && botCooking.phase === "look") {
       throw new Error(`${vp.name}: Grok Bot Forge tap did not start cook UI ${JSON.stringify(botCooking)}`);
     }
-    if (botCooking.forgePack !== "live" || !/crystal ferns/i.test(botCooking.forgeWish || botCooking.frost || "")) {
+    if (botCooking.forgePack !== "hall" || !/crystal ferns/i.test(botCooking.forgeWish || botCooking.frost || "")) {
       throw new Error(`${vp.name}: locked Grok Bot Forge dropped hall style ${JSON.stringify(botCooking)}`);
     }
     await page.waitForTimeout(400);
