@@ -33,6 +33,7 @@ import {
   HALL_STILL,
   isHallFilm,
   stockRoomBank,
+  pathEntry,
   stockDoorHits,
   stockStand,
   doorAtPoint,
@@ -772,7 +773,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       pathFirst.current = boot.first;
       roomsHold.current = boot.rooms || 1;
       hallHold.current = boot.hall || 1;
-      wantIdle.current = !!(boot as { stills?: boolean }).stills;
+      wantIdle.current = boot.stills === true;
       setWant(2);
       setFilmCap(6);
       if (hangArt.current) {
@@ -781,8 +782,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         phaseRef.current = "play";
         setRiftPick("ask");
         setFrost("hang your artefact on a door");
-      } else {
+      } else if (pathEntry(boot.stills) === "stock") {
         enterLivingRoom(boot.first);
+      } else {
+        setPhase("look");
+        phaseRef.current = "look";
       }
     }
     return () => {
@@ -5085,7 +5089,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       pathFirst.current = boot.first;
       roomsHold.current = boot.rooms || 1;
       hallHold.current = boot.hall || 1;
-      wantIdle.current = !!(boot as { stills?: boolean }).stills;
+      wantIdle.current = boot.stills === true;
       setWant(2);
       setFilmCap(6);
       if (hangArt.current) {
@@ -5094,8 +5098,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         phaseRef.current = "play";
         setRiftPick("ask");
         setFrost("hang your artefact on a door");
-      } else {
+      } else if (pathEntry(boot.stills) === "stock") {
         enterLivingRoom(boot.first);
+      } else {
+        setPhase("look");
+        phaseRef.current = "look";
       }
     }
   };
@@ -5859,6 +5866,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         <div className="relative z-10 mt-auto flex flex-col items-center gap-3">
           <button
             type="button"
+            data-forge="start"
             className="flex h-16 w-full max-w-xs items-center justify-center font-display text-4xl text-[#f0d48a] drop-shadow-[0_0_22px_rgba(228,195,122,0.55)]"
             style={{ touchAction: "manipulation" }}
             onPointerUp={() => {
@@ -6718,7 +6726,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         </p>
       ) : null}
       {((phase === "refs" && beat !== "playvid") || beat === "cook") && (
-        <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center">
+        <div
+          className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center"
+          data-forge-pct={Math.min(100, loadPct)}
+        >
           {stageSrc ? (
             <img src={stageSrc} alt="" className="absolute inset-0 h-full w-full object-contain object-center" />
           ) : null}

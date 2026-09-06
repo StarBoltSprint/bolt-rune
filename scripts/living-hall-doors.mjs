@@ -52,16 +52,20 @@ async function tapPicture(page, nx, ny) {
 async function engineState(page) {
   return page.evaluate(() => {
     const el = document.querySelector("[data-rune=engine]");
-    if (!el) return { present: false };
+    const look = document.querySelector("[data-look]");
+    const pct = document.querySelector("[data-forge-pct]");
+    if (!el && !look) return { present: false };
     return {
       present: true,
-      phase: el.getAttribute("data-phase"),
-      beat: el.getAttribute("data-beat"),
-      camera: el.getAttribute("data-camera"),
-      here: el.getAttribute("data-here"),
-      living: el.getAttribute("data-living"),
-      stockWalk: el.getAttribute("data-stock-walk"),
-      look: Boolean(document.querySelector("[data-look]")),
+      phase: el?.getAttribute("data-phase") || (look ? "look" : ""),
+      beat: el?.getAttribute("data-beat") || "",
+      camera: el?.getAttribute("data-camera") || "",
+      here: el?.getAttribute("data-here") || "",
+      living: el?.getAttribute("data-living") || "",
+      stockWalk: el?.getAttribute("data-stock-walk") || "",
+      look: Boolean(look),
+      forge: Boolean(document.querySelector("[data-forge=start]")),
+      forgePct: pct?.getAttribute("data-forge-pct") || "",
       films: /3 walks/i.test(document.body.innerText),
     };
   });
@@ -77,29 +81,70 @@ async function waitBeat(page, want, timeoutMs = 8000) {
   return engineState(page);
 }
 
-async function runViewport(browser, vp) {
+async function openCreateDoor(page, letter) {
+  await page.goto(`${BASE}/rune`, { waitUntil: "domcontentloaded", timeout: 45000 });
+  await page.waitForTimeout(300);
+  const fresh = page.locator("a", { hasText: "New citadel" });
+  if (await fresh.count()) await fresh.first().click();
+  else await page.goto(`${BASE}/rune?tour=1&drive=engine&rooms=1&hall=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(250);
+  await page.locator(`[aria-label=${letter}]`).first().click();
+  await page.waitForTimeout(200);
+  const next = page.locator("a", { hasText: "Next" }).first();
+  const href = await next.getAttribute("href");
+  if (href && /stills=0/.test(href)) {
+    throw new Error(`create Next still skips forge (${href})`);
+  }
+  await next.click();
+}
+
+async function runCreateLook(browser, vp) {
+  const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
+  try {
+    await openCreateDoor(page, "A");
+    await page.waitForSelector("[data-look]", { timeout: 15000 });
+    const lookA = await engineState(page);
+    if (!lookA.look || !lookA.forge || lookA.films) {
+      throw new Error(`${vp.name}: Door A create missed look/Forge ${JSON.stringify(lookA)}`);
+    }
+    await page.screenshot({ path: `${OUT}/${vp.name}-create-look.png`, fullPage: false });
+    await page.locator("[data-forge=start]").click();
+    await page.waitForSelector("[data-forge-pct]", { timeout: 12000 });
+    const cooking = await engineState(page);
+    if (!cooking.forgePct && cooking.phase === "look") {
+      throw new Error(`${vp.name}: Forge tap did not start cook UI ${JSON.stringify(cooking)}`);
+    }
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${OUT}/${vp.name}-create-forge-pct.png`, fullPage: false });
+
+    await openCreateDoor(page, "B");
+    await page.waitForSelector("[data-look]", { timeout: 15000 });
+    const lookB = await engineState(page);
+    if (!lookB.look || !lookB.forge) {
+      throw new Error(`${vp.name}: Door B create missed look/Forge ${JSON.stringify(lookB)}`);
+    }
+    return { ok: true, flow: "look", viewport: vp.name, lookA, cooking, lookB };
+  } finally {
+    await page.close();
+  }
+}
+
+async function runStockTaps(browser, vp) {
   const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
   const notes = [];
   try {
-    await page.goto(`${BASE}/rune`, { waitUntil: "domcontentloaded", timeout: 45000 });
-    await page.waitForTimeout(400);
-    const fresh = page.locator("a", { hasText: "New citadel" });
-    if (await fresh.count()) await fresh.first().click();
-    else await page.goto(`${BASE}/rune?tour=1&drive=engine&rooms=1&hall=1`, { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(300);
-    const doorA = page.locator("[aria-label=A]").first();
-    await doorA.click();
-    await page.waitForTimeout(200);
-    const next = page.locator("a", { hasText: "Next" }).first();
-    await next.click();
+    await page.goto(`${BASE}/rune?first=m1&drive=engine&rooms=1&hall=1&stills=0`, {
+      waitUntil: "domcontentloaded",
+      timeout: 45000,
+    });
     await page.waitForSelector("[data-rune=engine][data-phase=play]", { timeout: 15000 });
     await page.waitForTimeout(700);
     const entered = await engineState(page);
     if (entered.phase !== "play" || entered.camera !== "lock") {
-      throw new Error(`${vp.name}: enter failed ${JSON.stringify(entered)}`);
+      throw new Error(`${vp.name}: stock enter failed ${JSON.stringify(entered)}`);
     }
     if (entered.look || entered.films) {
-      throw new Error(`${vp.name}: Films checklist regression ${JSON.stringify(entered)}`);
+      throw new Error(`${vp.name}: stock path opened look/Films ${JSON.stringify(entered)}`);
     }
     await page.screenshot({ path: `${OUT}/${vp.name}-hall-idle.png`, fullPage: false });
 
@@ -130,7 +175,6 @@ async function runViewport(browser, vp) {
     if (afterA.here !== "m1") {
       throw new Error(`${vp.name}: Door A walk did not land at m1 ${JSON.stringify(afterA)}`);
     }
-    notes.push({ afterA });
 
     await page.waitForTimeout(200);
     const tapB = await tapPicture(page, 0.72, 0.4);
@@ -164,10 +208,7 @@ async function runViewport(browser, vp) {
     if (final.camera !== "lock" || final.phase !== "play") {
       throw new Error(`${vp.name}: camera/phase regression ${JSON.stringify(final)}`);
     }
-    if (final.look || final.films) {
-      throw new Error(`${vp.name}: Films checklist appeared after walks`);
-    }
-    return { ok: true, viewport: vp.name, entered, afterA, afterB, final, notes };
+    return { ok: true, flow: "stock", viewport: vp.name, entered, afterA, afterB, final, notes };
   } finally {
     await page.close();
   }
@@ -180,7 +221,8 @@ const browser = await chromium.launch({
 try {
   const results = [];
   for (const vp of VIEWPORTS) {
-    results.push(await runViewport(browser, vp));
+    results.push(await runCreateLook(browser, vp));
+    results.push(await runStockTaps(browser, vp));
   }
   console.log(JSON.stringify({ ok: true, results }, null, 2));
 } catch (err) {

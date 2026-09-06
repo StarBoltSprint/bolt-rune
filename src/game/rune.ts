@@ -226,6 +226,8 @@ export function otherDoor(first: "m1" | "m2"): "m1" | "m2" {
   return first === "m1" ? "m2" : "m1";
 }
 
+export { pathEntry, createPathHref } from "./path-entry";
+
 export const TOUR_PLATE = "/films/citadel-tour.jpg?v=sharp";
 export {
   HALL_LOOP,

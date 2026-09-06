@@ -1,4 +1,4 @@
-import { TOUR_PLATE } from "@/game/rune";
+import { TOUR_PLATE, createPathHref } from "@/game/rune";
 import { listSessions, hydrateSessions, dumpRooms, dumpRoom, takeRooms, renameSession, lastPlay, type RuneSessionMeta } from "@/game/rune-session";
 import { packCitadels } from "@/game/rooms";
 import { saveDrive, type Drive } from "@/game/rune-brain";
@@ -204,7 +204,7 @@ export function CitadelHub({
   }
 
   if (tour && plan && first) {
-    const playHref = `/rune?first=${first}&${q}&stills=0`;
+    const playHref = createPathHref(first, q);
     if (typeof window !== "undefined") {
       window.location.replace(playHref);
     }
@@ -244,7 +244,7 @@ export function CitadelHub({
         </div>
         {first ? (
           <a
-            href={`/rune?first=${first}&${q}&stills=0`}
+            href={createPathHref(first, q)}
             className="absolute bottom-[max(1.2rem,env(safe-area-inset-bottom))] left-5 right-5 flex h-16 items-center justify-center font-display text-4xl text-[#f0d48a] drop-shadow-[0_0_22px_rgba(228,195,122,0.55)]"
             style={{ touchAction: "manipulation" }}
           >
