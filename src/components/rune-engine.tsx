@@ -331,15 +331,20 @@ function sheetOf(kind: "walk" | "idle") {
 
 function hideBakedBolt(ctx: CanvasRenderingContext2D, w: number, h: number) {
   const x = SPAWN.x * w;
-  const y = 0.73 * h;
-  const g = ctx.createRadialGradient(x, y, w * 0.04, x, y + h * 0.02, w * 0.3);
+  const floor = ctx.createLinearGradient(0, h * 0.62, 0, h);
+  floor.addColorStop(0, "rgba(6,8,12,0)");
+  floor.addColorStop(0.16, "rgba(6,8,12,0.9)");
+  floor.addColorStop(0.4, "rgba(6,8,12,0.98)");
+  floor.addColorStop(1, "rgba(6,8,12,1)");
+  ctx.fillStyle = floor;
+  ctx.fillRect(w * 0.16, h * 0.62, w * 0.68, h * 0.38);
+  const g = ctx.createRadialGradient(x, h * 0.76, w * 0.02, x, h * 0.78, w * 0.36);
   g.addColorStop(0, "rgba(6,8,12,1)");
-  g.addColorStop(0.42, "rgba(6,8,12,0.98)");
-  g.addColorStop(0.72, "rgba(8,12,16,0.88)");
-  g.addColorStop(1, "rgba(8,12,16,0)");
+  g.addColorStop(0.55, "rgba(6,8,12,0.96)");
+  g.addColorStop(1, "rgba(6,8,12,0)");
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.ellipse(x, y, w * 0.3, h * 0.22, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, h * 0.78, w * 0.36, h * 0.26, 0, 0, Math.PI * 2);
   ctx.fill();
 }
 
