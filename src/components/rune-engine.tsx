@@ -34,7 +34,6 @@ import {
   isHallFilm,
   stockRoomBank,
   pathEntry,
-  lookForgeStart,
   stockDoorHits,
   stockStand,
   doorAtPoint,
@@ -47,6 +46,7 @@ import {
   type RuneNode,
   type WalkSecs,
 } from "@/game/rune";
+import { lookForgeStart } from "@/game/path-entry";
 import { freeRuneSlot, grabRuneFrame, pollCookPlate, startCookStill, startRuneExtend, startRuneFilm, startRuneStill, cacheClip, cacheStill } from "@/lib/cook";
 import { BIOMES, biomePlaylist, riftFilm, riftPrompt, type BiomeId } from "@/game/cook";
 import { FilmStage } from "@/components/film-stage";
