@@ -93,10 +93,10 @@ export function genePrompt(g: Gene = loadBrain().gene): string {
       : "LOCKED TRIPOD. Same framing as the start image. Architecture does not move.";
   const morph =
     g.morph >= 2
-      ? "Same WHITE German Shepherd, no cape, same doors, same stones. Zero morph. Never grey."
-      : "Same white German Shepherd, no cape, same doors. No morph.";
+      ? "Same FULL WHITE German Shepherd, no cape, same doors, same stones. Zero morph. Never tan, beige, grey, or saddle."
+      : "Same full white German Shepherd, no cape, same doors. No morph. Never tan.";
   const dest = g.dest > 1 ? "Last frame: he is already standing at the destination, not still walking." : "";
-  return [cam, `The wolf takes at least ${g.strides} full strides across the floor.`, morph, dest].filter(Boolean).join(" ");
+  return [cam, `The dog takes at least ${g.strides} full strides across the floor, facing the travel direction.`, morph, dest].filter(Boolean).join(" ");
 }
 
 export function loadDrive(): Drive {
@@ -165,9 +165,9 @@ export function digest(grade: Grade) {
 
 export function stillLaws(): string {
   const b = loadBrain();
-  const bits = ["No walking. No strides. The wolf stays on the same floor tiles."];
+  const bits = ["No walking. No strides. The dog stays on the same floor tiles. Feet glued. FULL WHITE coat — no tan, beige, saddle, or mask."];
   if (b.camera >= 2) bits.push("Pillars, floor vanishing point and door arches match the start image pixel-for-pixel.");
-  if (b.messy >= 2) bits.push("Do not morph the dog or the doors. Same WHITE German Shepherd, no cape, same stone.");
+  if (b.messy >= 2) bits.push("Do not morph the dog or the doors. Same FULL WHITE German Shepherd, no cape, no tan, same stone.");
   return bits.join(" ");
 }
 
@@ -175,8 +175,8 @@ export function brainLaws(): string {
   const b = loadBrain();
   const bits = [genePrompt(b.gene)];
   if (b.camera >= 2) bits.push("Past shots drifted. Pillars, floor vanishing point and door arches must match the start image pixel-for-pixel.");
-  if (b.stuck >= 2) bits.push("Past wolves froze in place. This wolf MUST take many full strides and finish at the destination, not the start.");
-  if (b.messy >= 2) bits.push("Do not morph the dog or the doors. Same WHITE German Shepherd, no cape, same stone.");
+  if (b.stuck >= 2) bits.push("Past dogs froze in place. This dog MUST take many full strides and finish at the destination, not the start.");
+  if (b.messy >= 2) bits.push("Do not morph the dog or the doors. Same FULL WHITE German Shepherd, no cape, no tan, same stone.");
   for (const l of b.lessons.slice(0, 4)) {
     if (l.n >= 2 && l.kind !== "good") bits.push(l.text);
   }
@@ -184,9 +184,9 @@ export function brainLaws(): string {
 }
 
 export function retryLaw(grade: Grade): string {
-  if (grade === "camera") return "REJECT any camera move. Architecture is welded. Only the wolf translates.";
-  if (grade === "stuck") return "The wolf MUST walk. At least eight strides. Last frame is a different place than frame one.";
-  if (grade === "messy") return "No morph. Same wolf, same doors, same hall. Only position changes.";
+  if (grade === "camera") return "REJECT any camera move. Architecture is welded. Only the dog translates inside the locked whole hall.";
+  if (grade === "stuck") return "The dog MUST walk. At least eight strides. Face the travel direction. Last frame is a different place than frame one.";
+  if (grade === "messy") return "No morph. Same full-white dog, same doors, same hall. Only position changes. Never tan.";
   return "";
 }
 

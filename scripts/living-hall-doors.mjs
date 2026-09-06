@@ -190,14 +190,23 @@ async function runStockTaps(browser, vp) {
     }
     await page.waitForTimeout(700);
     const midB = await page.evaluate(() => {
-      const cv = document.querySelector("[data-rune=engine] canvas");
+      const root = document.querySelector("[data-rune=engine]");
+      const cv = root?.querySelector("canvas");
       const bolt = cv?.getAttribute("data-bolt") || "";
       const [x, y] = bolt.split(",").map(Number);
-      return { bolt, x, y };
+      return {
+        bolt,
+        x,
+        y,
+        face: root?.getAttribute("data-face") || cv?.getAttribute("data-face") || "",
+      };
     });
     notes.push({ midB });
     if (!(midB.x > 0.42 && midB.x < 0.82 && midB.y > 0.52 && midB.y < 0.7)) {
       throw new Error(`${vp.name}: Door B walk did not move Bolt toward gold ${JSON.stringify(midB)}`);
+    }
+    if (midB.face && midB.face !== "right") {
+      throw new Error(`${vp.name}: Door B moonwalk — face ${midB.face} while translating right ${JSON.stringify(midB)}`);
     }
     await page.screenshot({ path: `${OUT}/${vp.name}-hall-walk-b.png`, fullPage: false });
     const afterB = await waitBeat(page, "idle", 8000);

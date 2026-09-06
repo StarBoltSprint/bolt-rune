@@ -2,6 +2,20 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { HALL_LOOP, HALL_STILL, doorAtPoint, isHallFilm, stockDoorHits, stockRoomBank, stockStand } from "./stock-room.ts";
 import { createPathHref, pathEntry } from "./path-entry.ts";
+import {
+  BOLT_ID,
+  CAM_LOCK,
+  SPAWN,
+  faceRow,
+  facingOf,
+  gazeLaw,
+  idlePrompt,
+  poseBoltPrompt,
+  standFace,
+  travelOf,
+  walkPrompt,
+} from "./rune.ts";
+import { genePrompt, retryLaw, stillLaws } from "./rune-brain.ts";
 
 describe("stock living room", () => {
   it("isHallFilm accepts the locked hall still and living loop, not landing chrome", () => {
@@ -61,6 +75,75 @@ describe("stock living room", () => {
     const toA = Math.hypot(a.x - spawn.x, a.y - spawn.y);
     const toB = Math.hypot(b.x - spawn.x, b.y - spawn.y);
     assert.ok(toA > 0.16 && toB > 0.16);
+  });
+});
+
+describe("Imagine prompt rails", () => {
+  const m1 = { id: "m1", name: "teal", x: 0.34, y: 0.6 };
+  const m2 = { id: "m2", name: "gold", x: 0.66, y: 0.6 };
+
+  it("locks a full white coat and forbids tan / cream / saddle / mask", () => {
+    const still = idlePrompt(gazeLaw("m1"));
+    const walk = walkPrompt(SPAWN, m1, true, gazeLaw("m1"));
+    const pose = poseBoltPrompt("LEFT");
+    for (const p of [BOLT_ID, still, walk, pose, genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 }), stillLaws()]) {
+      assert.match(p, /WHITE|white/);
+      assert.doesNotMatch(p, /cream-ivory/i);
+      assert.doesNotMatch(p, /\bPROFILE\b/);
+    }
+    assert.match(BOLT_ID, /zero tan/i);
+    assert.match(BOLT_ID, /saddle/);
+    assert.match(CAM_LOCK, /side-profile cinematic|side cinematic/);
+  });
+
+  it("keeps still / walk grammar on the locked whole hall, not a side crop", () => {
+    const still = idlePrompt(gazeLaw("m1"));
+    assert.match(still, /WHOLE hall/);
+    assert.match(still, /Feet glued/);
+    assert.match(gazeLaw("m1"), /FACE the RIGHT door/);
+    assert.match(gazeLaw("m2"), /FACE the LEFT door/);
+    assert.match(gazeLaw("spawn"), /rear\/stand/);
+    assert.doesNotMatch(gazeLaw("m1"), /PROFILE/);
+  });
+
+  it("walk prompts face travel, then A/B stand look — no moonwalk language", () => {
+    const ab = walkPrompt(m1, m2, false, gazeLaw("m2"));
+    const ba = walkPrompt(m2, m1, false, gazeLaw("m1"));
+    assert.match(ab, /FACE RIGHT/);
+    assert.match(ab, /RIGHT across the frame/);
+    assert.match(ab, /LOOKS LEFT at the other door/);
+    assert.match(ab, /Never moonwalk/);
+    assert.match(ba, /FACE LEFT/);
+    assert.match(ba, /LEFT across the frame/);
+    assert.match(genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 }), /facing the travel direction/);
+    assert.doesNotMatch(ab, /The wolf /);
+    assert.doesNotMatch(retryLaw("stuck"), /wolf/i);
+  });
+
+  it("create path look → Forge contract is unchanged", () => {
+    assert.equal(pathEntry(undefined), "look");
+    assert.ok(!createPathHref("m1").includes("stills="));
+  });
+});
+
+describe("sprite walk facing", () => {
+  it("maps sheet rows as front / left / right / rear — not swapped left-right", () => {
+    assert.equal(faceRow("down"), 0);
+    assert.equal(faceRow("left"), 1);
+    assert.equal(faceRow("right"), 2);
+    assert.equal(faceRow("up"), 3);
+  });
+
+  it("door-to-door travel faces the walk, stands look at the other door", () => {
+    const a = { id: "m1", name: "teal", ...stockStand("m1") };
+    const b = { id: "m2", name: "gold", ...stockStand("m2") };
+    assert.equal(travelOf(a, b).face, "right");
+    assert.equal(travelOf(b, a).face, "left");
+    assert.equal(standFace("m1"), "right");
+    assert.equal(standFace("m2"), "left");
+    assert.equal(standFace("spawn"), "up");
+    assert.equal(facingOf(0.32, 0), "right");
+    assert.equal(facingOf(-0.32, 0), "left");
   });
 });
 
