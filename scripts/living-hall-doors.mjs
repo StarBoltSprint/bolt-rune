@@ -65,6 +65,8 @@ async function engineState(page) {
       stockWalk: el?.getAttribute("data-stock-walk") || "",
       look: Boolean(look),
       forge: Boolean(document.querySelector("[data-forge=start]")),
+      botForge: Boolean(document.querySelector("[data-forge=bot]")),
+      botLabel: document.querySelector("[data-forge=bot]")?.textContent?.trim() || "",
       forgePct: pct?.getAttribute("data-forge-pct") || "",
       films: /3 walks/i.test(document.body.innerText),
     };
@@ -104,8 +106,8 @@ async function runCreateLook(browser, vp) {
     await openCreateDoor(page, "A");
     await page.waitForSelector("[data-look]", { timeout: 15000 });
     const lookA = await engineState(page);
-    if (!lookA.look || !lookA.forge || lookA.films) {
-      throw new Error(`${vp.name}: Door A create missed look/Forge ${JSON.stringify(lookA)}`);
+    if (!lookA.look || !lookA.forge || !lookA.botForge || lookA.botLabel !== "Grok Bot Forge" || lookA.films) {
+      throw new Error(`${vp.name}: Door A create missed look/Forge + Grok Bot Forge ${JSON.stringify(lookA)}`);
     }
     await page.screenshot({ path: `${OUT}/${vp.name}-create-look.png`, fullPage: false });
     await page.locator("[data-forge=start]").click();
@@ -120,10 +122,25 @@ async function runCreateLook(browser, vp) {
     await openCreateDoor(page, "B");
     await page.waitForSelector("[data-look]", { timeout: 15000 });
     const lookB = await engineState(page);
-    if (!lookB.look || !lookB.forge) {
-      throw new Error(`${vp.name}: Door B create missed look/Forge ${JSON.stringify(lookB)}`);
+    if (!lookB.look || !lookB.forge || !lookB.botForge) {
+      throw new Error(`${vp.name}: Door B create missed look/Forge + Grok Bot Forge ${JSON.stringify(lookB)}`);
     }
-    return { ok: true, flow: "look", viewport: vp.name, lookA, cooking, lookB };
+    let picker = false;
+    page.once("filechooser", () => {
+      picker = true;
+    });
+    await page.locator("[data-forge=bot]").click();
+    await page.waitForSelector("[data-forge-pct]", { timeout: 12000 });
+    const botCooking = await engineState(page);
+    if (picker) {
+      throw new Error(`${vp.name}: Grok Bot Forge opened a file picker`);
+    }
+    if (!botCooking.forgePct && botCooking.phase === "look") {
+      throw new Error(`${vp.name}: Grok Bot Forge tap did not start cook UI ${JSON.stringify(botCooking)}`);
+    }
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${OUT}/${vp.name}-create-bot-forge-pct.png`, fullPage: false });
+    return { ok: true, flow: "look", viewport: vp.name, lookA, cooking, lookB, botCooking };
   } finally {
     await page.close();
   }
