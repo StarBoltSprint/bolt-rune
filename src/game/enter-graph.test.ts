@@ -118,6 +118,21 @@ describe("enter graph · hang any artefact on any door", () => {
     assert.ok(stockBiomePlaylist("asteroid").includes("/films/forge-asteroid.mp4"));
     assert.equal(biomeStill("asteroid"), "/films/cook-asteroid.jpg");
     assert.deepEqual(stockBiomePlaylist("forest").slice(0, 1), ["/films/forge-forest.mp4"]);
+    const hung = hangArtifactOnDoor("art-ast", "A", { hall: 1 }, [
+      {
+        id: "art-ast",
+        name: "Asteroid",
+        still: biomeStill("asteroid"),
+        playlist: stockBiomePlaylist("asteroid"),
+        prompt: "asteroid",
+        hungAt: 1,
+        grade: null,
+      },
+    ]);
+    const enter = resolveDoorEnter("A", 1, "", hung);
+    assert.equal(enter.kind, "biome");
+    if (enter.kind !== "biome") return;
+    assert.ok(enter.playlist.includes("/films/forge-asteroid.mp4"));
   });
 
   it("bot biome / vault hang hooks stay sealed like Grok Bot Forge", () => {

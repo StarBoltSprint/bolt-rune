@@ -114,8 +114,7 @@ export function localizeClip(u: string) {
 export function isClip(u?: string) {
   if (!u) return false;
   if (u.startsWith("data:image") || /\.(jpe?g|png|webp|gif)(\?|$)/i.test(u)) return false;
-  if (/\/films\/forge-[a-z0-9]+(\.mp4)?$/i.test(u)) return false;
-  return /\.mp4(\?|$)/i.test(u) || u.includes("xai-vidgen") || u.includes("/films/clips/") || u.includes("/films/");
+  return /\.mp4(\?|$)/i.test(u) || u.includes("xai-vidgen") || u.includes("/films/clips/") || u.includes("/films/") || u.includes("/ui/");
 }
 
 export function uniqueClips(urls: string[]) {
@@ -200,7 +199,7 @@ export function familiesOf(list: HungArtifact[]): VaultFamily[] {
     .sort((p, q) => (q.hungAt || 0) - (p.hungAt || 0))
     .flatMap((a) => {
       const playlist = uniqueClips(a.playlist || []);
-      if (!playlist.length) return [];
+      if (!playlist.length && !a.still) return [];
       const stamps = stampClips([a], playlist);
       return [
         {

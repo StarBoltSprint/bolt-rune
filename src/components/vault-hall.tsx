@@ -83,10 +83,10 @@ export function VaultHall() {
     }).catch(() => {});
   }
 
-  function hangDoor(a: HungArtifact, door: "A" | "B") {
+  function hangDoor(a: HungArtifact, door: "A" | "B", from?: HungArtifact[]) {
     const cit = bindCitadel();
     const hall = cit.hall;
-    const hung = hangOnRoom(a.id, bindHungRoom(a, door, { citadel: cit.citadel || undefined, hall }), hungRef.current);
+    const hung = hangOnRoom(a.id, bindHungRoom(a, door, { citadel: cit.citadel || undefined, hall }), from?.length ? from : hungRef.current);
     setHung(hung);
     const live = hung.find((x) => x.id === a.id);
     if (live) persistArt(live);
@@ -107,7 +107,7 @@ export function VaultHall() {
     }
     const head = list[0];
     if (!head) return;
-    hangDoor(head, "A");
+    hangDoor(head, "A", list);
   }
 
   function unhangDoor(a: HungArtifact) {
