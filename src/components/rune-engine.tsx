@@ -3693,110 +3693,110 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     let started: { ok: true; requestId: string } | { ok: false; error: string } | null = null;
     let busyFails = 0;
     for (let t = 0; t < 16; t++) {
-        if (dead.current) return hallUrl;
-        try {
-          started = await startRuneFilm({
-            data: { still: hallUrl, prompt: seedHallPrompt(worldHold.current, !!lookPackRef.current.find((p) => p.id === "same-hall")), duration: 6, refs: boltKit(kit.filter((u) => u.startsWith("http") || u.startsWith("/") || (u.startsWith("data:") && u.length < 350000))), res: "720" },
-          });
-        } catch {
-          started = { ok: false, error: "net" };
-        }
-        if (started.ok) {
-          setLoadPct((p) => Math.max(p, COOK_START_ACCEPTED_PCT));
-          break;
-        }
-        if (started.error === "echo-off") {
-          setFrost("Imagine is dark · hall kept");
-          return hallUrl;
-        }
-        if (isCookSlotBlock(started.error)) {
-          busyFails += 1;
-          if (cookBusyNext(busyFails) === "give-up") break;
-          setFrost("Imagine busy · waiting");
-          await sleep(COOK_BUSY_WAIT_MS);
-          continue;
-        }
-        setFrost(`seed · ${started.error}`);
-        await sleep(1200);
+      if (dead.current) return hallUrl;
+      try {
+        started = await startRuneFilm({
+          data: { still: hallUrl, prompt: seedHallPrompt(worldHold.current, !!lookPackRef.current.find((p) => p.id === "same-hall")), duration: 6, refs: boltKit(kit.filter((u) => u.startsWith("http") || u.startsWith("/") || (u.startsWith("data:") && u.length < 350000))), res: "720" },
+        });
+      } catch {
+        started = { ok: false, error: "net" };
       }
-      if (!started?.ok) {
-        void freeRuneSlot({ data: {} }).catch(() => {});
-        setFrost(busyFails ? COOK_BUSY_FROST : "seed film dropped · hall kept");
-        setLoadPct(0);
+      if (started.ok) {
+        setLoadPct((p) => Math.max(p, COOK_START_ACCEPTED_PCT));
+        break;
+      }
+      if (started.error === "echo-off") {
+        setFrost("Imagine is dark · hall kept");
         return hallUrl;
       }
-      let filmUrl: string | null = null;
-      for (let p = 0; p < 160; p++) {
-        if (dead.current) return hallUrl;
-        if (p) await sleep(p < 40 ? 1000 : 1400);
-        let polled;
-        try {
-          polled = await pollCookPlate({ data: { requestId: started.requestId } });
-        } catch {
-          setFrost(`seed · wait ${p + 1}`);
-          continue;
-        }
-        if (!polled.ok) {
-          setFrost(`seed · ${polled.error}`);
-          continue;
-        }
-        if (typeof polled.pct === "number") setLoadPct(Math.max(COOK_START_ACCEPTED_PCT, Math.min(90, polled.pct)));
-        if (polled.status === "done" && polled.url) {
-          filmUrl = polled.url;
-          break;
-        }
-        if (polled.status === "failed") {
-          setFrost(polled.frame ? `seed dropped · ${polled.frame}` : "seed film dropped · hall kept");
-          break;
-        }
-        setFrost(`seed video · ${p + 1}`);
+      if (isCookSlotBlock(started.error)) {
+        busyFails += 1;
+        if (cookBusyNext(busyFails) === "give-up") break;
+        setFrost("Imagine busy · waiting");
+        await sleep(COOK_BUSY_WAIT_MS);
+        continue;
       }
-      if (!filmUrl) {
-        void freeRuneSlot({ data: {} }).catch(() => {});
-        setFrost("seed film dropped · hall kept");
-        setLoadPct(100);
-        return hallUrl;
+      setFrost(`seed · ${started.error}`);
+      await sleep(1200);
+    }
+    if (!started?.ok) {
+      void freeRuneSlot({ data: {} }).catch(() => {});
+      setFrost(busyFails ? COOK_BUSY_FROST : "seed film dropped · hall kept");
+      setLoadPct(0);
+      return hallUrl;
+    }
+    let filmUrl: string | null = null;
+    for (let p = 0; p < 160; p++) {
+      if (dead.current) return hallUrl;
+      if (p) await sleep(p < 40 ? 1000 : 1400);
+      let polled;
+      try {
+        polled = await pollCookPlate({ data: { requestId: started.requestId } });
+      } catch {
+        setFrost(`seed · wait ${p + 1}`);
+        continue;
       }
+      if (!polled.ok) {
+        setFrost(`seed · ${polled.error}`);
+        continue;
+      }
+      if (typeof polled.pct === "number") setLoadPct(Math.max(COOK_START_ACCEPTED_PCT, Math.min(90, polled.pct)));
+      if (polled.status === "done" && polled.url) {
+        filmUrl = polled.url;
+        break;
+      }
+      if (polled.status === "failed") {
+        setFrost(polled.frame ? `seed dropped · ${polled.frame}` : "seed film dropped · hall kept");
+        break;
+      }
+      setFrost(`seed video · ${p + 1}`);
+    }
+    if (!filmUrl) {
+      void freeRuneSlot({ data: {} }).catch(() => {});
+      setFrost("seed film dropped · hall kept");
       setLoadPct(100);
-      setBeat("playvid");
-      beatRef.current = "playvid";
-      setFilmUrl(filmUrl);
-      setFrost("play · seed");
-      const seedPlay = Promise.race([playFilm(filmUrl, 6200, hallUrl, null, true, undefined, true), sleep(6200)]);
-      const snappedEnd = shotEnd(filmUrl, hallUrl);
-      let shot: string | null = null;
+      return hallUrl;
+    }
+    setLoadPct(100);
+    setBeat("playvid");
+    beatRef.current = "playvid";
+    setFilmUrl(filmUrl);
+    setFrost("play · seed");
+    const seedPlay = Promise.race([playFilm(filmUrl, 6200, hallUrl, null, true, undefined, true), sleep(6200)]);
+    const snappedEnd = shotEnd(filmUrl, hallUrl);
+    let shot: string | null = null;
+    try {
+      const got = await grabRuneFrame({ data: { url: filmUrl, at: "start", res: lookResRef.current } });
+      if (got.ok) shot = got.url;
+    } catch {
+      /* */
+    }
+    await seedPlay;
+    if (!shot) {
       try {
-        const got = await grabRuneFrame({ data: { url: filmUrl, at: "start", res: lookResRef.current } });
-        if (got.ok) shot = got.url;
+        shot = (await grabFilmAt(0.4)) ?? (await grabFilmFrame());
       } catch {
-        /* */
+        shot = null;
       }
-      await seedPlay;
-      if (!shot) {
-        try {
-          shot = (await grabFilmAt(0.4)) ?? (await grabFilmFrame());
-        } catch {
-          shot = null;
-        }
-      }
-      shot = shot || hallUrl;
-      let landed = shot;
-      try {
-        landed = (await snappedEnd) || shot;
-      } catch {
-        landed = shot;
-      }
-      setBeat("shot");
-      beatRef.current = "shot";
-      setFilmUrl(null);
-      setStageSrc(shot);
-      setPose(shot);
-      bank.current.set("idle-spawn", { url: filmUrl, end: landed });
-      persist({ phase: "refs", plate: shot, start: shot, thumb: shot });
-      setFrost("shot · seed");
-      sfxForge("enter");
-      await sleep(360);
-      return shot;
+    }
+    shot = shot || hallUrl;
+    let landed = shot;
+    try {
+      landed = (await snappedEnd) || shot;
+    } catch {
+      landed = shot;
+    }
+    setBeat("shot");
+    beatRef.current = "shot";
+    setFilmUrl(null);
+    setStageSrc(shot);
+    setPose(shot);
+    bank.current.set("idle-spawn", { url: filmUrl, end: landed });
+    persist({ phase: "refs", plate: shot, start: shot, thumb: shot });
+    setFrost("shot · seed");
+    sfxForge("enter");
+    await sleep(360);
+    return shot;
   }
 
   async function cookEnter(start: string, hall: string, bolt: string, side: "LEFT" | "RIGHT") {
