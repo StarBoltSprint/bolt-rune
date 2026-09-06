@@ -315,6 +315,56 @@ async function runBiomeVaultBot(browser, vp) {
     const hungA = await page.evaluate(() => /door A/i.test(document.body.innerText));
     if (!hungA) throw new Error(`${vp.name}: human Hang A did not bind door A`);
     await page.screenshot({ path: `${OUT}/${vp.name}-vault-hang.png`, fullPage: false });
+
+    const enterPage = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
+    try {
+      await seedForest(enterPage);
+      await enterPage.addInitScript(() => {
+        try {
+          const raw = localStorage.getItem("bolt-artifacts-v1");
+          const list = raw ? JSON.parse(raw) : [];
+          const head = list[0];
+          if (head) {
+            head.room = {
+              door: "A",
+              still: "/films/cook-forest.jpg",
+              trans: "/ui/citadel.mp4?v=aaa",
+              hall: 1,
+              biome: "forest",
+            };
+            localStorage.setItem("bolt-artifacts-v1", JSON.stringify([head]));
+            sessionStorage.setItem("bolt-artifacts-mem-v1", JSON.stringify([head]));
+          }
+        } catch {
+          /* */
+        }
+      });
+      await enterPage.goto(`${BASE}/rune?first=m1&drive=engine&rooms=1&hall=1&stills=0`, {
+        waitUntil: "domcontentloaded",
+        timeout: 45000,
+      });
+      await enterPage.waitForSelector("[data-rune=engine][data-phase=play]", { timeout: 15000 });
+      await enterPage.waitForTimeout(700);
+      const rift = await enterPage.evaluate(() => document.querySelector("[data-rune=engine]")?.getAttribute("data-rift"));
+      if (rift !== "1") {
+        throw new Error(`${vp.name}: living hall did not hydrate hung biome ${rift}`);
+      }
+      const btn = enterPage.locator("[data-door=m1]");
+      if (await btn.count()) {
+        await btn.first().click({ force: true });
+        await waitBeat(enterPage, "idle", 8000);
+        await btn.first().click({ force: true });
+      }
+      await enterPage.waitForTimeout(800);
+      const biomePlay = await enterPage.evaluate(() => Boolean(document.querySelector("[data-biome-play]")));
+      if (!biomePlay) {
+        throw new Error(`${vp.name}: door A enter did not open biome play`);
+      }
+      await enterPage.screenshot({ path: `${OUT}/${vp.name}-biome-enter.png`, fullPage: false });
+    } finally {
+      await enterPage.close();
+    }
+
     return { ok: true, flow: "biome-vault-bot", viewport: vp.name, home, hungBot, hungA };
   } finally {
     await page.close();
