@@ -48,13 +48,13 @@ function RunePage() {
       />
     );
   }
-  if (first && !tour) {
+  if (first && (!tour || plan)) {
     return (
       <RuneEngine
         boot={{ kind: "path", first, drive, rooms: rooms ?? 1, hall: hall ?? 1, stills }}
         onBack={() => {
           clearLivePlay();
-          window.location.href = `/rune?tour=1&drive=${drive}${rooms ? `&rooms=${rooms}` : ""}${hall ? `&hall=${hall}` : ""}`;
+          window.location.href = `/rune?drive=${drive}`;
         }}
       />
     );

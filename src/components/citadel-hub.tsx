@@ -204,49 +204,16 @@ export function CitadelHub({
   }
 
   if (tour && plan && first) {
+    const playHref = `/rune?first=${first}&${q}&stills=0`;
+    if (typeof window !== "undefined") {
+      window.location.replace(playHref);
+    }
     return (
-      <div className="relative min-h-dvh overflow-hidden bg-bg" data-plan="6" style={{ touchAction: "manipulation" }} onPointerUp={tapFull}>
-        <div
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-          style={{
-            width: "min(100%, calc(100dvh * 9 / 16))",
-            height: "min(100%, calc(100dvw * 16 / 9))",
-          }}
-        >
-          <img src={TOUR_PLATE} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
-          <img
-            src={first === "m1" ? "/ui/still-a.png" : "/ui/still-b.png"}
-            alt=""
-            className="pointer-events-none absolute inset-0 h-full w-full object-contain object-center"
-          />
-        </div>
-        <div className="pointer-events-none absolute left-0 right-0 top-[max(0.8rem,env(safe-area-inset-top))] px-5">
-          <a
-            href={`/rune?tour=1&${q}&first=${first}`}
-            className="pointer-events-auto font-mono text-[10px] uppercase tracking-[0.42em] text-white/55"
-            style={{ touchAction: "manipulation" }}
-          >
-            Back
-          </a>
-          <p className="mt-5 font-mono text-[10px] uppercase tracking-[0.48em] text-white/45">Citadel</p>
-          <p className="mt-1 font-display text-[2.6rem] leading-none text-white/90 drop-shadow-[0_10px_28px_rgba(0,0,0,0.9)]">Films</p>
-        </div>
-        <div className="absolute bottom-[max(1.2rem,env(safe-area-inset-bottom))] left-5 right-5 z-40 flex flex-col items-center gap-3">
-          <a
-            href={`/rune?first=${first}&${q}&stills=0`}
-            className="flex h-16 w-full max-w-xs items-center justify-center font-display text-4xl text-[#f0d48a] drop-shadow-[0_0_22px_rgba(228,195,122,0.55)]"
-            style={{ touchAction: "manipulation" }}
-          >
-            3 walks
-          </a>
-          <a
-            href={`/rune?first=${first}&${q}&stills=1`}
-            className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45"
-            style={{ touchAction: "manipulation" }}
-          >
-            3 walks + 3 stills
-          </a>
-        </div>
+      <div className="relative min-h-dvh overflow-hidden bg-bg" data-plan="play">
+        <BootScreen pct={16} label="opening" plate={TOUR_PLATE} />
+        <a href={playHref} className="sr-only">
+          Play
+        </a>
       </div>
     );
   }
@@ -277,7 +244,7 @@ export function CitadelHub({
         </div>
         {first ? (
           <a
-            href={`/rune?tour=1&${q}&first=${first}&plan=1`}
+            href={`/rune?first=${first}&${q}&stills=0`}
             className="absolute bottom-[max(1.2rem,env(safe-area-inset-bottom))] left-5 right-5 flex h-16 items-center justify-center font-display text-4xl text-[#f0d48a] drop-shadow-[0_0_22px_rgba(228,195,122,0.55)]"
             style={{ touchAction: "manipulation" }}
           >

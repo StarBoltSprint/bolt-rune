@@ -227,6 +227,7 @@ export function otherDoor(first: "m1" | "m2"): "m1" | "m2" {
 }
 
 export const TOUR_PLATE = "/films/citadel-tour.jpg?v=sharp";
+export { HALL_LOOP, HALL_STILL, isHallFilm, stockRoomBank } from "./stock-room";
 
 export function pct(n: number) {
   return `${Math.max(0, Math.min(100, Math.round(n * 100)))}%`;
