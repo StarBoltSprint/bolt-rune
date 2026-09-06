@@ -305,14 +305,14 @@ export function roomFromPlanPrompt(objects: { name: string }[], hasBolt = true) 
     }
     return `@image${n} is the ${o.name} cutout on black. Composite THAT exact object into the hall. Ignore the black.`;
   });
-  const wolf = hasBolt
-    ? `@image${objects.length + 1} is the wolf cutout on black. Place THAT exact wolf in the center of the floor, seen from behind. Ignore the black. Do not redraw him.`
+  const dog = hasBolt
+    ? `@image${objects.length + 1} is the snow-white Swiss Shepherd cutout on black. Place THAT exact dog in the center of the floor, seen from behind. Ignore the black. REPAINT the coat snow-white if the cutout looks cream.`
     : "";
   return [
-    "Composite ONE photoreal 9:16 futuristic sci-fi citadel hall in deep space. Dark metal, black glass floor, nebula viewport. The references are isolated cutouts on black — paste them into this space chamber. Do not invent new portals or a new wolf. No gothic cathedral.",
+    "Composite ONE photoreal 9:16 futuristic sci-fi citadel hall in deep space. Dark metal, black glass floor, nebula viewport. The references are isolated cutouts on black — paste them into this space chamber. Do not invent new portals or a new dog. No gothic cathedral.",
     ...lines,
-    wolf,
-    "Camera locked. No morph. No extra wolves. No text. No UI.",
+    dog,
+    "Camera locked. No morph. No extra dogs. No text. No UI.",
   ]
     .filter(Boolean)
     .join(" ");
@@ -344,17 +344,24 @@ export const CAM_LOCK =
 export const AAA_LOCK =
   "LOOK: Unreal 5 AAA, Nanite, Lumen, photoreal PBR. Not 2D, cartoon, anime, illustration. Skin AAA. Camera stays the wide locked hall.";
 
+/** Look-tray crop only. Cream + 3/4 profile — never send to Imagine as identity. */
 export const BOLT_FACE = "/refs/bolt-face.jpg";
-export const BOLT_BODY = "/refs/bolt-body.jpg";
+/** Sealed identity still: rear/stand, snow-white coat on black. */
+export const BOLT_BODY = "/refs/bolt-white.jpg";
+
+const TAINTED_BOLT = new Set(["/refs/bolt-face.jpg", "/refs/bolt-body.jpg", "/refs/bolt.jpg"]);
 
 export const BOLT_ID =
-  "ONE dog only: StarBoltSprint. White Swiss Shepherd / White German Shepherd. FULL solid WHITE coat — zero tan, beige, cream patches, saddle, mask, grey, or black markings. Tall pricked ears pink inside, amber eyes, black nose, dense white fur, bushy white tail. REAL dog size, not giant. No cape, no wolf, no second dog. Copy the white-coat dog 1:1. Do not redraw. Do not paint tan.";
+  "ONE dog only: StarBoltSprint. White Swiss Shepherd (Berger Blanc Suisse) only — never a classic German Shepherd (those have tan and a black saddle). FULL solid snow-white coat — zero tan, beige, cream, ivory, sable, saddle, mask, grey, black ears, or shepherd markings. Tall pricked ears pink inside, amber eyes, black nose, dense white fur, bushy white tail. REAL dog size, not giant. No cape, no wolf, no second dog. TEXT COAT WINS: if any reference shows cream, ivory, tan, or a saddle, REPAINT the fur snow-white. Do not copy markings from a reference. Do not paint tan.";
 
+/** Identity still only. Drop cream side-profile / face crops so @ref cannot override the coat. */
 export function boltKit(extra: (string | null | undefined)[] = []) {
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const u of [BOLT_FACE, BOLT_BODY, ...extra]) {
+  for (const u of [BOLT_BODY, ...extra]) {
     if (!u || seen.has(u)) continue;
+    const path = u.split("?")[0] || u;
+    if (TAINTED_BOLT.has(path)) continue;
     seen.add(u);
     out.push(u);
   }
@@ -398,7 +405,7 @@ export function seedHallPrompt(wish = "", keepHall = false) {
     ROOM_LOCK,
     "START IMAGE is THIS hall photograph 1:1. Same walls, plants, doors, light, materials. FORBIDDEN: house, corridor, suburban room, white paneled doors, beige walls.",
     keepHall || room ? `This hall already is: ${room || "the start photo"}. Do not invent a new room.` : "Thunderwolf sci-fi hall. Dark metal. Not a church. Not a house.",
-    "Place that FULL WHITE Swiss shepherd BOTTOM CENTER, from behind, REAL dog size. Solid white coat — no tan, beige, saddle, or mask. He only breathes. Last frame = first frame (loop). Copy the dog reference 1:1. No walk. No person. No text.",
+    "If the start image already has the dog, keep him and REPAINT the coat snow-white. If the floor is empty, place the snow-white Swiss Shepherd BOTTOM CENTER, from behind, REAL dog size. Solid white coat — no tan, beige, cream, ivory, saddle, or mask. He only breathes. Last frame = first frame (loop). TEXT COAT WINS over any reference. No walk. No person. No text.",
   ]
     .filter(Boolean)
     .join(" ");
@@ -436,7 +443,7 @@ export function sameHallPrompt(wish = "") {
     add
       ? `ONLY insert this one extra object, small, on the floor, matching the existing light of IMAGE 1: ${add}`
       : "No other change.",
-    "Empty floor except that object. NO person. NO new wolf. Photoreal 9:16. No text. No UI.",
+    "Empty floor except that object. NO person. NO new dog. Photoreal 9:16. No text. No UI.",
   ].join(" ");
 }
 
@@ -445,9 +452,9 @@ export function enterHallPrompt(side: "LEFT" | "RIGHT", wish = "") {
   return [
     "PORTAL CROSS. Do NOT lock the camera for the whole clip.",
     "FRAME 1 is the START IMAGE only. Copy it 1:1 at t=0: same room, same walls, same light, same doorway, same dog pose. Do not start in a different hall. Do not jump to image 2 at t=0.",
-    "The FULL WHITE Swiss Shepherd is already at the " +
+    "The snow-white Swiss Shepherd is already at the " +
       side +
-      " doorway of THIS room (the start image). Solid white coat — no tan. He walks FORWARD into that same doorway, through it, one continuous walk. He never morphs. No cape. No second dog. No human.",
+      " doorway of THIS room (the start image). Solid white coat — no tan, beige, cream, ivory, or saddle. He walks FORWARD into that same doorway, through it, one continuous walk. He never morphs. No cape. No second dog. No human.",
     "Image 2 is ONLY the destination hall, used after he crosses the threshold. After the portal, that hall is what we see. Two doors face the camera.",
     "Last frames: he stands at the BOTTOM CENTER of hall 2, back to camera, facing two CLOSED opaque doors. No view through those doors.",
     add ? `Hall 2 already contains: ${add}` : "Hall 2 matches image 2.",
@@ -460,7 +467,7 @@ export function placeDoorPrompt(name: string) {
   return [
     "IMAGE EDIT. Image 1 is the citadel hall. Keep the hall identical: same metal, same camera, same empty bays except the one we fill.",
     `Image 2 is the ${name} cutout on black. Ignore the black pixels.`,
-    `Paste THAT exact door into the ${side} arch. Do not redesign the door. Do not change the rest of the hall. No new wolf.`,
+    `Paste THAT exact door into the ${side} arch. Do not redesign the door. Do not change the rest of the hall. No new dog.`,
     "Photoreal 9:16. No text, no UI.",
   ].join(" ");
 }
@@ -483,26 +490,28 @@ export function poseBoltPrompt(side: "LEFT" | "RIGHT") {
       ? "He stands at the LEFT door and LOOKS RIGHT at the other door (A looks at B). CAMERA stays the locked whole hall — both doors stay visible. FORBIDDEN: side-profile close-up, orbit, follow."
       : "He stands at the RIGHT door and LOOKS LEFT at the other door (B looks at A). CAMERA stays the locked whole hall — both doors stay visible. FORBIDDEN: side-profile close-up, orbit, follow.";
   return [
-    "IMAGE EDIT. Image 1 is the hall photograph with both doorways and the dog. Copy camera 1:1: same crop, same walls, same floor, same two doorways.",
-    "Image 2 is StarBoltSprint, the FULL WHITE Swiss shepherd cutout. Ignore the dark pixels. No cape. No tan.",
-    "Keep BOTH doorways identical to image 1. Do not redesign them. Do not paint them. Do not restyle the hall.",
-    "Remove the dog from wherever he is in image 1. No ghost. One dog only.",
-    `Place THAT exact dog standing at the ${door}, REAL dog size, feet on the SAME floor as image 1, beside the doorway, not inside it. ${gaze}`,
-    "FULL WHITE coat, amber eyes, pricked ears. Never tan, beige, saddle, mask, or grey. Never a wolf. No cape. No extra dogs. No text. No UI. Photoreal 9:16.",
+    "IMAGE EDIT. <IMAGE_0> is the hall photograph with both doorways and the dog. Copy camera 1:1: same crop, same walls, same floor, same two doorways.",
+    "<IMAGE_1> is StarBoltSprint, the snow-white Swiss Shepherd cutout from behind. Ignore the dark pixels. No cape. TEXT COAT WINS — REPAINT cream/ivory/tan/saddle snow-white.",
+    "Keep BOTH doorways identical to <IMAGE_0>. Do not redesign them. Do not paint them. Do not restyle the hall.",
+    "Remove the dog from wherever he is in <IMAGE_0>. No ghost. One dog only.",
+    `Place THAT exact dog standing at the ${door}, REAL dog size, feet on the SAME floor as <IMAGE_0>, beside the doorway, not inside it. ${gaze}`,
+    "FULL snow-white coat, amber eyes, pricked ears. Never tan, beige, cream, ivory, sable, saddle, mask, or grey. Never a wolf. No cape. No extra dogs. No text. No UI. Photoreal 9:16.",
   ].join(" ");
 }
 
 export function placeBoltPrompt() {
   return [
-    "IMAGE EDIT of IMAGE 1 only. IMAGE 1 is the citadel hall photograph. Keep it 1:1: same walls, plants, doors, light, materials, camera.",
+    "IMAGE EDIT. <IMAGE_0> is the citadel hall photograph. Keep it 1:1: same walls, plants, doors, light, materials, camera.",
+    "<IMAGE_1> is StarBoltSprint, the snow-white Swiss Shepherd cutout from BEHIND on black. Ignore black pixels. Use that dog's shape only.",
     "FORBIDDEN: house, beige corridor, suburban room, white paneled doors, wood laminate floor. Do not replace the hall.",
-    "Add ONE FULL WHITE Swiss Shepherd BOTTOM CENTER, from behind, REAL dog size, facing the two doors already in IMAGE 1. Solid white coat — no tan, beige, saddle, or mask.",
+    "Add THAT dog BOTTOM CENTER, from behind, REAL dog size, facing the two doors already in <IMAGE_0>. Solid snow-white coat — no tan, beige, cream, ivory, saddle, or mask.",
+    "TEXT COAT WINS: REPAINT any cream, ivory, tan, or saddle in the reference snow-white. Do not invent a classic German Shepherd.",
     "Empty floor except the dog. No text. No UI. Photoreal 9:16.",
   ].join(" ");
 }
 
 export function boltRefPrompt() {
-  return "Isolated StarBoltSprint, White Swiss Shepherd, FULL solid WHITE coat — zero tan, beige, cream, saddle, mask, or grey. Amber eyes, tall pricked ears pink inside, black nose, full body, REAL dog size, on a PURE BLACK background. Only the dog. No room, no cape. Photoreal. No text.";
+  return "Isolated StarBoltSprint, White Swiss Shepherd, FULL solid snow-white coat — zero tan, beige, cream, ivory, sable, saddle, mask, or grey. Amber eyes, tall pricked ears pink inside, black nose, full body from behind, REAL dog size, on a PURE BLACK background. Only the dog. No room, no cape. Photoreal. No text.";
 }
 
 export function roomRefPrompt(pins: RuneNode[]) {
@@ -515,8 +524,8 @@ export function roomRefPrompt(pins: RuneNode[]) {
     "Photoreal 9:16 hall. CAMERA LOCKED, same lens as the start still.",
     "Copy walls, floor, plants, light, and both doorways from the still. Do not restyle. Do not add sci-fi metal or a space viewport unless they are already in the still.",
     bits.join(". ") + ".",
-    "The dog from the StarBoltSprint reference stands at center, from behind, REAL dog size. Copy that dog 1:1.",
-    "Doorways and wolf must match the references with no morph. No extra wolves, no text, no UI.",
+    "The dog from the StarBoltSprint reference stands at center, from behind, REAL dog size. REPAINT the coat snow-white if the reference looks cream.",
+    "Doorways and dog must match the references with no morph. No extra dogs, no text, no UI.",
   ].join(" ");
 }
 
@@ -669,7 +678,7 @@ export function citadelPrompt(wish: string) {
   return [
     "Unreal 5 AAA photoreal 9:16 still. CAMERA LOCKED on the WHOLE hall. Dog is inside the room, not a follow-cam. Not cartoon. Sci-fi citadel, never a sprint, never a church.",
     "Dark metal, black glass floor, teal and gold rift light, nebula viewport. No text, no UI, no logos, no chrome HUD.",
-    "StarBoltSprint stands in the room at REAL dog size: FULL WHITE Swiss Shepherd / German Shepherd, amber eyes, pricked ears, no cape, never a wolf, never tan, never grey, never a second dog.",
+    "StarBoltSprint stands in the room at REAL dog size: FULL snow-white Swiss Shepherd, amber eyes, pricked ears, no cape, never a wolf, never tan, never cream, never grey, never a second dog.",
     "The room has 3 to 6 clearly separated tapable objects: rift-portals, relics, consoles, forges.",
     "Same creature, same room, same light. Player room:",
     seed || "Thunderwolf Citadel sci-fi hall floating in space: teal rift-portal, gold rift-portal, nebula through a viewport.",

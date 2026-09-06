@@ -3892,13 +3892,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     if (!seedShot) {
       setFrost("place · bolt");
-      const placed = await mintStill("place-bolt", placeBoltPrompt(), "9:16", [hallUrl], true, true);
-      const start = hallUrl;
+      const placed = await mintStill("place-bolt", placeBoltPrompt(), "9:16", [hallUrl, BOLT_BODY], true, true);
+      const start = placed || hallUrl;
       if (placed) {
         list.unshift({ id: "placed", name: "bolt in", src: placed });
         setRefs([...list]);
       }
-      setStageSrc(hallUrl);
+      setStageSrc(start);
       seedShot = await cookSeed(start, boltKit([hallUrl, placed]));
       if (!seedShot) seedShot = placed || hallUrl;
     }

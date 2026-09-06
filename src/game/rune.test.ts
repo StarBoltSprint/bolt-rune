@@ -3,19 +3,25 @@ import assert from "node:assert/strict";
 import { HALL_LOOP, HALL_STILL, doorAtPoint, isHallFilm, stockDoorHits, stockRoomBank, stockStand } from "./stock-room.ts";
 import { createPathHref, pathEntry } from "./path-entry.ts";
 import {
+  BOLT_BODY,
+  BOLT_FACE,
   BOLT_ID,
   CAM_LOCK,
   SPAWN,
+  boltKit,
   faceRow,
   facingOf,
   gazeLaw,
   idlePrompt,
+  placeBoltPrompt,
   poseBoltPrompt,
+  seedHallPrompt,
   standFace,
   travelOf,
   walkPrompt,
 } from "./rune.ts";
 import { genePrompt, retryLaw, stillLaws } from "./rune-brain.ts";
+import { runeFilmVariants, runeStillJobs } from "./imagine-payload.ts";
 
 describe("stock living room", () => {
   it("isHallFilm accepts the locked hall still and living loop, not landing chrome", () => {
@@ -86,14 +92,31 @@ describe("Imagine prompt rails", () => {
     const still = idlePrompt(gazeLaw("m1"));
     const walk = walkPrompt(SPAWN, m1, true, gazeLaw("m1"));
     const pose = poseBoltPrompt("LEFT");
-    for (const p of [BOLT_ID, still, walk, pose, genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 }), stillLaws()]) {
-      assert.match(p, /WHITE|white/);
+    const place = placeBoltPrompt();
+    const seed = seedHallPrompt();
+    for (const p of [BOLT_ID, still, walk, pose, place, seed, genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 }), stillLaws()]) {
+      assert.match(p, /WHITE|white|snow-white/);
       assert.doesNotMatch(p, /cream-ivory/i);
       assert.doesNotMatch(p, /\bPROFILE\b/);
+      assert.doesNotMatch(p, /Copy the (white-coat )?dog 1:1/i);
+      assert.doesNotMatch(p, /White German Shepherd/i);
     }
     assert.match(BOLT_ID, /zero tan/i);
     assert.match(BOLT_ID, /saddle/);
+    assert.match(BOLT_ID, /TEXT COAT WINS/);
+    assert.match(BOLT_ID, /Swiss Shepherd/);
     assert.match(CAM_LOCK, /side-profile cinematic|side cinematic/);
+    assert.match(place, /<IMAGE_0>/);
+    assert.match(place, /<IMAGE_1>/);
+    assert.match(genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 }), /Swiss Shepherd/);
+  });
+
+  it("uses the snow-white rear still and drops cream profile refs", () => {
+    assert.equal(BOLT_BODY, "/refs/bolt-white.jpg");
+    const kit = boltKit([BOLT_FACE, "/refs/bolt-body.jpg", "/refs/bolt.jpg", "/films/citadel-tour.jpg"]);
+    assert.deepEqual(kit, ["/refs/bolt-white.jpg", "/films/citadel-tour.jpg"]);
+    assert.ok(!kit.includes(BOLT_FACE));
+    assert.ok(!kit.includes("/refs/bolt-body.jpg"));
   });
 
   it("keeps still / walk grammar on the locked whole hall, not a side crop", () => {
@@ -123,6 +146,41 @@ describe("Imagine prompt rails", () => {
   it("create path look → Forge contract is unchanged", () => {
     assert.equal(pathEntry(undefined), "look");
     assert.ok(!createPathHref("m1").includes("stills="));
+  });
+});
+
+describe("Imagine still / film payloads", () => {
+  const store = { filename: "bolt-test.jpg", public_url: true as const };
+
+  it("place-bolt editOnly sends hall + identity as images, not hall-only image", () => {
+    const jobs = runeStillJobs({
+      prompt: placeBoltPrompt(),
+      pics: [{ url: "data:hall" }, { url: "data:bolt" }],
+      edit: true,
+      editOnly: true,
+      ratio: "9:16",
+      resolution: "1k",
+      store,
+    });
+    assert.equal(jobs.length, 1);
+    assert.equal(jobs[0]?.path, "/images/edits");
+    assert.deepEqual(jobs[0]?.body.images, [{ url: "data:hall" }, { url: "data:bolt" }]);
+    assert.equal(jobs[0]?.body.image, undefined);
+  });
+
+  it("video variants never combine image with reference_images", () => {
+    const variants = runeFilmVariants({
+      prompt: idlePrompt(),
+      imageUrl: "data:still",
+      duration: 6,
+      resolution: "720p",
+      store: { filename: "bolt-test.mp4", public_url: true },
+    });
+    assert.ok(variants.length >= 1);
+    for (const body of variants) {
+      assert.deepEqual(body.image, { url: "data:still" });
+      assert.equal(body.reference_images, undefined);
+    }
   });
 });
 
