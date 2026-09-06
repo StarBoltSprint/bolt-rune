@@ -48,12 +48,13 @@ import {
   type RuneNode,
   type WalkSecs,
 } from "@/game/rune";
-import { lookForgeStart } from "@/game/path-entry";
+import { biomeBotStart, lookForgeStart } from "@/game/path-entry";
 import { freeRuneSlot, grabRuneFrame, pollCookPlate, startCookStill, startRuneExtend, startRuneFilm, startRuneStill, cacheClip, cacheStill } from "@/lib/cook";
 import { COOK_BUSY_FROST, COOK_BUSY_WAIT_MS, COOK_START_ACCEPTED_PCT, cookBusyNext, isCookSlotBlock } from "@/lib/cook-busy";
 import { BIOMES, biomePlaylist, riftFilm, riftPrompt, type BiomeId } from "@/game/cook";
 import { FilmStage } from "@/components/film-stage";
-import { dropRoom, hangArtifact, hangOnRoom, mergeHall, readArtifacts, uniqueClips, ROOM_ONE_STILL, type HungArtifact } from "@/game/artifacts";
+import { dropRoom, hangArtifact, hangOnRoom, isClip, mergeHall, readArtifacts, uniqueClips, ROOM_ONE_STILL, type HungArtifact } from "@/game/artifacts";
+import { gateFromHung, hydrateRift, stockTransUrl } from "@/game/enter-graph";
 import { hangHall, listHall } from "@/lib/hall";
 import { boltFull } from "@/lib/press";
 import { sfxForge, startBed, unlockAudio, setLiving } from "@/game/audio";
@@ -4266,56 +4267,22 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const liveArt = gate.art ? readArtifacts().find((x) => x.id === gate.art) : null;
     const liveGate = liveArt ? { ...gate, ...gateFromHung(liveArt), trans: gate.trans || liveArt.room?.trans } : gate;
     let trans = liveGate.trans || "";
-    if (!trans || !(trans.includes(".mp4") || trans.includes("/films/clips/") || trans.includes("xai-vidgen") || trans.includes("files-cdn.x.ai"))) {
-      setFrost("opening the door from the room");
-      setRiftDraft({ door, gate: liveGate, cook: "cook" });
-      trans = (await cookRiftTrans(door, { ...liveGate, trans: "" }, ++riftCookTok.current)) || "";
-      setRiftDraft(null);
+    if (!isClip(trans)) {
+      trans = stockTransUrl(door, liveGate.biome as BiomeId);
+      void cookRiftTrans(door, { ...liveGate, trans: "" }, ++riftCookTok.current).then((url) => {
+        if (!url) return;
+        const live = riftRef.current[door];
+        if (!live) return;
+        attachRift(door, { ...live, trans: url });
+      });
     }
     const clips = uniqueClips([trans, ...(liveGate.playlist || []), liveGate.loop].filter(Boolean));
     setRiftBloom(null);
     setSprint({
-      film: riftFilm(liveGate.name, room, clips.length ? clips : [liveGate.loop]),
+      film: riftFilm(liveGate.name, liveGate.still || room, clips.length ? clips : [trans, liveGate.loop]),
       door,
       name: liveGate.name,
     });
-  }
-
-  function gateFromHung(a: HungArtifact): RiftGate {
-    const urls = (a.playlist || []).filter(Boolean);
-    return {
-      biome: "open",
-      name: a.name,
-      still: a.still || urls[0] || "",
-      loop: urls[0] || a.still,
-      playlist: urls.length ? urls : a.still ? [a.still] : [],
-      trans: a.room?.trans,
-      art: a.id,
-    };
-  }
-
-  function hydrateRift(
-    citadel: string,
-    hall: number,
-    rift: { m1?: RiftGate; m2?: RiftGate },
-    arts: HungArtifact[],
-  ): { m1?: RiftGate; m2?: RiftGate } {
-    const next = { ...rift };
-    for (const a of arts) {
-      const room = a.room;
-      if (!room?.door) continue;
-      if (room.citadel && room.citadel !== citadel) continue;
-      if (room.hall && room.hall !== hall) continue;
-      if (!room.citadel && hall !== 1) continue;
-      const door: "m1" | "m2" = room.door === "B" ? "m2" : "m1";
-      if (next[door]?.art === a.id) {
-        next[door] = { ...next[door], ...gateFromHung(a), trans: next[door]?.trans || room.trans };
-        continue;
-      }
-      if (next[door]) continue;
-      next[door] = gateFromHung(a);
-    }
-    return next;
   }
 
   function refreshHung() {
@@ -4342,10 +4309,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           gate.art,
           {
             door: door === "m2" ? "B" : "A",
-            still: plateRef.current || ROOM_ONE_STILL,
-            trans: gate.trans,
+            still: gate.still || plateRef.current || ROOM_ONE_STILL,
+            trans: gate.trans || stockTransUrl(door),
             citadel: sid.current,
             hall: hallHold.current,
+            biome: gate.biome,
           },
           hungArts.length ? hungArts : undefined,
         );
@@ -5089,6 +5057,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setNeedStill(false);
     setFrost("");
     syncWalks();
+    const restored = hydrateRift(sid.current, hallHold.current, riftRef.current, readArtifacts());
+    riftRef.current = restored;
+    setRift(restored);
     persist({
       phase: "play",
       plate: HALL_STILL,
@@ -5100,6 +5071,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       cameFrom: "start",
       rooms: roomsHold.current,
       hall: hallHold.current,
+      rift: restored.m1 || restored.m2 ? restored : undefined,
       refs,
     });
     markLivePlay(sid.current, SPAWN.id, HALL_STILL);
@@ -5350,16 +5322,18 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   if (sprint) {
     return (
-      <FilmStage
-        id={sprint.film.id}
-        original={false}
-        custom={sprint.film}
-        ramp={false}
-        onExit={() => leaveSprint()}
-        onDone={() => {
-          /* stay on the grade — Leave calls onExit */
-        }}
-      />
+      <div data-biome-play="1" data-biome-door={sprint.door} data-biome-name={sprint.name}>
+        <FilmStage
+          id={sprint.film.id}
+          original={false}
+          custom={sprint.film}
+          ramp={false}
+          onExit={() => leaveSprint()}
+          onDone={() => {
+            /* stay on the grade — Leave calls onExit */
+          }}
+        />
+      </div>
     );
   }
 
@@ -5585,6 +5559,18 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           </div>
           {door ? (
             <>
+              <button
+                type="button"
+                data-biome-bot={biomeBotStart().dataBiome}
+                className="rounded-2xl border border-[#9ef0e4]/35 bg-black/45 px-3 py-3 text-left font-display text-xl text-[#9ef0e4]"
+                style={{ touchAction: "manipulation" }}
+                onPointerUp={() => pickBiome(door, "asteroid")}
+              >
+                Grok Bot Biome
+                <span className="mt-0.5 block font-mono text-[9px] uppercase tracking-[0.14em] text-white/40">
+                  sealed asteroid · no picker
+                </span>
+              </button>
               <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#9ef0e4]">biome</p>
               <div className="grid grid-cols-2 gap-3">
                 {BIOMES.map((b) => (

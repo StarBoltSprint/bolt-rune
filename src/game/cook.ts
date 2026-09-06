@@ -392,17 +392,7 @@ export function riftBeats(): Beat[] {
   ];
 }
 
-export function riftFilm(name: string, still: string, urls: string[]): Film {
-  return cookFilm(name, still, urls, name);
-}
-
-export function cookFilm(name: string, still: string, urls: string[], prompt?: string): Film {
-  const plates: string[] = [];
-  for (const u of urls.filter(Boolean)) {
-    if (!/\.mp4(\?|$)/i.test(u) && !u.includes("xai-vidgen")) continue;
-    if (/\/films\/forge-[a-z0-9]+\.mp4$/i.test(u)) continue;
-    if (!plates.includes(u)) plates.push(u);
-  }
+function filmFromPlates(name: string, still: string, plates: string[], prompt?: string): Film {
   const src = plates[0] ?? "";
   const each = 15;
   const dur = Math.max(each, Math.max(1, plates.length) * each);
@@ -423,4 +413,32 @@ export function cookFilm(name: string, still: string, urls: string[], prompt?: s
     beats: turnBeatsForRun(plates.length ? plates.map(() => each) : [each]),
     playlist: plates,
   };
+}
+
+function asPlates(urls: string[], keepStock: boolean) {
+  const plates: string[] = [];
+  for (const u of urls.filter(Boolean)) {
+    if (!/\.mp4(\?|$)/i.test(u) && !u.includes("xai-vidgen")) continue;
+    if (!keepStock && /\/films\/forge-[a-z0-9]+\.mp4$/i.test(u)) continue;
+    if (!plates.includes(u)) plates.push(u);
+  }
+  return plates;
+}
+
+/** Vault / door enter: keep stock biome loops so play is a sprint, not a citadel still. */
+export function biomeSprintFilm(name: string, still: string, urls: string[], prompt?: string): Film {
+  return filmFromPlates(name, still, asPlates(urls, true), prompt);
+}
+
+export function stockBiomeFilm(id: BiomeId): Film {
+  const hit = BIOMES.find((b) => b.id === id) ?? BIOMES[0];
+  return biomeSprintFilm(hit.name, hit.still, biomePlaylist(hit.id), hit.world);
+}
+
+export function riftFilm(name: string, still: string, urls: string[]): Film {
+  return biomeSprintFilm(name, still, urls, name);
+}
+
+export function cookFilm(name: string, still: string, urls: string[], prompt?: string): Film {
+  return filmFromPlates(name, still, asPlates(urls, false), prompt);
 }

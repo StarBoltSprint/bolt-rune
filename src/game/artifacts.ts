@@ -1,5 +1,5 @@
 import type { Film, Grade } from "./films";
-import { cookFilm } from "./cook";
+import { biomeSprintFilm, cookFilm } from "./cook";
 
 const KEY = "bolt-artifacts-v1";
 const MEM = "bolt-artifacts-mem-v1";
@@ -13,6 +13,7 @@ export type HungRoom = {
   trans?: string;
   citadel?: string;
   hall?: number;
+  biome?: string;
 };
 
 export type HungArtifact = {
@@ -31,7 +32,7 @@ let RAM: HungArtifact[] = [];
 
 function keepArt(u?: string) {
   if (!u) return "";
-  if (u.startsWith("http") || u.startsWith("/films/") || u.startsWith("/refs/")) return u;
+  if (u.startsWith("http") || u.startsWith("/films/") || u.startsWith("/refs/") || u.startsWith("/ui/")) return u;
   if (u.startsWith("data:image/") && u.length < 480000) return u;
   return "";
 }
@@ -73,21 +74,26 @@ export function packRoom(room?: HungRoom | null): HungRoom | null | undefined {
   if (!room?.door) return undefined;
   const hall = Number(room.hall);
   const citadel = String(room.citadel || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+  const biome = String(room.biome || "").replace(/[^a-z]/g, "").slice(0, 16);
   return {
     door: room.door === "B" ? "B" : "A",
     still: keepArt(room.still) || ROOM_ONE_STILL,
     trans: keepArt(room.trans) || undefined,
     citadel: citadel || undefined,
     hall: hall >= 1 && hall <= 8 ? Math.round(hall) : undefined,
+    biome: biome || undefined,
   };
 }
 
 export function filmOf(a: HungArtifact, all?: HungArtifact[]): Film {
   const other = (all || []).find((x) => x.id === a.id);
   const room = a.room || other?.room;
-  const clips = uniqueClips([...(a.playlist || []), ...(other?.playlist || [])]);
-  const still = room?.door ? ROOM_ONE_STILL : a.still || other?.still || clips[0] || "";
-  return cookFilm(a.name || other?.name || "Artifact", still, clips, a.prompt || other?.prompt);
+  const clips = uniqueClips([room?.trans, ...(a.playlist || []), ...(other?.playlist || [])].filter(Boolean) as string[]);
+  const still = a.still || other?.still || clips[0] || "";
+  const name = a.name || other?.name || "Artifact";
+  const prompt = a.prompt || other?.prompt;
+  if (room?.door) return biomeSprintFilm(name, still, clips, prompt);
+  return cookFilm(name, still, clips, prompt);
 }
 
 const CLIP_MAP: Record<string, string> = {
@@ -108,8 +114,7 @@ export function localizeClip(u: string) {
 export function isClip(u?: string) {
   if (!u) return false;
   if (u.startsWith("data:image") || /\.(jpe?g|png|webp|gif)(\?|$)/i.test(u)) return false;
-  if (/\/films\/forge-[a-z0-9]+(\.mp4)?$/i.test(u)) return false;
-  return /\.mp4(\?|$)/i.test(u) || u.includes("xai-vidgen") || u.includes("/films/clips/") || u.includes("/films/");
+  return /\.mp4(\?|$)/i.test(u) || u.includes("xai-vidgen") || u.includes("/films/clips/") || u.includes("/films/") || u.includes("/ui/");
 }
 
 export function uniqueClips(urls: string[]) {
@@ -194,7 +199,7 @@ export function familiesOf(list: HungArtifact[]): VaultFamily[] {
     .sort((p, q) => (q.hungAt || 0) - (p.hungAt || 0))
     .flatMap((a) => {
       const playlist = uniqueClips(a.playlist || []);
-      if (!playlist.length) return [];
+      if (!playlist.length && !a.still) return [];
       const stamps = stampClips([a], playlist);
       return [
         {

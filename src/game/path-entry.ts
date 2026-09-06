@@ -16,3 +16,14 @@ export type LookForgeKind = "start" | "bot";
 export function lookForgeStart(kind: LookForgeKind): { dataForge: LookForgeKind; sealed: boolean } {
   return kind === "bot" ? { dataForge: "bot", sealed: true } : { dataForge: "start", sealed: false };
 }
+
+/** Sealed biome cook — no OS filechooser. Mirrors lookForgeStart("bot"). */
+export function biomeBotStart(): { dataBiome: "bot"; sealed: true } {
+  return { dataBiome: "bot", sealed: true };
+}
+
+export type VaultHangKind = "A" | "B" | "bot";
+
+export function vaultHangStart(kind: VaultHangKind): { dataHang: VaultHangKind; sealed: boolean } {
+  return kind === "bot" ? { dataHang: "bot", sealed: true } : { dataHang: kind, sealed: false };
+}

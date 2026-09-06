@@ -240,6 +240,137 @@ async function runStockTaps(browser, vp) {
   }
 }
 
+async function seedForest(page) {
+  await page.addInitScript(() => {
+    const art = {
+      id: "art-forest-smoke",
+      name: "Forest",
+      still: "/films/cook-forest.jpg",
+      playlist: ["/films/forge-forest.mp4", "/films/forge-forest-moss.mp4"],
+      prompt: "forest",
+      hungAt: Date.now(),
+      grade: null,
+    };
+    try {
+      localStorage.setItem("bolt-artifacts-v1", JSON.stringify([art]));
+      sessionStorage.setItem("bolt-artifacts-mem-v1", JSON.stringify([art]));
+    } catch {
+      /* */
+    }
+  });
+}
+
+async function runBiomeVaultBot(browser, vp) {
+  const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
+  try {
+    await seedForest(page);
+    await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    const home = await page.evaluate(() => ({
+      vault: Boolean(document.querySelector("[data-vault], [data-vault-bot]")),
+      artifacts: Boolean(document.querySelector("[data-go=artifacts]")),
+    }));
+    if (!home.vault || !home.artifacts) {
+      throw new Error(`${vp.name}: home missing vault/artifacts reach ${JSON.stringify(home)}`);
+    }
+
+    await page.goto(`${BASE}/artifacts`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.waitForSelector("[data-biome-bot=bot]", { timeout: 15000 });
+    const biomeLabel = await page.locator("[data-biome-bot=bot]").first().textContent();
+    if (!/Grok Bot Biome/i.test(biomeLabel || "")) {
+      throw new Error(`${vp.name}: biome bot label missing ${JSON.stringify(biomeLabel)}`);
+    }
+    let picker = false;
+    page.once("filechooser", () => {
+      picker = true;
+    });
+    await page.locator("[data-biome-bot=bot]").first().click();
+    await page.waitForTimeout(600);
+    if (picker) throw new Error(`${vp.name}: Grok Bot Biome opened a file picker`);
+    await page.screenshot({ path: `${OUT}/${vp.name}-bot-biome.png`, fullPage: false });
+
+    await page.goto(`${BASE}/vault`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.waitForSelector("[data-hang-bot=bot]", { timeout: 15000 });
+    await page.waitForSelector("[data-hang=A]", { timeout: 15000 });
+    await page.waitForSelector("[data-hang=B]", { timeout: 8000 });
+    picker = false;
+    page.once("filechooser", () => {
+      picker = true;
+    });
+    await page.locator("[data-hang-bot=bot]").first().click();
+    await page.waitForTimeout(400);
+    if (picker) throw new Error(`${vp.name}: Grok Bot Hang opened a file picker`);
+    const hungBot = await page.evaluate(() => /room \d+ · door/i.test(document.body.innerText));
+    if (!hungBot) throw new Error(`${vp.name}: Grok Bot Hang did not bind a door`);
+
+    await page.locator("button", { hasText: "Unhang" }).first().click().catch(() => {});
+    await page.waitForTimeout(200);
+    if (await page.locator("[data-hang=A]").count()) {
+      await page.locator("[data-hang=A]").first().click();
+    } else {
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForSelector("[data-hang=A]", { timeout: 8000 });
+      await page.locator("[data-hang=A]").first().click();
+    }
+    await page.waitForTimeout(400);
+    const hungA = await page.evaluate(() => /door A/i.test(document.body.innerText));
+    if (!hungA) throw new Error(`${vp.name}: human Hang A did not bind door A`);
+    await page.screenshot({ path: `${OUT}/${vp.name}-vault-hang.png`, fullPage: false });
+
+    const enterPage = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
+    try {
+      await seedForest(enterPage);
+      await enterPage.addInitScript(() => {
+        try {
+          const raw = localStorage.getItem("bolt-artifacts-v1");
+          const list = raw ? JSON.parse(raw) : [];
+          const head = list[0];
+          if (head) {
+            head.room = {
+              door: "A",
+              still: "/films/cook-forest.jpg",
+              trans: "/ui/citadel.mp4?v=aaa",
+              hall: 1,
+              biome: "forest",
+            };
+            localStorage.setItem("bolt-artifacts-v1", JSON.stringify([head]));
+            sessionStorage.setItem("bolt-artifacts-mem-v1", JSON.stringify([head]));
+          }
+        } catch {
+          /* */
+        }
+      });
+      await enterPage.goto(`${BASE}/rune?first=m1&drive=engine&rooms=1&hall=1&stills=0`, {
+        waitUntil: "domcontentloaded",
+        timeout: 45000,
+      });
+      await enterPage.waitForSelector("[data-rune=engine][data-phase=play]", { timeout: 15000 });
+      await enterPage.waitForTimeout(700);
+      const rift = await enterPage.evaluate(() => document.querySelector("[data-rune=engine]")?.getAttribute("data-rift"));
+      if (rift !== "1") {
+        throw new Error(`${vp.name}: living hall did not hydrate hung biome ${rift}`);
+      }
+      const btn = enterPage.locator("[data-door=m1]");
+      if (await btn.count()) {
+        await btn.first().click({ force: true });
+        await waitBeat(enterPage, "idle", 8000);
+        await btn.first().click({ force: true });
+      }
+      await enterPage.waitForTimeout(800);
+      const biomePlay = await enterPage.evaluate(() => Boolean(document.querySelector("[data-biome-play]")));
+      if (!biomePlay) {
+        throw new Error(`${vp.name}: door A enter did not open biome play`);
+      }
+      await enterPage.screenshot({ path: `${OUT}/${vp.name}-biome-enter.png`, fullPage: false });
+    } finally {
+      await enterPage.close();
+    }
+
+    return { ok: true, flow: "biome-vault-bot", viewport: vp.name, home, hungBot, hungA };
+  } finally {
+    await page.close();
+  }
+}
+
 const browser = await chromium.launch({
   headless: true,
   args: ["--no-sandbox", "--disable-dev-shm-usage"],
@@ -249,6 +380,7 @@ try {
   for (const vp of VIEWPORTS) {
     results.push(await runCreateLook(browser, vp));
     results.push(await runStockTaps(browser, vp));
+    results.push(await runBiomeVaultBot(browser, vp));
   }
   console.log(JSON.stringify({ ok: true, results }, null, 2));
 } catch (err) {
