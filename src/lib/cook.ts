@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createServerFn } from "@tanstack/react-start";
 import { platePrompt, stillPrompt, type BiomeId, ACTS } from "@/game/cook";
-import { runeFilmVariants, runeStillJobs } from "@/game/imagine-payload";
+import { clipImaginePrompt, runeFilmVariants, runeStillJobs } from "@/game/imagine-payload";
 import { CAM_LOCK, citadelPrompt } from "@/game/rune";
 
 const exec = promisify(execFile);
@@ -162,7 +162,7 @@ export const startRuneStill = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<{ ok: true; url: string } | StartErr> => {
     const headers = auth();
     if (!headers) return { ok: false, error: "echo-off" };
-    const prompt = data.prompt.trim().slice(0, 2200);
+    const prompt = clipImaginePrompt(data.prompt.trim());
     if (!prompt) return { ok: false, error: "empty" };
     const refs = (data.refs ?? []).slice(0, 5).map(resolveRuneStill).filter((u) => u && !u.startsWith("blob:"));
     const ratio = data.ratio === "1:1" ? "1:1" : "9:16";
@@ -324,8 +324,8 @@ export const startRuneFilm = createServerFn({ method: "POST" })
     const imageUrl = resolveRuneStill(data.still);
     const duration = data.duration === 6 || data.duration === 15 ? data.duration : 10;
     const rawPrompt = data.prompt.trim();
-    const already = /STATIC CCTV|LOCKED-OFF|CAMERA LOCK|PORTAL CROSS|WIDE LOCKED CCTV|LOCKED CCTV/i.test(rawPrompt);
-    const prompt = (already ? rawPrompt : `${CAM_LOCK} ${rawPrompt}`).slice(0, 2200);
+    const already = /STATIC CCTV|LOCKED-OFF|CAMERA LOCK|PORTAL CROSS|WIDE LOCKED CCTV|LOCKED CCTV|LEGAL SHOT ONLY|REJECT LIST/i.test(rawPrompt);
+    const prompt = clipImaginePrompt(already ? rawPrompt : `${CAM_LOCK} ${rawPrompt}`);
     const resolution = data.res === "1080" ? "1080p" : "720p";
     const store = keepStore(`bolt-${Date.now().toString(36)}.mp4`);
     const variants = runeFilmVariants({ prompt, imageUrl, duration, resolution, store });
@@ -369,8 +369,8 @@ export const startRuneExtend = createServerFn({ method: "POST" })
     lastStart = now;
     const duration = data.duration === 10 ? 10 : 6;
     const rawPrompt = data.prompt.trim();
-    const already = /STATIC CCTV|LOCKED-OFF|CAMERA LOCK|PORTAL CROSS|WIDE LOCKED CCTV|LOCKED CCTV/i.test(rawPrompt);
-    const prompt = (already ? rawPrompt : `${CAM_LOCK} ${rawPrompt}`).slice(0, 2200);
+    const already = /STATIC CCTV|LOCKED-OFF|CAMERA LOCK|PORTAL CROSS|WIDE LOCKED CCTV|LOCKED CCTV|LEGAL SHOT ONLY|REJECT LIST/i.test(rawPrompt);
+    const prompt = clipImaginePrompt(already ? rawPrompt : `${CAM_LOCK} ${rawPrompt}`);
     const variants: Record<string, unknown>[] = [
       {
         model: "grok-imagine-video-1.5",

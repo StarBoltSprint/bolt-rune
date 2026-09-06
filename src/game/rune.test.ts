@@ -9,9 +9,12 @@ import {
   CAM_LOCK,
   GAIT_LOCK,
   HALL_SHOT,
+  SHOT_REJECT,
   SPAWN,
+  STAND_LOCK,
   TRAVEL_FACE,
   boltKit,
+  breathPrompt,
   faceRow,
   facingOf,
   gazeLaw,
@@ -27,7 +30,7 @@ import {
   walkPrompt,
 } from "./rune.ts";
 import { genePrompt, retryLaw, stillLaws } from "./rune-brain.ts";
-import { runeFilmVariants, runeStillJobs } from "./imagine-payload.ts";
+import { clipImaginePrompt, HALL_PROMPT_BUDGET, IMAGINE_PROMPT_MAX, runeFilmVariants, runeStillJobs } from "./imagine-payload.ts";
 
 describe("stock living room", () => {
   it("isHallFilm accepts the locked hall still and living loop, not landing chrome", () => {
@@ -111,7 +114,7 @@ describe("Imagine prompt rails", () => {
     assert.match(BOLT_ID, /saddle/);
     assert.match(BOLT_ID, /TEXT COAT WINS/);
     assert.match(BOLT_ID, /Swiss Shepherd/);
-    assert.match(CAM_LOCK, /side-profile cinematic|side cinematic/);
+    assert.match(CAM_LOCK, /profile-hero|REJECT LIST/);
     assert.match(place, /<IMAGE_0>/);
     assert.match(place, /<IMAGE_1>/);
     assert.match(genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 }), /Swiss Shepherd/);
@@ -130,31 +133,92 @@ describe("Imagine prompt rails", () => {
     assert.match(still, /WHOLE hall/);
     assert.match(still, /Feet glued/);
     assert.match(still, /SMALL figure/);
-    assert.match(still, /side-profile close-up/);
-    assert.match(gazeLaw("m1"), /FACE the RIGHT door/);
-    assert.match(gazeLaw("m2"), /FACE the LEFT door/);
-    assert.match(gazeLaw("spawn"), /rear\/stand/);
+    assert.match(still, /profile close-up|profile-hero/);
+    assert.match(gazeLaw("m1"), /glance toward the RIGHT door/);
+    assert.match(gazeLaw("m2"), /glance toward the LEFT door/);
+    assert.match(gazeLaw("spawn"), /rear \/ back-to-camera|rear\/stand/);
     assert.doesNotMatch(gazeLaw("m1"), /PROFILE/);
     assert.match(HALL_SHOT, /SMALL figure/);
     assert.match(GAIT_LOCK, /foot-slide|skating/);
+    assert.match(STAND_LOCK, /3\/4-from-behind/);
   });
 
-  it("walk prompts face travel, then A/B stand look — no moonwalk language", () => {
+  it("walk prompts head travel without FACE LEFT/RIGHT shot language", () => {
     const ab = walkPrompt(m1, m2, false, gazeLaw("m2"));
     const ba = walkPrompt(m2, m1, false, gazeLaw("m1"));
-    assert.match(ab, /FACE RIGHT/);
+    assert.match(ab, /nose and chest point right/i);
     assert.match(ab, /RIGHT across the frame/);
-    assert.match(ab, /LOOKS LEFT at the other door/);
+    assert.match(ab, /glance toward the LEFT door/);
     assert.match(ab, /Never moonwalk/);
     assert.match(ab, /SMALL figure/);
     assert.match(ab, /foot-slide|Paws plant/);
-    assert.match(TRAVEL_FACE, /Move left → face left/);
-    assert.match(ba, /FACE LEFT/);
+    assert.match(TRAVEL_FACE, /Walk left → nose left/);
+    assert.match(ba, /nose and chest point left/i);
     assert.match(ba, /LEFT across the frame/);
-    assert.match(genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 }), /facing the travel direction/);
+    assert.doesNotMatch(ab, /HEAD and BODY FACE/);
+    assert.doesNotMatch(ab, /Ignore the/);
+    assert.match(genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 }), /Body heading follows travel|facing the travel direction/);
     assert.match(genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 }), /foot-slide/);
     assert.doesNotMatch(ab, /The wolf /);
     assert.doesNotMatch(retryLaw("stuck"), /wolf/i);
+  });
+
+  it("walk / idle / breath / place all carry the explicit shot REJECT list", () => {
+    const walk = walkPrompt(SPAWN, m1, true, gazeLaw("m1"));
+    const idle = idlePrompt(gazeLaw("spawn"));
+    const breath = breathPrompt(gazeLaw("m1"));
+    const place = placeBoltPrompt();
+    const seed = seedHallPrompt();
+    const forbids = [
+      /profile close-up/,
+      /profile-hero/,
+      /side hero/,
+      /medium shot of the dog/,
+      /tracking cam/,
+      /orbit/,
+      /wolf morph/,
+      /fox morph/,
+    ];
+    for (const p of [walk, idle, breath, place, seed, SHOT_REJECT, HALL_SHOT, CAM_LOCK]) {
+      for (const re of forbids) assert.match(p, re);
+    }
+    for (const p of [walk, idle, breath, place, seed, HALL_SHOT, CAM_LOCK]) {
+      assert.match(p, /20%|≤20%/);
+    }
+    assert.match(place, /LOWER center/);
+    assert.match(place, /back-to-camera|from behind|rear/);
+    assert.match(idle, /LOWER center/);
+    assert.match(breath, /3\/4-from-behind|back-to-camera/);
+    assert.match(walk, /BOTH doors stay visible/);
+    const clipped = clipImaginePrompt(`${walk} ${"pad ".repeat(800)}`);
+    assert.ok(clipped.startsWith("REJECT LIST"));
+    assert.ok(clipped.length <= HALL_PROMPT_BUDGET);
+    assert.ok(HALL_PROMPT_BUDGET <= IMAGINE_PROMPT_MAX);
+    for (const re of forbids) assert.match(clipped, re);
+  });
+
+  it("walk / idle / breath stay ≤ 2100 so the cook slice cannot drop rails", () => {
+    const shipped = [
+      idlePrompt(),
+      idlePrompt(gazeLaw("m1")),
+      idlePrompt([gazeLaw("m1"), stillLaws()].join(" ")),
+      breathPrompt(),
+      breathPrompt(gazeLaw("m1")),
+      walkPrompt(SPAWN, m1, true),
+      walkPrompt(SPAWN, m1, true, gazeLaw("m1")),
+      walkPrompt(m1, m2, false, gazeLaw("m2")),
+      walkPrompt(m1, m2, false, [gazeLaw("m2"), genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 })].join(" ")),
+      walkPrompt(m1, m2, false, [gazeLaw("m2"), genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 })].join(" "), true),
+      walkPrompt(m1, m2, false, `${gazeLaw("m2")} ${genePrompt({ cam: 4, strides: 16, morph: 4, dest: 3 })} ${"lesson ".repeat(80)}`, true),
+      placeBoltPrompt(),
+      seedHallPrompt(),
+    ];
+    for (const p of shipped) {
+      assert.ok(p.length <= HALL_PROMPT_BUDGET, `prompt ${p.length} > ${HALL_PROMPT_BUDGET}`);
+      assert.match(p.slice(0, 200), /REJECT LIST/);
+      assert.match(p.slice(0, 400), /profile-hero/);
+      assert.match(p.slice(0, 900), /snow-white|Swiss Shepherd/);
+    }
   });
 
   it("create path look → Forge contract is unchanged", () => {
@@ -182,6 +246,8 @@ describe("Imagine still / film payloads", () => {
     assert.equal(jobs[0]?.path, "/images/edits");
     assert.deepEqual(jobs[0]?.body.images, [{ url: "data:hall" }, { url: "data:bolt" }]);
     assert.equal(jobs[0]?.body.image, undefined);
+    assert.match(String(jobs[0]?.body.prompt), /^REJECT LIST/);
+    assert.match(String(jobs[0]?.body.prompt), /profile-hero/);
   });
 
   it("video variants never combine image with reference_images", () => {
@@ -196,6 +262,7 @@ describe("Imagine still / film payloads", () => {
     for (const body of variants) {
       assert.deepEqual(body.image, { url: "data:still" });
       assert.equal(body.reference_images, undefined);
+      assert.match(String(body.prompt), /^REJECT LIST/);
     }
   });
 });
