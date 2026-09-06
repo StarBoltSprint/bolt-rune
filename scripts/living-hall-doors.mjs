@@ -67,7 +67,10 @@ async function engineState(page) {
       forge: Boolean(document.querySelector("[data-forge=start]")),
       botForge: Boolean(document.querySelector("[data-forge=bot]")),
       botLabel: document.querySelector("[data-forge=bot]")?.textContent?.trim() || "",
+      lookLock: look?.getAttribute("data-look-lock") || "",
+      forgePack: document.querySelector("[data-forge=bot]")?.getAttribute("data-forge-pack") || "",
       forgePct: pct?.getAttribute("data-forge-pct") || "",
+      frost: document.body.innerText,
       films: /3 walks/i.test(document.body.innerText),
     };
   });
@@ -109,6 +112,26 @@ async function runCreateLook(browser, vp) {
     if (!lookA.look || !lookA.forge || !lookA.botForge || lookA.botLabel !== "Grok Bot Forge" || lookA.films) {
       throw new Error(`${vp.name}: Door A create missed look/Forge + Grok Bot Forge ${JSON.stringify(lookA)}`);
     }
+    if (lookA.lookLock === "1" || lookA.forgePack !== "sealed") {
+      throw new Error(`${vp.name}: unlocked look must keep sealed DEFAULT HALL ${JSON.stringify(lookA)}`);
+    }
+    const style = page.locator("[data-look] input");
+    await style.fill("crystal ferns");
+    await page.locator("[data-look] button", { hasText: /^Lock$/i }).click();
+    await page.waitForTimeout(80);
+    const locked = await engineState(page);
+    if (locked.lookLock !== "1" || locked.forgePack !== "live") {
+      throw new Error(`${vp.name}: LOCK did not switch Grok Bot Forge to live hall ${JSON.stringify(locked)}`);
+    }
+    await page.locator("[data-look] button", { hasText: /^Clear$/i }).click();
+    await page.waitForTimeout(80);
+    const cleared = await engineState(page);
+    if (cleared.lookLock === "1" || cleared.forgePack !== "sealed") {
+      throw new Error(`${vp.name}: CLEAR did not return Grok Bot Forge to sealed DEFAULT HALL ${JSON.stringify(cleared)}`);
+    }
+    await style.fill("crystal ferns");
+    await page.locator("[data-look] button", { hasText: /^Lock$/i }).click();
+    await page.waitForTimeout(80);
     await page.screenshot({ path: `${OUT}/${vp.name}-create-look.png`, fullPage: false });
     await page.locator("[data-forge=start]").click();
     await page.waitForSelector("[data-forge-pct]", { timeout: 12000 });
@@ -125,6 +148,16 @@ async function runCreateLook(browser, vp) {
     if (!lookB.look || !lookB.forge || !lookB.botForge) {
       throw new Error(`${vp.name}: Door B create missed look/Forge + Grok Bot Forge ${JSON.stringify(lookB)}`);
     }
+    if (lookB.lookLock === "1" || lookB.forgePack !== "sealed") {
+      throw new Error(`${vp.name}: Door B unlocked look must stay sealed ${JSON.stringify(lookB)}`);
+    }
+    await page.locator("[data-look] input").fill("crystal ferns");
+    await page.locator("[data-look] button", { hasText: /^Lock$/i }).click();
+    await page.waitForTimeout(80);
+    const lookBLocked = await engineState(page);
+    if (lookBLocked.lookLock !== "1" || lookBLocked.forgePack !== "live") {
+      throw new Error(`${vp.name}: Door B LOCK missed live bot pack ${JSON.stringify(lookBLocked)}`);
+    }
     let picker = false;
     page.once("filechooser", () => {
       picker = true;
@@ -137,6 +170,9 @@ async function runCreateLook(browser, vp) {
     }
     if (!botCooking.forgePct && botCooking.phase === "look") {
       throw new Error(`${vp.name}: Grok Bot Forge tap did not start cook UI ${JSON.stringify(botCooking)}`);
+    }
+    if (!/crystal ferns/i.test(botCooking.frost || "")) {
+      throw new Error(`${vp.name}: locked Grok Bot Forge dropped hall style ${JSON.stringify(botCooking)}`);
     }
     await page.waitForTimeout(400);
     await page.screenshot({ path: `${OUT}/${vp.name}-create-bot-forge-pct.png`, fullPage: false });

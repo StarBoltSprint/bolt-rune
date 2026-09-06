@@ -10,11 +10,28 @@ export function createPathHref(first: "m1" | "m2", q = "drive=engine&rooms=1&hal
   return href;
 }
 
-/** Human Forge keeps the live look pack. Bot forge uses sealed DEFAULT HALL + Bolt refs. */
+/** Human Forge keeps the live look pack. Bot forge seals DEFAULT HALL unless a hall is LOCKed. */
 export type LookForgeKind = "start" | "bot";
 
-export function lookForgeStart(kind: LookForgeKind): { dataForge: LookForgeKind; sealed: boolean } {
-  return kind === "bot" ? { dataForge: "bot", sealed: true } : { dataForge: "start", sealed: false };
+export type LookHallLock = {
+  style?: string | null;
+  still?: string | null;
+  pack?: { id: string; src?: string }[] | null;
+};
+
+const BRIDGE_PACK = new Set(["same-hall", "door-a", "door-b"]);
+
+/** LOCK / custom still / voice / look-pack extras. CLEAR or empty → unlocked. */
+export function lookHallLocked(lock?: LookHallLock | null): boolean {
+  if (!lock) return false;
+  if (String(lock.style || "").trim()) return true;
+  if (String(lock.still || "").trim()) return true;
+  return (lock.pack || []).some((p) => p?.src && !BRIDGE_PACK.has(p.id));
+}
+
+export function lookForgeStart(kind: LookForgeKind, lock?: LookHallLock | null): { dataForge: LookForgeKind; sealed: boolean } {
+  if (kind !== "bot") return { dataForge: "start", sealed: false };
+  return { dataForge: "bot", sealed: !lookHallLocked(lock) };
 }
 
 /** Sealed biome cook — no OS filechooser. Mirrors lookForgeStart("bot"). */

@@ -48,7 +48,7 @@ import {
   type RuneNode,
   type WalkSecs,
 } from "@/game/rune";
-import { biomeBotStart, lookForgeStart } from "@/game/path-entry";
+import { biomeBotStart, lookForgeStart, lookHallLocked } from "@/game/path-entry";
 import { freeRuneSlot, grabRuneFrame, pollCookPlate, startCookStill, startRuneExtend, startRuneFilm, startRuneStill, cacheClip, cacheStill } from "@/lib/cook";
 import { COOK_BUSY_FROST, COOK_BUSY_WAIT_MS, COOK_START_ACCEPTED_PCT, cookBusyNext, isCookSlotBlock } from "@/lib/cook-busy";
 import { BIOMES, biomePlaylist, riftFilm, riftPrompt, type BiomeId } from "@/game/cook";
@@ -5657,10 +5657,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   if (phase === "look") {
+    const lookLock = {
+      style: styleOn,
+      still: lookHall.current,
+      pack: lookPack,
+    };
+    const botForge = lookForgeStart("bot", lookLock);
     return (
       <div
         className="relative flex min-h-dvh flex-col overflow-hidden bg-bg px-5 pt-[max(1.4rem,env(safe-area-inset-top))] pb-[max(1.1rem,env(safe-area-inset-bottom))]"
         data-look="1"
+        data-look-lock={lookHallLocked(lookLock) ? "1" : "0"}
         style={{ touchAction: "manipulation" }}
       >
         <img src={bridge.hall || plate || HALL_FALLBACK} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
@@ -5897,12 +5904,22 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           </button>
           <button
             type="button"
-            data-forge={lookForgeStart("bot").dataForge}
+            data-forge={botForge.dataForge}
+            data-forge-pack={botForge.sealed ? "sealed" : "live"}
             className="flex h-12 w-full max-w-xs items-center justify-center font-display text-2xl text-[#9ef0e4] drop-shadow-[0_0_18px_rgba(158,240,228,0.4)]"
             style={{ touchAction: "manipulation" }}
             onPointerUp={() => {
-              clearWish();
-              startRefs(false, "sealed");
+              const start = lookForgeStart("bot", {
+                style: styleOn,
+                still: lookHall.current,
+                pack: lookPackRef.current,
+              });
+              if (start.sealed) {
+                clearWish();
+                startRefs(false, "sealed");
+                return;
+              }
+              startRefs(false, "live");
             }}
           >
             Grok Bot Forge
