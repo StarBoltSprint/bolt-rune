@@ -43,7 +43,7 @@ import { FilmStage } from "@/components/film-stage";
 import { dropRoom, hangArtifact, hangOnRoom, mergeHall, readArtifacts, uniqueClips, ROOM_ONE_STILL, type HungArtifact } from "@/game/artifacts";
 import { hangHall, listHall } from "@/lib/hall";
 import { boltFull } from "@/lib/press";
-import { sfxForge, startBed, unlockAudio } from "@/game/audio";
+import { sfxForge, startBed, unlockAudio, setLiving } from "@/game/audio";
 import {
   dropSession,
   listSessions,
@@ -1135,7 +1135,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       beatRef.current === "cook"
     ) {
       queued.current = id;
-      setFrost(`next · ${id}`);
+      setFrost(phaseRef.current === "play" ? `next` : `next · ${id}`);
       return;
     }
     wrapping.current = false;
@@ -1228,10 +1228,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
   }
 
+  function otherFrom(from: string) {
+    if (from === "m1") return "m2";
+    if (from === "m2") return "m1";
+    return pathFirst.current || "m1";
+  }
+
   function prefetchFrom(from: string, prefer?: string | null) {
     const hid = hidFilm();
     const vis = visFilm();
-    const targets = prefer ? [prefer, ...outsFrom(from).filter((t) => t !== prefer)] : outsFrom(from);
+    const next = prefer || otherFrom(from);
+    const targets = [next, ...outsFrom(from).filter((t) => t !== next)];
     for (const t of targets) warmUrl(clipFor(from, t)?.url);
     warmUrl(idleFor(from)?.url);
     const clip = targets.map((t) => clipFor(from, t)).find((c) => c?.url);
@@ -1578,6 +1585,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       prefetchFrom(hereRef.current);
       return;
     }
+    setLiving(loop ? "idle" : "walk", walkSecsRef.current);
     if (hid && slotSrc(hid) === url && filmHasPaint(hid)) {
       filmLoop.current = loop;
       skipIn.current = skip;
@@ -1638,7 +1646,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     playing.current = false;
     setBeat("idle");
     beatRef.current = "idle";
-    setFrost("tap a door");
+    setFrost(phaseRef.current === "play" ? "" : "tap a door");
     idleArmed.current = true;
     const idle = idleFor(hereRef.current);
     if (idle?.url) {
@@ -1655,6 +1663,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setCoverFade(true);
     }
     prefetchFrom(hereRef.current);
+    setLiving("idle");
   }
 
   async function playEnterThenIdle() {
@@ -1707,6 +1716,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     let clip = clipFor(at, id);
     if (!clip) {
+      if (phaseRef.current === "play") {
+        setFrost("no film that way");
+        setLit(id);
+        window.setTimeout(() => setLit(null), 700);
+        holdIdle();
+        return;
+      }
       setFrost(`cook · ${at} → ${id}`);
       clip = await forgeWalkNow(at, id);
     }
@@ -1727,7 +1743,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setBeat("playvid");
     beatRef.current = "playvid";
     setFilmUrl(clip.url);
-    setFrost(`walk · ${at} → ${id}`);
+    setFrost(phaseRef.current === "play" ? "" : `walk · ${at} → ${id}`);
     markLivePlay(sid.current, at, plateRef.current || lastLive.current || clip.end || "");
     sfxForge("page");
     const nextIdle = idleFor(id, at);
@@ -2650,6 +2666,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         resolve();
         return;
       }
+      setLiving(breath ? "idle" : "walk", walkSecsRef.current);
       const gen = playTok.current;
       const mine = ++loadGen.current;
       let settled = false;
@@ -2755,7 +2772,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
               still,
               prompt,
               duration: secs === 6 ? 6 : secs === 10 ? 10 : clampWalk(walkSecsRef.current),
-              refs: boltKit(kit),
+              refs: boltKit([lookHall.current, refsMap.current.get("hall"), hallKeep.current, ...kit]),
               res: lookResRef.current,
             },
           });
@@ -3244,6 +3261,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setFrost(have ? "tap a door · menu for room / artefact" : "forge failed · tap rune");
       if (next === lastTo) holdIdle();
       else void playWalk(next);
+      prefetchFrom(hereRef.current);
       const firstDoor = pathFirst.current || "m1";
       const other = otherDoor(firstDoor);
       setNeedOther(!(bank.current.get(`spawn→${other}`) || bank.current.get(`spawn←start→${other}`)));
@@ -3259,7 +3277,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     bolt.current = { x: SPAWN.x, y: SPAWN.y };
     setFrost(have ? "tap a door · menu for room / artefact" : "forge failed · tap rune");
     persist({ phase: "play", plate: room, here: SPAWN.id, cameFrom: "start", start: room });
+    setReelOn(false);
+    setHallsOn(false);
+    setTray(false);
+    setEditOn(false);
+    setGraphOn(false);
+    setFrost("");
     holdIdle();
+    prefetchFrom("spawn");
+    for (const [k, v] of bank.current) {
+      if (v.url && k.includes("→") && !k.startsWith("enter")) warmUrl(v.url);
+    }
     const firstDoor = pathFirst.current || "m1";
     const other = otherDoor(firstDoor);
     setNeedOther(!(bank.current.get(`spawn→${other}`) || bank.current.get(`spawn←start→${other}`)));
@@ -3412,7 +3440,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       beatRef.current = "playvid";
       setFilmUrl(filmUrl);
       setFrost("play · seed");
-      const seedPlay = Promise.race([playFilm(filmUrl, 6200, hallUrl), sleep(6200)]);
+      const seedPlay = Promise.race([playFilm(filmUrl, 6200, hallUrl, null, true, undefined, true), sleep(6200)]);
       const snappedEnd = shotEnd(filmUrl, hallUrl);
       let shot: string | null = null;
       try {
@@ -5569,7 +5597,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         {beat === "shot" && phase === "forge" ? (
           <div className="pointer-events-none absolute inset-0 bg-ice/12" />
         ) : null}
-        {phase === "play" && graphOn && pins.length && (beat === "idle" || beat === "playvid") ? (
+        {false && phase === "play" && graphOn && pins.length && (beat === "idle" || beat === "playvid") ? (
           <div
             className="pointer-events-none absolute left-1/2 top-1/2 z-[35] -translate-x-1/2 -translate-y-1/2"
             style={{
@@ -5693,9 +5721,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           </div>
         ) : null}
       </div>
+      {phase === "play" ? null : (
       <p className="pointer-events-none absolute left-5 top-[max(1rem,env(safe-area-inset-top))] font-mono text-[10px] uppercase tracking-[0.38em] text-ice/70">
         {roomsHold.current > 1 ? `Room ${hallHold.current} / ${roomsHold.current}` : "Citadel"}
       </p>
+      )}
+      {phase === "play" ? null : (
       <button
         type="button"
         className="absolute left-4 top-[max(0.7rem,env(safe-area-inset-top))] z-50 flex h-11 items-center rounded-full border border-white/20 bg-black/50 px-4 font-mono text-[11px] uppercase tracking-[0.18em] text-ice"
@@ -5713,7 +5744,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       >
         Back
       </button>
-      {hallHold.current > 1 ? (
+      )}
+      {phase === "play" ? null : hallHold.current > 1 ? (
         <button
           type="button"
           className="absolute right-4 top-[max(0.7rem,env(safe-area-inset-top))] z-50 flex h-11 items-center rounded-full border border-white/20 bg-black/50 px-4 font-mono text-[11px] uppercase tracking-[0.18em] text-[#f0d48a]"
@@ -5768,30 +5800,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             ))}
         </div>
       ) : null}
-      {phase === "play" && beat === "idle" && enterAsk ? (
-        <button
-          type="button"
-          className="absolute bottom-[max(5.2rem,calc(env(safe-area-inset-bottom)+4.2rem))] left-1/2 z-50 -translate-x-1/2 font-display text-4xl text-[#f0d48a] drop-shadow-[0_8px_22px_rgba(0,0,0,0.9)]"
-          style={{ touchAction: "manipulation" }}
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-          }}
-          onPointerUp={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            void goEnter(enterAsk);
-          }}
-        >
-          {rift[enterAsk]?.trans ? `Open ${rift[enterAsk]?.name}` : rift[enterAsk]?.name ?? "Enter"}
-        </button>
-      ) : null}
       {phase === "play" ? null : (
       <p className="pointer-events-none absolute left-4 right-4 top-[max(2.6rem,calc(env(safe-area-inset-top)+1.6rem))] text-center font-display text-lg tracking-wide text-fg/80">
         {status}
       </p>
       )}
-      {clipsUI.length && (phase === "play" || phase === "forge") ? (
+      {clipsUI.length && phase === "forge" ? (
         <>
           {reelOn ? null : (
           <button
@@ -5949,7 +5963,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           ) : null}
         </>
       ) : null}
-      {phase === "play" || phase === "forge" ? (
+      {phase === "forge" ? (
         <>
           {hallsOn ? null : (
             <button
@@ -6039,7 +6053,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           ) : null}
         </>
       ) : null}
-      {phase === "play" && beat === "idle" && editOn ? (
+      {false && phase === "play" && beat === "idle" && editOn ? (
         <div className="absolute bottom-[max(4.6rem,calc(env(safe-area-inset-bottom)+3.6rem))] left-4 right-16 z-40 flex flex-col gap-2">
           {walksUI.map((w) => (
             <button
@@ -6073,6 +6087,25 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         >
           {tray ? (
             <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                className="flex h-11 min-w-28 items-center justify-center rounded-full border border-white/20 bg-black/55 px-4 font-display text-base text-ice"
+                style={{ touchAction: "manipulation" }}
+                onPointerUp={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  if (Date.now() - trayAt.current < 500) return;
+                  setTray(false);
+                  if (hallHold.current > 1) {
+                    skipEnter.current = true;
+                    void switchHall(hallHold.current - 1, false);
+                    return;
+                  }
+                  goBack();
+                }}
+              >
+                Back
+              </button>
               <button
                 type="button"
                 className="flex h-11 min-w-28 items-center justify-center rounded-full border border-white/20 bg-black/55 px-4 font-display text-base text-ice"

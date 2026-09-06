@@ -42,7 +42,8 @@ export const LAWS = [
   "at A he looks at B, at B he looks at A",
   "breath is feet glued — never a walk back to spawn",
   "always two doors, never one gate",
-  "same Bolt every clip — copy the ref 1:1",
+  "hall frozen — only the dog moves",
+  "play screen is silent — hall, Bolt, doors",
 ] as const;
 
 export function withSpawn(pins: RuneNode[]): RuneNode[] {
@@ -351,7 +352,7 @@ export const TWO_DOORS =
   "ALWAYS TWO separate tall CLOSED opaque doors facing camera: LEFT and RIGHT, a strip of wall between them. Teal/cyan LEFT, gold/amber RIGHT. FORBIDDEN: one giant central door, one gate, merged A+B, a single portal in the middle. Wish styles walls/floor/plants/light only — never door count.";
 
 export const ROOM_LOCK =
-  "Copy the hall 1:1 from frame 1. Do not restyle. Do not add nebula or sci-fi unless already in frame 1. Only the dog may move.";
+  "HALL FROZEN. Frame 1 is the bible. Walls, floor, doors, lamps, plants, light identical every frame. ONLY the dog moves. Do not restyle, relight, rebuild, or change door size. No new architecture.";
 
 const WISH_BAN =
   /\b(sex|sexy|nude|naked|porn|nsfw|xxx|fetish|gore|blood|guts|kill|murder|suicid|rape|torture|child|kid|loli|boy|girl|man|woman|human|person|people|nazi|hate|slur)\b/i;

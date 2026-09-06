@@ -338,3 +338,98 @@ export function syncScore(t: number) {
     /* */
   }
 }
+
+let living: "off" | "idle" | "walk" = "off";
+let breathTimer = 0;
+let stepTimer = 0;
+
+function breathPulse(gain = 0.042) {
+  const c = ac();
+  if (!c || !sfx) return;
+  const src = c.createBufferSource();
+  src.buffer = noiseBuf(c, 1.8, true);
+  const f = c.createBiquadFilter();
+  f.type = "lowpass";
+  f.frequency.setValueAtTime(280, c.currentTime);
+  f.frequency.exponentialRampToValueAtTime(520, c.currentTime + 0.55);
+  f.frequency.exponentialRampToValueAtTime(240, c.currentTime + 1.45);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, c.currentTime);
+  g.gain.exponentialRampToValueAtTime(gain, c.currentTime + 0.38);
+  g.gain.exponentialRampToValueAtTime(gain * 0.45, c.currentTime + 0.85);
+  g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 1.65);
+  src.connect(f);
+  f.connect(g);
+  g.connect(sfx);
+  src.start();
+}
+
+function paw() {
+  const c = ac();
+  if (!c || !sfx) return;
+  const j = 0.94 + Math.random() * 0.12;
+  const o = c.createOscillator();
+  const og = c.createGain();
+  o.type = "sine";
+  o.frequency.setValueAtTime(72 * j, c.currentTime);
+  o.frequency.exponentialRampToValueAtTime(48 * j, c.currentTime + 0.09);
+  og.gain.setValueAtTime(0.0001, c.currentTime);
+  og.gain.exponentialRampToValueAtTime(0.07, c.currentTime + 0.008);
+  og.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.11);
+  o.connect(og);
+  og.connect(sfx);
+  o.start();
+  o.stop(c.currentTime + 0.13);
+  const src = c.createBufferSource();
+  src.buffer = noiseBuf(c, 0.09, true);
+  const f = c.createBiquadFilter();
+  f.type = "bandpass";
+  f.frequency.value = 180 + Math.random() * 70;
+  f.Q.value = 1.4;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, c.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.055, c.currentTime + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.08);
+  src.connect(f);
+  f.connect(g);
+  g.connect(sfx);
+  src.start();
+}
+
+function hushLiving() {
+  window.clearTimeout(breathTimer);
+  window.clearTimeout(stepTimer);
+  breathTimer = 0;
+  stepTimer = 0;
+}
+
+function pulseBreath() {
+  if (living === "off") return;
+  breathPulse(living === "walk" ? 0.018 : 0.046);
+  breathTimer = window.setTimeout(pulseBreath, living === "walk" ? 1500 : 2100 + Math.random() * 400);
+}
+
+export function setLiving(kind: "off" | "idle" | "walk", walkSecs = 10) {
+  try {
+    unlockAudio();
+    if (kind !== "off") startBed();
+    hushLiving();
+    living = kind;
+    if (kind === "off") return;
+    pulseBreath();
+    if (kind !== "walk") return;
+    const n = 8;
+    const gap = Math.max(0.38, (Math.min(10, Math.max(6, walkSecs)) * 0.82) / n);
+    let i = 0;
+    const next = () => {
+      if (living !== "walk") return;
+      paw();
+      i += 1;
+      if (i < n) stepTimer = window.setTimeout(next, gap * 1000 * (0.9 + Math.random() * 0.18));
+    };
+    stepTimer = window.setTimeout(next, 160);
+  } catch {
+    /* never block UI */
+  }
+}
+
