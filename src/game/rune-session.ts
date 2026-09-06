@@ -18,7 +18,7 @@ export type RunePhase = "look" | "gate" | "refs" | "forge" | "time" | "play" | "
 
 export type CitadelStart =
   | { kind: "path"; first: "m1" | "m2"; drive: "pilot" | "engine"; rooms?: number; hall?: number; stills?: boolean; art?: string }
-  | { kind: "session"; id: string; do?: "play" | "more" | "room" | "reset"; art?: string; hall?: number };
+  | { kind: "session"; id: string; do?: "play" | "more" | "room" | "reset"; art?: string; hall?: number; drive?: "pilot" | "engine" };
 
 export type RiftGate = {
   biome: string;

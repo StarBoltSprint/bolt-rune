@@ -359,9 +359,14 @@ export const startRuneFilm = createServerFn({ method: "POST" })
       if (withRefs && refs.length) body.reference_images = refs.map((url) => ({ url }));
       return body;
     }
-    const variants: Record<string, unknown>[] = [plate(resolution, false)];
+    const variants: Record<string, unknown>[] = [];
     if (refs.length) variants.push(plate(resolution, true));
-    if (resolution === "1080p") variants.push(plate("720p", false));
+    variants.push(plate(resolution, false));
+    if (resolution === "1080p") {
+      if (refs.length) variants.push(plate("720p", true));
+      variants.push(plate("720p", false));
+    }
+    variants.push(plate(undefined, Boolean(refs.length)));
     variants.push(plate(undefined, false));
     try {
       let last = "";
