@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { HALL_LOOP, HALL_STILL, doorAtPoint, isHallFilm, stockDoorHits, stockRoomBank, stockStand } from "./stock-room.ts";
-import { createPathHref, lookForgeStart, pathEntry } from "./path-entry.ts";
+import { biomeBotStart, createPathHref, lookForgeStart, pathEntry, vaultHangStart } from "./path-entry.ts";
 import {
   BOLT_BODY,
   BOLT_FACE,
@@ -226,6 +226,9 @@ describe("Imagine prompt rails", () => {
     assert.ok(!createPathHref("m1").includes("stills="));
     assert.deepEqual(lookForgeStart("start"), { dataForge: "start", sealed: false });
     assert.deepEqual(lookForgeStart("bot"), { dataForge: "bot", sealed: true });
+    assert.deepEqual(biomeBotStart(), { dataBiome: "bot", sealed: true });
+    assert.deepEqual(vaultHangStart("bot"), { dataHang: "bot", sealed: true });
+    assert.deepEqual(vaultHangStart("A"), { dataHang: "A", sealed: false });
   });
 });
 

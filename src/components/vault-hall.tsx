@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { dropClipAt, dropRoom, familiesOf, familyHead, filmOf, hangOnRoom, lastClip, mergeHall, readArtifacts, setPlaylist, uniqueClips, ROOM_ONE_STILL, type HungArtifact } from "@/game/artifacts";
-import { continuePrompt, readClipSpec, shiftPrompt, SHIFTS } from "@/game/cook";
+import { dropClipAt, dropRoom, familiesOf, familyHead, filmOf, hangArtifact, hangOnRoom, lastClip, mergeHall, readArtifacts, setPlaylist, uniqueClips, type HungArtifact } from "@/game/artifacts";
+import { continuePrompt, readClipSpec, shiftPrompt, stockBiomeFilm, SHIFTS } from "@/game/cook";
+import { bindHungRoom } from "@/game/enter-graph";
+import { vaultHangStart } from "@/game/path-entry";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/lib/cook";
 import { hangHall, listHall } from "@/lib/hall";
@@ -84,16 +86,7 @@ export function VaultHall() {
   function hangDoor(a: HungArtifact, door: "A" | "B") {
     const cit = bindCitadel();
     const hall = cit.hall;
-    const hung = hangOnRoom(
-      a.id,
-      {
-        door,
-        still: ROOM_ONE_STILL,
-        citadel: cit.citadel || undefined,
-        hall,
-      },
-      hungRef.current,
-    );
+    const hung = hangOnRoom(a.id, bindHungRoom(a, door, { citadel: cit.citadel || undefined, hall }), hungRef.current);
     setHung(hung);
     const live = hung.find((x) => x.id === a.id);
     if (live) persistArt(live);
@@ -104,6 +97,17 @@ export function VaultHall() {
         : `Room ${hall} · door ${door} · Play / Load to walk it`,
     );
     window.setTimeout(() => setFrost(""), 2400);
+  }
+
+  function botHang() {
+    let list = hungRef.current.length ? hungRef.current : readArtifacts();
+    if (!list.length) {
+      list = hangArtifact(stockBiomeFilm("asteroid"), true);
+      setHung(list);
+    }
+    const head = list[0];
+    if (!head) return;
+    hangDoor(head, "A");
   }
 
   function unhangDoor(a: HungArtifact) {
@@ -315,12 +319,11 @@ export function VaultHall() {
 
   if (play) {
     const film = filmOf(play, hung);
-    const roomStill = play.room?.door || hung.find((x) => x.id === play.id)?.room?.door ? ROOM_ONE_STILL : film.still;
     return (
       <FilmStage
         id="sprint"
         original={false}
-        custom={{ ...film, still: roomStill, portraitStill: roomStill }}
+        custom={film}
         onExit={() => setPlay(null)}
         onDone={() => {
           /* keep the grade on screen — Leave goes back to the vault */
@@ -362,6 +365,22 @@ export function VaultHall() {
         <div className="mt-4">
           <p className="mb-2 font-mono text-[9px] uppercase tracking-[0.2em] text-white/40">Next continue / shift</p>
           <ClipSpecBar disabled={busy} />
+          <button
+            type="button"
+            data-hang-bot={vaultHangStart("bot").dataHang}
+            disabled={busy}
+            className="mt-3 w-full rounded-2xl border border-[#9ef0e4]/35 bg-black/40 px-3 py-3 text-left font-display text-xl text-[#9ef0e4] disabled:opacity-40"
+            style={{ touchAction: "manipulation" }}
+            onPointerUp={() => {
+              if (busy) return;
+              botHang();
+            }}
+          >
+            Grok Bot Hang
+            <span className="mt-0.5 block font-mono text-[9px] uppercase tracking-[0.14em] text-white/40">
+              sealed door A · no picker
+            </span>
+          </button>
         </div>
 
         {packs.length ? (
@@ -496,6 +515,7 @@ export function VaultHall() {
                         <button
                           type="button"
                           disabled={busy}
+                          data-hang={vaultHangStart("A").dataHang}
                           className="flex-1 px-2 py-2.5 text-center font-mono text-[9px] uppercase tracking-[0.14em] text-[#9ef0e4] disabled:opacity-30"
                           style={{ touchAction: "manipulation" }}
                           onPointerUp={(e) => {
@@ -510,6 +530,7 @@ export function VaultHall() {
                         <button
                           type="button"
                           disabled={busy}
+                          data-hang={vaultHangStart("B").dataHang}
                           className="flex-1 px-2 py-2.5 text-center font-mono text-[9px] uppercase tracking-[0.14em] text-[#f0d48a] disabled:opacity-30"
                           style={{ touchAction: "manipulation" }}
                           onPointerUp={(e) => {

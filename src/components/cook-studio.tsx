@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Flame, Mic, PenLine } from "lucide-react";
-import { ACTS, BIOMES, biomePlaylist, cookFilm, hasRuneFilm, readClipSpec, runeLoop, runeStill, worldOf, type BiomeId } from "@/game/cook";
+import { ACTS, BIOMES, biomePlaylist, biomeSprintFilm, cookFilm, hasRuneFilm, readClipSpec, runeLoop, runeStill, stockBiomeFilm, worldOf, type BiomeId } from "@/game/cook";
+import { biomeBotStart } from "@/game/path-entry";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { ENGINE } from "@/game/laws";
 import { startCookPlate, pollCookPlate, cookStatus, startCookStill, freeRuneSlot } from "@/lib/cook";
@@ -326,7 +327,7 @@ export function CookStudio({
     setCustomStill(null);
     const hit = BIOMES.find((b) => b.id === id);
     if (hit) {
-      onHang?.(cookFilm(hit.name, hit.still, biomePlaylist(hit.id)));
+      onHang?.(biomeSprintFilm(hit.name, hit.still, biomePlaylist(hit.id), hit.world));
       setVault(readArtifacts());
     }
     setGate("world");
@@ -905,6 +906,22 @@ export function CookStudio({
 
       {gate === "rifts" && (
         <>
+          <button
+            type="button"
+            data-biome-bot={biomeBotStart().dataBiome}
+            className="absolute left-1/2 top-[max(7.2rem,calc(env(safe-area-inset-top)+5.8rem))] z-50 -translate-x-1/2 font-display text-2xl text-[#9ef0e4] drop-shadow-[0_0_18px_rgba(158,240,228,0.4)]"
+            style={{ touchAction: "manipulation" }}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              const id = picked || biome || "asteroid";
+              onHang?.(stockBiomeFilm(id));
+              setVault(readArtifacts());
+              enterWorld(id);
+            }}
+          >
+            Grok Bot Biome
+          </button>
           <div className="absolute inset-x-0 bottom-[2%] z-30 flex items-center justify-center gap-[1vw] px-[1.5%]">
             <button
               type="button"

@@ -85,7 +85,7 @@ function Home() {
             ))}
           </div>
         ) : null}
-        <a href="/vault" className="block text-center" style={{ touchAction: "manipulation" }}>
+        <a href="/vault" data-vault-bot="bot" className="block text-center" style={{ touchAction: "manipulation" }}>
           <span className="crystal crystal-quiet block rounded-2xl px-4 py-3">
             <span className="block font-display text-3xl leading-none text-fg">Vault</span>
             <span className="mt-1 block font-mono text-[10px] uppercase tracking-[0.22em] text-muted">

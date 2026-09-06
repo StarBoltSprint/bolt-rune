@@ -1,5 +1,5 @@
 import type { Film, Grade } from "./films";
-import { cookFilm } from "./cook";
+import { biomeSprintFilm, cookFilm } from "./cook";
 
 const KEY = "bolt-artifacts-v1";
 const MEM = "bolt-artifacts-mem-v1";
@@ -13,6 +13,7 @@ export type HungRoom = {
   trans?: string;
   citadel?: string;
   hall?: number;
+  biome?: string;
 };
 
 export type HungArtifact = {
@@ -31,7 +32,7 @@ let RAM: HungArtifact[] = [];
 
 function keepArt(u?: string) {
   if (!u) return "";
-  if (u.startsWith("http") || u.startsWith("/films/") || u.startsWith("/refs/")) return u;
+  if (u.startsWith("http") || u.startsWith("/films/") || u.startsWith("/refs/") || u.startsWith("/ui/")) return u;
   if (u.startsWith("data:image/") && u.length < 480000) return u;
   return "";
 }
@@ -73,21 +74,26 @@ export function packRoom(room?: HungRoom | null): HungRoom | null | undefined {
   if (!room?.door) return undefined;
   const hall = Number(room.hall);
   const citadel = String(room.citadel || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+  const biome = String(room.biome || "").replace(/[^a-z]/g, "").slice(0, 16);
   return {
     door: room.door === "B" ? "B" : "A",
     still: keepArt(room.still) || ROOM_ONE_STILL,
     trans: keepArt(room.trans) || undefined,
     citadel: citadel || undefined,
     hall: hall >= 1 && hall <= 8 ? Math.round(hall) : undefined,
+    biome: biome || undefined,
   };
 }
 
 export function filmOf(a: HungArtifact, all?: HungArtifact[]): Film {
   const other = (all || []).find((x) => x.id === a.id);
   const room = a.room || other?.room;
-  const clips = uniqueClips([...(a.playlist || []), ...(other?.playlist || [])]);
-  const still = room?.door ? ROOM_ONE_STILL : a.still || other?.still || clips[0] || "";
-  return cookFilm(a.name || other?.name || "Artifact", still, clips, a.prompt || other?.prompt);
+  const clips = uniqueClips([room?.trans, ...(a.playlist || []), ...(other?.playlist || [])].filter(Boolean) as string[]);
+  const still = a.still || other?.still || clips[0] || "";
+  const name = a.name || other?.name || "Artifact";
+  const prompt = a.prompt || other?.prompt;
+  if (room?.door) return biomeSprintFilm(name, still, clips, prompt);
+  return cookFilm(name, still, clips, prompt);
 }
 
 const CLIP_MAP: Record<string, string> = {
