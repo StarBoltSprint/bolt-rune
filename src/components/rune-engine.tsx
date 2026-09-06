@@ -642,6 +642,19 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   walkSecsRef.current = walkSecs;
 
   useEffect(() => {
+    if (phase !== "play") return;
+    if (playing.current || beatRef.current === "playvid" || beatRef.current === "walk") return;
+    const t = window.setTimeout(() => {
+      if (phaseRef.current !== "play") return;
+      if (playing.current || beatRef.current === "playvid") return;
+      if (!film.current && !filmB.current) return;
+      holdIdle();
+    }, 80);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  useEffect(() => {
     const bind = (el: HTMLVideoElement | null) => {
       if (!el) return () => {};
       const onTime = () => stampLoop(el);
@@ -4772,6 +4785,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     });
     markLivePlay(sid.current, SPAWN.id, HALL_STILL);
     holdIdle();
+    window.setTimeout(() => {
+      if (phaseRef.current === "play" && !playing.current) holdIdle();
+    }, 160);
     sfxForge("enter");
     for (const v of bank.current.values()) warmUrl(v.url);
   }
