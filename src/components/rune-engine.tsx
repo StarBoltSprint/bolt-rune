@@ -643,6 +643,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   lookPackRef.current = lookPack;
   const lookHall = useRef<string | null>(null);
   const worldHold = useRef("");
+  const [forgePack, setForgePack] = useState<"live" | "sealed">("live");
+  const [forgeWish, setForgeWish] = useState("");
   const [lookRes, setLookRes] = useState<"720" | "1080">("720");
   const lookResRef = useRef<"720" | "1080">("720");
   lookResRef.current = lookRes;
@@ -4005,6 +4007,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     refsMap.current = new Map();
     bank.current = new Map();
     cameFrom.current = "start";
+    setForgePack(pack);
+    setForgeWish(worldHold.current.trim());
     setFrost(worldHold.current.trim() ? `ref · ${worldHold.current.trim().slice(0, 32)}` : "ref · hall");
     sfxForge("cook");
     void cookRefs().catch(() => failStay("forge paused · tap retry"));
@@ -5954,6 +5958,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     <div
       className="relative min-h-dvh overflow-hidden bg-bg"
       data-rune="engine"
+      data-forge-pack={forgePack}
+      data-forge-wish={forgeWish}
       data-camera="lock"
       data-living={phase === "play" && (filmOn || Boolean(idleFor(here))) ? "1" : "0"}
       data-phase={phase}
