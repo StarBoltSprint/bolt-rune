@@ -909,7 +909,7 @@ export function CookStudio({
           <button
             type="button"
             data-biome-bot={biomeBotStart().dataBiome}
-            className="absolute left-1/2 top-[max(7.2rem,calc(env(safe-area-inset-top)+5.8rem))] z-50 -translate-x-1/2 font-display text-2xl text-[#9ef0e4] drop-shadow-[0_0_18px_rgba(158,240,228,0.4)]"
+            className="absolute left-1/2 bottom-[32%] z-[60] -translate-x-1/2 font-display text-2xl text-[#9ef0e4] drop-shadow-[0_0_18px_rgba(158,240,228,0.4)]"
             style={{ touchAction: "manipulation" }}
             onPointerDown={(e) => {
               e.stopPropagation();
