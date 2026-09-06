@@ -50,6 +50,7 @@ import {
 } from "@/game/rune";
 import { lookForgeStart } from "@/game/path-entry";
 import { freeRuneSlot, grabRuneFrame, pollCookPlate, startCookStill, startRuneExtend, startRuneFilm, startRuneStill, cacheClip, cacheStill } from "@/lib/cook";
+import { COOK_BUSY_FROST, COOK_BUSY_WAIT_MS, COOK_START_ACCEPTED_PCT, cookBusyNext, isCookSlotBlock } from "@/lib/cook-busy";
 import { BIOMES, biomePlaylist, riftFilm, riftPrompt, type BiomeId } from "@/game/cook";
 import { FilmStage } from "@/components/film-stage";
 import { dropRoom, hangArtifact, hangOnRoom, mergeHall, readArtifacts, uniqueClips, ROOM_ONE_STILL, type HungArtifact } from "@/game/artifacts";
@@ -3060,64 +3061,73 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   async function cookFilm(still: string, prompt: string, kit: string[], label: string, secs?: 6 | 10 | 15, quiet = false): Promise<string | null> {
-    const tick = quiet
-      ? 0
-      : window.setInterval(() => {
-          setLoadPct((p) => (p >= 91 ? 91 : p + Math.floor(1 + Math.random() * 3)));
-        }, 800);
     let started: { ok: true; requestId: string } | { ok: false; error: string } | null = null;
     let url: string | null = null;
+    let slotBusy = false;
+    let busyFails = 0;
     const blocked = () => (quiet ? dead.current : !liveForge.current);
-    try {
-      for (let tryN = 0; tryN < 12; tryN++) {
-        if (blocked()) return null;
-        try {
-          started = await startRuneFilm({
-            data: {
-              still,
-              prompt,
-              duration: secs === 6 ? 6 : secs === 10 ? 10 : clampWalk(walkSecsRef.current),
-              refs: boltKit([lookHall.current, refsMap.current.get("hall"), hallKeep.current, ...kit]),
-              res: lookResRef.current,
-            },
-          });
-        } catch (err) {
-          started = { ok: false, error: err instanceof Error ? err.message : "net" };
-        }
-        if (started.ok) break;
-        if (started.error === "echo-off") {
-          if (!quiet) setFrost("Imagine is dark");
-          return null;
-        }
-        if (started.error === "busy" || started.error === "cooldown") {
-          if (!quiet) setFrost("Imagine busy · waiting");
-          await sleep(5000 + tryN * 2000);
-          continue;
-        }
-        if (!quiet) setFrost(started.error);
-        await sleep(1200);
+    for (let tryN = 0; tryN < 12; tryN++) {
+      if (blocked()) return null;
+      try {
+        started = await startRuneFilm({
+          data: {
+            still,
+            prompt,
+            duration: secs === 6 ? 6 : secs === 10 ? 10 : clampWalk(walkSecsRef.current),
+            refs: boltKit([lookHall.current, refsMap.current.get("hall"), hallKeep.current, ...kit]),
+            res: lookResRef.current,
+          },
+        });
+      } catch (err) {
+        started = { ok: false, error: err instanceof Error ? err.message : "net" };
       }
-      if (started?.ok) {
-        for (let p = 0; p < 140; p++) {
-          if (blocked()) return null;
-          if (p) await sleep(1200);
-          let polled;
-          try {
-            polled = await pollCookPlate({ data: { requestId: started.requestId } });
-          } catch {
-            continue;
-          }
-          if (!polled.ok) continue;
-          if (polled.status === "done" && polled.url) {
-            url = polled.url;
-            break;
-          }
-          if (polled.status === "failed") break;
-          if (!quiet) setFrost(`Imagine is drawing ${label} · ${p + 1}`);
-        }
+      if (started.ok) {
+        slotBusy = false;
+        if (!quiet) setLoadPct((p) => Math.max(p, COOK_START_ACCEPTED_PCT));
+        break;
       }
-    } finally {
-      if (tick) window.clearInterval(tick);
+      if (started.error === "echo-off") {
+        if (!quiet) setFrost("Imagine is dark");
+        return null;
+      }
+      if (isCookSlotBlock(started.error)) {
+        slotBusy = true;
+        busyFails += 1;
+        if (cookBusyNext(busyFails) === "give-up") break;
+        if (!quiet) setFrost("Imagine busy · waiting");
+        await sleep(COOK_BUSY_WAIT_MS);
+        continue;
+      }
+      slotBusy = false;
+      if (!quiet) setFrost(started.error);
+      await sleep(1200);
+    }
+    if (!started?.ok) {
+      if (slotBusy) {
+        if (!quiet) setFrost(COOK_BUSY_FROST);
+        void freeRuneSlot({ data: {} }).catch(() => {});
+      }
+      return null;
+    }
+    for (let p = 0; p < 140; p++) {
+      if (blocked()) return null;
+      if (p) await sleep(1200);
+      let polled;
+      try {
+        polled = await pollCookPlate({ data: { requestId: started.requestId } });
+      } catch {
+        continue;
+      }
+      if (!polled.ok) continue;
+      if (polled.status === "done" && polled.url) {
+        url = polled.url;
+        break;
+      }
+      if (polled.status === "failed") break;
+      if (!quiet) {
+        if (typeof polled.pct === "number") setLoadPct(Math.max(COOK_START_ACCEPTED_PCT, Math.min(90, polled.pct)));
+        setFrost(`Imagine is drawing ${label} · ${p + 1}`);
+      }
     }
     return url;
   }
@@ -3135,59 +3145,65 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   async function cookExtend(video: string, prompt: string, label: string): Promise<string | null> {
     if (!/^https:\/\//i.test(video) || /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(video)) return null;
-    const tick = window.setInterval(() => {
-      setLoadPct((p) => (p >= 91 ? 91 : p + Math.floor(1 + Math.random() * 3)));
-    }, 800);
     let started: { ok: true; requestId: string } | { ok: false; error: string } | null = null;
     let url: string | null = null;
-    try {
-      for (let tryN = 0; tryN < 10; tryN++) {
-        if (!liveForge.current) return null;
-        try {
-          started = await startRuneExtend({
-            data: { video, prompt, duration: 6 },
-          });
-        } catch (err) {
-          started = { ok: false, error: err instanceof Error ? err.message : "net" };
-        }
-        if (started.ok) break;
-        if (started.error === "echo-off") {
-          setFrost("Imagine is dark · hall kept");
-          return null;
-        }
-        if (started.error === "no-extend") return null;
-        if (started.error === "busy" || started.error === "cooldown") {
-          setFrost("Imagine busy · waiting");
-          await sleep(5000 + tryN * 2000);
-          continue;
-        }
-        setFrost(started.error);
-        await sleep(1200);
+    let slotBusy = false;
+    let busyFails = 0;
+    for (let tryN = 0; tryN < 10; tryN++) {
+      if (!liveForge.current) return null;
+      try {
+        started = await startRuneExtend({
+          data: { video, prompt, duration: 6 },
+        });
+      } catch (err) {
+        started = { ok: false, error: err instanceof Error ? err.message : "net" };
       }
-      if (started?.ok) {
-        for (let p = 0; p < 140; p++) {
-          if (!liveForge.current) return null;
-          if (p) await sleep(1200);
-          let polled;
-          try {
-            polled = await pollCookPlate({ data: { requestId: started.requestId } });
-          } catch {
-            continue;
-          }
-          if (!polled.ok) continue;
-          if (polled.status === "done" && polled.url) {
-            url = polled.url;
-            break;
-          }
-          if (polled.status === "failed") {
-            setFrost(`breath dropped · ${label}`);
-            break;
-          }
-          setFrost(`breath continues · ${label} · ${p + 1}`);
-        }
+      if (started.ok) {
+        slotBusy = false;
+        setLoadPct((p) => Math.max(p, COOK_START_ACCEPTED_PCT));
+        break;
       }
-    } finally {
-      window.clearInterval(tick);
+      if (started.error === "echo-off") {
+        setFrost("Imagine is dark · hall kept");
+        return null;
+      }
+      if (started.error === "no-extend") return null;
+      if (isCookSlotBlock(started.error)) {
+        slotBusy = true;
+        busyFails += 1;
+        if (cookBusyNext(busyFails) === "give-up") break;
+        setFrost("Imagine busy · waiting");
+        await sleep(COOK_BUSY_WAIT_MS);
+        continue;
+      }
+      slotBusy = false;
+      setFrost(started.error);
+      await sleep(1200);
+    }
+    if (!started?.ok) {
+      if (slotBusy) setFrost(COOK_BUSY_FROST);
+      return null;
+    }
+    for (let p = 0; p < 140; p++) {
+      if (!liveForge.current) return null;
+      if (p) await sleep(1200);
+      let polled;
+      try {
+        polled = await pollCookPlate({ data: { requestId: started.requestId } });
+      } catch {
+        continue;
+      }
+      if (!polled.ok) continue;
+      if (polled.status === "done" && polled.url) {
+        url = polled.url;
+        break;
+      }
+      if (polled.status === "failed") {
+        setFrost(`breath dropped · ${label}`);
+        break;
+      }
+      if (typeof polled.pct === "number") setLoadPct(Math.max(COOK_START_ACCEPTED_PCT, Math.min(90, polled.pct)));
+      setFrost(`breath continues · ${label} · ${p + 1}`);
     }
     return url;
   }
@@ -3674,12 +3690,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     beatRef.current = "cook";
     setPhase("refs");
     phaseRef.current = "refs";
-    const tick = window.setInterval(() => {
-      setLoadPct((p) => (p >= 90 ? 90 : p + Math.floor(1 + Math.random() * 3)));
-    }, 700);
     let started: { ok: true; requestId: string } | { ok: false; error: string } | null = null;
-    try {
-      for (let t = 0; t < 16; t++) {
+    let busyFails = 0;
+    for (let t = 0; t < 16; t++) {
         if (dead.current) return hallUrl;
         try {
           started = await startRuneFilm({
@@ -3688,18 +3701,28 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         } catch {
           started = { ok: false, error: "net" };
         }
-        if (started.ok) break;
+        if (started.ok) {
+          setLoadPct((p) => Math.max(p, COOK_START_ACCEPTED_PCT));
+          break;
+        }
         if (started.error === "echo-off") {
           setFrost("Imagine is dark · hall kept");
           return hallUrl;
         }
-        setFrost(started.error === "busy" || started.error === "cooldown" ? `Imagine busy · seed ${t + 1}` : `seed · ${started.error}`);
-        await sleep(started.error === "busy" || started.error === "cooldown" ? 5000 + t * 1500 : 1200);
+        if (isCookSlotBlock(started.error)) {
+          busyFails += 1;
+          if (cookBusyNext(busyFails) === "give-up") break;
+          setFrost("Imagine busy · waiting");
+          await sleep(COOK_BUSY_WAIT_MS);
+          continue;
+        }
+        setFrost(`seed · ${started.error}`);
+        await sleep(1200);
       }
       if (!started?.ok) {
         void freeRuneSlot({ data: {} }).catch(() => {});
-        setFrost("seed film dropped · hall kept");
-        setLoadPct(100);
+        setFrost(busyFails ? COOK_BUSY_FROST : "seed film dropped · hall kept");
+        setLoadPct(0);
         return hallUrl;
       }
       let filmUrl: string | null = null;
@@ -3717,7 +3740,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           setFrost(`seed · ${polled.error}`);
           continue;
         }
-        if (typeof polled.pct === "number") setLoadPct(Math.max(12, Math.min(90, polled.pct)));
+        if (typeof polled.pct === "number") setLoadPct(Math.max(COOK_START_ACCEPTED_PCT, Math.min(90, polled.pct)));
         if (polled.status === "done" && polled.url) {
           filmUrl = polled.url;
           break;
@@ -3734,7 +3757,6 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         setLoadPct(100);
         return hallUrl;
       }
-      window.clearInterval(tick);
       setLoadPct(100);
       setBeat("playvid");
       beatRef.current = "playvid";
@@ -3775,9 +3797,6 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       sfxForge("enter");
       await sleep(360);
       return shot;
-    } finally {
-      window.clearInterval(tick);
-    }
   }
 
   async function cookEnter(start: string, hall: string, bolt: string, side: "LEFT" | "RIGHT") {
@@ -3950,6 +3969,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     dead.current = false;
     cooking.current = false;
     liveForge.current = true;
+    void freeRuneSlot({ data: {} }).catch(() => {});
     if (pack === "sealed") {
       lookPackRef.current = [];
       setLookPack([]);
