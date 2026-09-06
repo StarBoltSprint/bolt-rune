@@ -25,4 +25,10 @@ describe("stock living room", () => {
       assert.equal(row.end, HALL_STILL);
     }
   });
+
+  it("every stock clip keeps the same locked hall still — no follow-cam crop", () => {
+    const ends = new Set(stockRoomBank("m1").map((b) => b.end));
+    assert.deepEqual([...ends], [HALL_STILL]);
+    assert.equal(isHallFilm(HALL_STILL), true);
+  });
 });

@@ -1,4 +1,6 @@
+/** Locked whole-hall still — camera authority. Never a follow-cam crop. */
 export const HALL_STILL = "/films/citadel-tour.jpg?v=sharp";
+/** Living film inside that same locked frame (Bolt breathes; camera does not move). */
 export const HALL_LOOP = "/ui/citadel.mp4?v=aaa";
 
 export function isHallFilm(u?: string | null) {
@@ -21,7 +23,11 @@ function pathWalks(first: "m1" | "m2"): { from: string; to: string; via: string 
   ];
 }
 
-/** Breath + door walks so New citadel is playable before Imagine cooks. */
+/**
+ * Breath + door walks so New citadel is playable before Imagine cooks.
+ * Every clip keeps the same hall still as the end frame — camera stays locked
+ * on the whole hall. Bolt moves inside that frame; the lens does not follow.
+ */
 export function stockRoomBank(first: "m1" | "m2"): { key: string; url: string; end: string }[] {
   const still = HALL_STILL;
   const loop = HALL_LOOP;

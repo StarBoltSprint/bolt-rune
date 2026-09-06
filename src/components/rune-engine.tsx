@@ -4723,6 +4723,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     void dropSession(id).then(() => setHub(listSessions()));
   }
 
+  /** New citadel play: locked hall camera, living breath/walks inside that frame. */
   function enterLivingRoom(first: "m1" | "m2") {
     pathFirst.current = first;
     roomsHold.current = Math.max(1, roomsHold.current || 1);
@@ -5611,6 +5612,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     <div
       className="relative min-h-dvh overflow-hidden bg-bg"
       data-rune="engine"
+      data-camera="lock"
       data-living={phase === "play" && (filmOn || Boolean(idleFor(here))) ? "1" : "0"}
       data-phase={phase}
       data-clips={counts.total}
