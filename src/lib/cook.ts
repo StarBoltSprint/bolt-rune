@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createServerFn } from "@tanstack/react-start";
 import { platePrompt, stillPrompt, type BiomeId, ACTS } from "@/game/cook";
+import { runeFilmVariants, runeStillJobs } from "@/game/imagine-payload";
 import { CAM_LOCK, citadelPrompt } from "@/game/rune";
 
 const exec = promisify(execFile);
@@ -167,30 +168,15 @@ export const startRuneStill = createServerFn({ method: "POST" })
     const ratio = data.ratio === "1:1" ? "1:1" : "9:16";
     const resolution = data.res === "1080" ? "2k" : "1k";
     const pics = refs.map((url) => ({ url }));
-    const jobs: { path: string; body: Record<string, unknown> }[] = [];
-    const model = "grok-imagine-image-2.0";
-    if (data.edit && pics[0]) {
-      jobs.push({
-        path: "/images/edits",
-        body: { model, prompt, aspect_ratio: ratio, resolution, image: pics[0], storage_options: keepStore(`bolt-${Date.now().toString(36)}.jpg`) },
-      });
-      if (!data.editOnly) {
-        jobs.push({
-          path: "/images/generations",
-          body: { model, prompt, n: 1, aspect_ratio: ratio, resolution, images: [pics[0]], storage_options: keepStore(`bolt-${Date.now().toString(36)}.jpg`) },
-        });
-      }
-    } else if (pics.length) {
-      jobs.push({
-        path: "/images/generations",
-        body: { model, prompt, n: 1, aspect_ratio: ratio, resolution, images: pics, storage_options: keepStore(`bolt-${Date.now().toString(36)}.jpg`) },
-      });
-    } else {
-      jobs.push({
-        path: "/images/generations",
-        body: { model, prompt, n: 1, aspect_ratio: ratio, resolution, storage_options: keepStore(`bolt-${Date.now().toString(36)}.jpg`) },
-      });
-    }
+    const jobs = runeStillJobs({
+      prompt,
+      pics,
+      edit: data.edit,
+      editOnly: data.editOnly,
+      ratio,
+      resolution,
+      store: keepStore(`bolt-${Date.now().toString(36)}.jpg`),
+    });
     try {
       let last = "";
       for (const job of jobs) {
@@ -337,37 +323,12 @@ export const startRuneFilm = createServerFn({ method: "POST" })
     lastStart = now;
     const imageUrl = resolveRuneStill(data.still);
     const duration = data.duration === 6 || data.duration === 15 ? data.duration : 10;
-    const refs = (data.refs ?? [])
-      .slice(0, 5)
-      .map(resolveRuneStill)
-      .filter((u) => u && u !== imageUrl && !u.startsWith("blob:") && !(u.startsWith("data:") && u.length > 350_000));
     const rawPrompt = data.prompt.trim();
     const already = /STATIC CCTV|LOCKED-OFF|CAMERA LOCK|PORTAL CROSS|WIDE LOCKED CCTV|LOCKED CCTV/i.test(rawPrompt);
     const prompt = (already ? rawPrompt : `${CAM_LOCK} ${rawPrompt}`).slice(0, 2200);
     const resolution = data.res === "1080" ? "1080p" : "720p";
     const store = keepStore(`bolt-${Date.now().toString(36)}.mp4`);
-    function plate(res?: string, withRefs = false) {
-      const body: Record<string, unknown> = {
-        model: "grok-imagine-video-1.5",
-        prompt,
-        image: { url: imageUrl },
-        duration,
-        aspect_ratio: "9:16",
-        storage_options: store,
-      };
-      if (res) body.resolution = res;
-      if (withRefs && refs.length) body.reference_images = refs.map((url) => ({ url }));
-      return body;
-    }
-    const variants: Record<string, unknown>[] = [];
-    if (refs.length) variants.push(plate(resolution, true));
-    variants.push(plate(resolution, false));
-    if (resolution === "1080p") {
-      if (refs.length) variants.push(plate("720p", true));
-      variants.push(plate("720p", false));
-    }
-    variants.push(plate(undefined, Boolean(refs.length)));
-    variants.push(plate(undefined, false));
+    const variants = runeFilmVariants({ prompt, imageUrl, duration, resolution, store });
     try {
       let last = "";
       for (const body of variants) {
