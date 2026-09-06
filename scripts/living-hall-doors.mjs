@@ -60,6 +60,7 @@ async function engineState(page) {
       camera: el.getAttribute("data-camera"),
       here: el.getAttribute("data-here"),
       living: el.getAttribute("data-living"),
+      stockWalk: el.getAttribute("data-stock-walk"),
       look: Boolean(document.querySelector("[data-look]")),
       films: /3 walks/i.test(document.body.innerText),
     };
@@ -102,7 +103,7 @@ async function runViewport(browser, vp) {
     }
     await page.screenshot({ path: `${OUT}/${vp.name}-hall-idle.png`, fullPage: false });
 
-    const tapA = await tapPicture(page, 0.26, 0.4);
+    const tapA = await tapPicture(page, 0.26, 0.42);
     notes.push({ door: "A", tap: tapA });
     const walkA = await waitBeat(page, "playvid", 4000);
     if (walkA.beat !== "playvid") {
@@ -113,8 +114,22 @@ async function runViewport(browser, vp) {
         throw new Error(`${vp.name}: Door A tap did not reach playvid ${JSON.stringify({ tapA, walkA, again })}`);
       }
     }
+    await page.waitForTimeout(700);
+    const midA = await page.evaluate(() => {
+      const cv = document.querySelector("[data-rune=engine] canvas");
+      const bolt = cv?.getAttribute("data-bolt") || "";
+      const [x, y] = bolt.split(",").map(Number);
+      return { bolt, x, y, stockWalk: document.querySelector("[data-rune=engine]")?.getAttribute("data-stock-walk") };
+    });
+    notes.push({ midA });
+    if (!(midA.x > 0.2 && midA.x < 0.48 && midA.y > 0.52 && midA.y < 0.76)) {
+      throw new Error(`${vp.name}: Door A walk did not move Bolt on the floor ${JSON.stringify(midA)}`);
+    }
     await page.screenshot({ path: `${OUT}/${vp.name}-hall-walk-a.png`, fullPage: false });
-    const afterA = await waitBeat(page, "idle", 16000);
+    const afterA = await waitBeat(page, "idle", 8000);
+    if (afterA.here !== "m1") {
+      throw new Error(`${vp.name}: Door A walk did not land at m1 ${JSON.stringify(afterA)}`);
+    }
     notes.push({ afterA });
 
     await page.waitForTimeout(200);
@@ -129,8 +144,22 @@ async function runViewport(browser, vp) {
         throw new Error(`${vp.name}: Door B tap did not reach playvid ${JSON.stringify({ tapB, walkB, again })}`);
       }
     }
+    await page.waitForTimeout(700);
+    const midB = await page.evaluate(() => {
+      const cv = document.querySelector("[data-rune=engine] canvas");
+      const bolt = cv?.getAttribute("data-bolt") || "";
+      const [x, y] = bolt.split(",").map(Number);
+      return { bolt, x, y };
+    });
+    notes.push({ midB });
+    if (!(midB.x > 0.42 && midB.x < 0.82 && midB.y > 0.52 && midB.y < 0.7)) {
+      throw new Error(`${vp.name}: Door B walk did not move Bolt toward gold ${JSON.stringify(midB)}`);
+    }
     await page.screenshot({ path: `${OUT}/${vp.name}-hall-walk-b.png`, fullPage: false });
-    const afterB = await waitBeat(page, "idle", 16000);
+    const afterB = await waitBeat(page, "idle", 8000);
+    if (afterB.here !== "m2") {
+      throw new Error(`${vp.name}: Door B walk did not land at m2 ${JSON.stringify(afterB)}`);
+    }
     const final = await engineState(page);
     if (final.camera !== "lock" || final.phase !== "play") {
       throw new Error(`${vp.name}: camera/phase regression ${JSON.stringify(final)}`);

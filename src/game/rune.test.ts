@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { HALL_LOOP, HALL_STILL, doorAtPoint, isHallFilm, stockDoorHits, stockRoomBank } from "./stock-room.ts";
+import { HALL_LOOP, HALL_STILL, doorAtPoint, isHallFilm, stockDoorHits, stockRoomBank, stockStand } from "./stock-room.ts";
 
 describe("stock living room", () => {
   it("isHallFilm accepts the locked hall still and living loop, not landing chrome", () => {
@@ -41,8 +41,24 @@ describe("stock living room", () => {
     assert.equal(doorAtPoint(0.12, 0.48, null), "m1");
     assert.equal(doorAtPoint(0.88, 0.48, null), "m2");
     assert.equal(doorAtPoint(0.5, 0.78, hits), "spawn");
+    assert.equal(doorAtPoint(0.2, 0.65, hits), "m1");
+    assert.equal(doorAtPoint(0.8, 0.65, hits), "m2");
     assert.notEqual(doorAtPoint(0.28, 0.58, hits), "spawn");
     assert.notEqual(doorAtPoint(0.7, 0.58, hits), "spawn");
     assert.equal(doorAtPoint(-0.1, 0.4, hits), null);
+  });
+
+  it("stock stands stay on the hall floor, not inside the portal glow", () => {
+    const a = stockStand("m1");
+    const b = stockStand("m2");
+    const spawn = stockStand("spawn");
+    assert.ok(a.y > 0.54 && a.y < 0.72);
+    assert.ok(b.y > 0.54 && b.y < 0.72);
+    assert.ok(a.x < 0.5 && b.x > 0.5);
+    assert.equal(spawn.x, 0.5);
+    assert.equal(spawn.y, 0.78);
+    const toA = Math.hypot(a.x - spawn.x, a.y - spawn.y);
+    const toB = Math.hypot(b.x - spawn.x, b.y - spawn.y);
+    assert.ok(toA > 0.16 && toB > 0.16);
   });
 });

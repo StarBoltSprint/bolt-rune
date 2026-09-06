@@ -12,8 +12,8 @@ export type DoorHit = { x: number; y: number; w: number; h: number };
  */
 export function stockDoorHits(): { m1: DoorHit; m2: DoorHit } {
   return {
-    m1: { x: 0.08, y: 0.24, w: 0.38, h: 0.44 },
-    m2: { x: 0.54, y: 0.24, w: 0.38, h: 0.44 },
+    m1: { x: 0.02, y: 0.16, w: 0.46, h: 0.56 },
+    m2: { x: 0.52, y: 0.16, w: 0.46, h: 0.56 },
   };
 }
 
@@ -38,12 +38,25 @@ export function doorAtPoint(
   if (a && b) return nx < 0.5 ? "m1" : "m2";
   if (a) return "m1";
   if (b) return "m2";
-  if (ny >= 0.22 && ny <= 0.72) {
-    if (nx < 0.48) return "m1";
-    if (nx > 0.52) return "m2";
+  if (ny >= 0.14 && ny <= 0.78) {
+    if (nx < 0.5) return "m1";
+    if (nx > 0.5) return "m2";
   }
   if (Math.hypot(nx - spawn.x, ny - spawn.y) < 0.12) return "spawn";
   return null;
+}
+
+/** Feet on the locked-hall floor. Pins sit in the portal glow; Bolt must not. */
+export const STOCK_STAND = {
+  spawn: { x: 0.5, y: 0.78 },
+  m1: { x: 0.34, y: 0.6 },
+  m2: { x: 0.66, y: 0.6 },
+} as const;
+
+export function stockStand(id: string): { x: number; y: number } {
+  if (id === "m1") return { x: STOCK_STAND.m1.x, y: STOCK_STAND.m1.y };
+  if (id === "m2") return { x: STOCK_STAND.m2.x, y: STOCK_STAND.m2.y };
+  return { x: STOCK_STAND.spawn.x, y: STOCK_STAND.spawn.y };
 }
 
 export function isHallFilm(u?: string | null) {

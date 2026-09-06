@@ -34,7 +34,9 @@ import {
   isHallFilm,
   stockRoomBank,
   stockDoorHits,
+  stockStand,
   doorAtPoint,
+  facingOf,
   withSpawn,
   type RuneClip,
   type RuneGraph,
@@ -314,6 +316,78 @@ function filmBox(rect: DOMRect, ar: number) {
 
 type DoorHit = { x: number; y: number; w: number; h: number };
 const STOCK_HITS = stockDoorHits();
+const BOLT_WALK = "/sprites/bolt/walk.png";
+const BOLT_IDLE = "/sprites/bolt/idle.png";
+
+const boltSheets: { walk: HTMLImageElement | null; idle: HTMLImageElement | null } = { walk: null, idle: null };
+function sheetOf(kind: "walk" | "idle") {
+  if (typeof Image === "undefined") return null;
+  if (boltSheets[kind]) return boltSheets[kind];
+  const im = new Image();
+  im.src = kind === "walk" ? BOLT_WALK : BOLT_IDLE;
+  boltSheets[kind] = im;
+  return im;
+}
+
+function hideBakedBolt(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const x = SPAWN.x * w;
+  const floor = ctx.createLinearGradient(0, h * 0.62, 0, h);
+  floor.addColorStop(0, "rgba(6,8,12,0)");
+  floor.addColorStop(0.16, "rgba(6,8,12,0.9)");
+  floor.addColorStop(0.4, "rgba(6,8,12,0.98)");
+  floor.addColorStop(1, "rgba(6,8,12,1)");
+  ctx.fillStyle = floor;
+  ctx.fillRect(w * 0.16, h * 0.62, w * 0.68, h * 0.38);
+  const g = ctx.createRadialGradient(x, h * 0.76, w * 0.02, x, h * 0.78, w * 0.36);
+  g.addColorStop(0, "rgba(6,8,12,1)");
+  g.addColorStop(0.55, "rgba(6,8,12,0.96)");
+  g.addColorStop(1, "rgba(6,8,12,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(x, h * 0.78, w * 0.36, h * 0.26, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function faceRow(face: ReturnType<typeof facingOf>) {
+  if (face === "down") return 0;
+  if (face === "right") return 1;
+  if (face === "left") return 2;
+  return 3;
+}
+
+function drawBoltSprite(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  pos: { x: number; y: number },
+  walking: boolean,
+  now: number,
+  face: ReturnType<typeof facingOf>,
+) {
+  const sheet = sheetOf("walk");
+  const x = pos.x * w;
+  const y = pos.y * h;
+  const near = 0.78;
+  const far = 0.56;
+  const depth = Math.max(0, Math.min(1, (near - pos.y) / (near - far)));
+  const scale = 1 - depth * 0.42;
+  const bw = w * 0.2 * scale;
+  const bh = bw * 1.12;
+  if (sheet && sheet.naturalWidth > 8) {
+    const cols = 4;
+    const rows = 4;
+    const row = faceRow(face);
+    const col = walking ? Math.floor(now / 110) % cols : 0;
+    const cw = sheet.naturalWidth / cols;
+    const ch = sheet.naturalHeight / rows;
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(sheet, col * cw, row * ch, cw, ch, x - bw / 2, y - bh * 0.88, bw, bh);
+    ctx.restore();
+    return;
+  }
+  drawTravel(ctx, w, h, pos, walking, now, !walking);
+}
 
 const doorScan = typeof document !== "undefined" ? document.createElement("canvas") : null;
 
@@ -450,7 +524,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const [want, setWant] = useState(2);
   const [filmCap, setFilmCap] = useState(3);
   const [pins, setPins] = useState<RuneNode[]>([]);
-  const [phase, setPhase] = useState<Phase>(hangArt.current || boot?.kind === "session" ? "play" : boot?.kind === "path" ? "look" : "count");
+  const [phase, setPhase] = useState<Phase>(
+    hangArt.current || boot?.kind === "session" || boot?.kind === "path" ? "play" : "count",
+  );
   const [walkSecs, setWalkSecs] = useState<WalkSecs>(10);
   const [graph, setGraph] = useState<RuneGraph | null>(null);
   const [here, setHere] = useState(SPAWN.id);
@@ -526,6 +602,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const wantIdle = useRef(false);
   const liveForge = useRef(false);
   const quietCook = useRef(false);
+  const stockSprite = useRef(false);
+  const walkWait = useRef<(() => void) | null>(null);
+  const walkFace = useRef<ReturnType<typeof facingOf>>("up");
   const runId = useRef(0);
   const armed = useRef(false);
   const playing = useRef(false);
@@ -1095,6 +1174,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       walk.current = null;
       setHere(moving.to);
       hereRef.current = moving.to;
+      bolt.current = { x: moving.x1, y: moving.y1 };
+      if (walkWait.current) {
+        const done = walkWait.current;
+        walkWait.current = null;
+        done();
+        return;
+      }
       if (phaseRef.current === "forge") {
         beginShot();
         return;
@@ -1174,13 +1260,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       const w = el!.width;
       const h = el!.height;
       ctx.clearRect(0, 0, w, h);
+      el!.dataset.bolt = `${bolt.current.x.toFixed(3)},${bolt.current.y.toFixed(3)}`;
       const ph = phaseRef.current;
       if (ph === "count" || ph === "refs") {
         raf.current = window.requestAnimationFrame(draw);
         return;
       }
       const list = withSpawn(pinsRef.current);
-      if (beatRef.current !== "shot" && beatRef.current !== "playvid" && beatRef.current !== "cook") {
+      if (ph === "play" && stockSprite.current) {
+        if (walk.current || hereRef.current !== "spawn") hideBakedBolt(ctx, w, h);
+        drawBoltSprite(ctx, w, h, bolt.current, !!walk.current, now, walkFace.current);
+      } else if (beatRef.current !== "shot" && beatRef.current !== "playvid" && beatRef.current !== "cook") {
         if (ph !== "play") {
           drawGraph(ctx, w, h, list, graphRef.current, ph, nowClipRef.current, forgedRef.current, now);
           drawTravel(ctx, w, h, bolt.current, !!walk.current, now, beatRef.current === "idle");
@@ -1201,15 +1291,40 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       ro.disconnect();
       window.cancelAnimationFrame(raf.current);
     };
-  }, []);
+    // Restart when play mounts the canvas (path boot used to first-paint look).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase === "play"]);
+
+  function stockHallNow() {
+    const idle = idleFor(hereRef.current);
+    if (isHallFilm(idle?.url) || isHallFilm(plateRef.current) || isHallFilm(hallKeep.current)) return true;
+    for (const clip of bank.current.values()) {
+      if (isHallFilm(clip.url)) return true;
+    }
+    return false;
+  }
+
+  function stopStockWalk() {
+    playTok.current += 1;
+    const done = walkWait.current;
+    walkWait.current = null;
+    walk.current = null;
+    playing.current = false;
+    wrapping.current = false;
+    if (done) done();
+  }
 
   function goTo(id: string) {
     if (riftPickRef.current || riftDraftRef.current) return;
     if (entering.current) return;
     if (phaseRef.current === "play") {
-      if (playing.current || beatRef.current === "playvid" || beatRef.current === "walk") {
+      const stock = stockHallNow();
+      if (!stock && (playing.current || beatRef.current === "playvid" || beatRef.current === "walk")) {
         queued.current = id;
         return;
+      }
+      if (stock && (playing.current || walk.current || beatRef.current === "playvid" || beatRef.current === "walk")) {
+        stopStockWalk();
       }
       liveForge.current = false;
       playing.current = false;
@@ -1220,6 +1335,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           void goEnter(id);
           return;
         }
+        setLit(id);
+        window.setTimeout(() => setLit(null), 280);
+        holdIdle();
+        return;
       }
       setEnterAsk(null);
       void playWalk(id);
@@ -1728,6 +1847,32 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     el.addEventListener("loadeddata", go, { once: true });
   }
 
+  function playStockWalk(from: string, to: string, dest: { x: number; y: number }) {
+    return new Promise<void>((resolve) => {
+      const at = bolt.current;
+      const myTok = playTok.current;
+      walkFace.current = facingOf(dest.x - at.x, dest.y - at.y);
+      const dur = Math.max(1400, Math.min(2400, walkMs({ id: from, name: from, x: at.x, y: at.y }, { id: to, name: to, x: dest.x, y: dest.y }) + 400));
+      stockSprite.current = true;
+      filmLoop.current = true;
+      walk.current = { x0: at.x, y0: at.y, x1: dest.x, y1: dest.y, t: 0, dur, to };
+      walkWait.current = () => resolve();
+      sheetOf("walk");
+      sheetOf("idle");
+      setLiving("walk", Math.max(6, Math.round(dur / 1000) as 6 | 10 | 15));
+      window.setTimeout(() => {
+        if (playTok.current !== myTok) return;
+        if (walkWait.current) {
+          walk.current = null;
+          bolt.current = { x: dest.x, y: dest.y };
+          const done = walkWait.current;
+          walkWait.current = null;
+          done();
+        }
+      }, dur + 80);
+    });
+  }
+
   function replayWalk(url: string, maxMs: number) {
     return new Promise<void>((resolve) => {
       const vis = visFilm();
@@ -1779,6 +1924,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setFrost(phaseRef.current === "play" ? "" : "tap a door");
     idleArmed.current = true;
     const idle = idleFor(hereRef.current);
+    if (isHallFilm(idle?.url) && hereRef.current !== "spawn") stockSprite.current = true;
+    else if (hereRef.current === "spawn") stockSprite.current = false;
     if (idle?.url) {
       filmLoop.current = true;
       setLoopOn(true);
@@ -1837,10 +1984,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       holdIdle();
       return;
     }
-    const to =
+    const pin =
       list.find((n) => n.id === id) ||
       (id === "m1" ? { id: "m1", name: "teal", x: 0.22, y: 0.48 } : id === "m2" ? { id: "m2", name: "gold", x: 0.78, y: 0.48 } : null);
-    if (!to) {
+    if (!pin) {
       setFrost("no door");
       return;
     }
@@ -1856,6 +2003,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       holdIdle();
       return;
     }
+    const stock = isHallFilm(clip.url);
+    const stand = stock ? stockStand(id) : { x: pin.x, y: pin.y };
+    const to = { id: pin.id, name: pin.name, x: stand.x, y: stand.y };
     const token = ++playTok.current;
     wrapping.current = false;
     filmLoop.current = false;
@@ -1872,14 +2022,21 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const nextIdle = idleFor(id, at);
     const breathUrl = nextIdle?.url && nextIdle.url !== clip.url ? nextIdle.url : null;
     const wait = (clampWalk(walkSecsRef.current) + 4) * 1000;
-    const vis = visFilm();
-    const sameLoop = !!(vis && slotSrc(vis) === clip.url && filmHasPaint(vis));
-    await Promise.race([
-      sameLoop
-        ? replayWalk(clip.url, wait)
-        : playFilm(clip.url, wait, lastLive.current || plateRef.current, clip.end, true, breathUrl),
-      sleep(wait),
-    ]);
+    if (stock) {
+      stockSprite.current = true;
+      walkFace.current = facingOf(to.x - bolt.current.x, to.y - bolt.current.y);
+      await playStockWalk(at, id, to);
+    } else {
+      stockSprite.current = false;
+      const vis = visFilm();
+      const sameLoop = !!(vis && slotSrc(vis) === clip.url && filmHasPaint(vis));
+      await Promise.race([
+        sameLoop
+          ? replayWalk(clip.url, wait)
+          : playFilm(clip.url, wait, lastLive.current || plateRef.current, clip.end, true, breathUrl),
+        sleep(wait),
+      ]);
+    }
     if (token !== playTok.current) return;
     setPose(null);
     setHere(id);
@@ -2534,6 +2691,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     unlockAudio();
     startBed();
     swipe.current = { x: e.clientX, y: e.clientY };
+    if (phaseRef.current !== "play") return;
+    if (riftPickRef.current || riftDraftRef.current || entering.current) return;
+    const hit = norm(e);
+    const door = hit?.inside ? doorAt(hit.nx, hit.ny) : null;
+    if (door && door !== "spawn") goTo(door);
   }
 
   function onUp(e: React.PointerEvent) {
@@ -4912,6 +5074,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if (phaseRef.current === "play" && !playing.current) holdIdle();
     }, 160);
     sfxForge("enter");
+    sheetOf("walk");
+    sheetOf("idle");
     for (const v of bank.current.values()) warmUrl(v.url);
     void cookRoomQuiet();
   }
@@ -5748,6 +5912,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       data-forged={forged}
       data-here={here}
       data-door-hit={doorHit ? "1" : "0"}
+      data-stock-walk={phase === "play" && (beat === "playvid" || beat === "walk") ? "1" : "0"}
       data-marks={pins.length}
       data-rift={rift.m1 || rift.m2 ? "1" : "0"}
       data-pick={pick ? "1" : "0"}
@@ -5793,7 +5958,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           className="pointer-events-none absolute inset-0 h-full w-full object-contain object-center"
         />
         ) : null}
-        <canvas ref={canvas} className="pointer-events-none absolute" />
+        <canvas ref={canvas} className={`pointer-events-none absolute ${phase === "play" ? "z-50" : ""}`} />
         <video
           ref={film}
           muted
@@ -6037,6 +6202,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
                 }}
                 onPointerDown={(e) => {
                   e.preventDefault();
+                  e.stopPropagation();
                   goTo(id);
                 }}
                 onPointerUp={(e) => {
@@ -6044,7 +6210,6 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  goTo(id);
                 }}
               />
             );
