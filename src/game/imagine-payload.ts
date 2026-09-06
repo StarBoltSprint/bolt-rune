@@ -4,8 +4,26 @@
  * without spinning up server functions.
  */
 
+import { SHOT_REJECT } from "./rune.ts";
+
 export const IMAGINE_IMAGE = "grok-imagine-image-2.0";
 export const IMAGINE_VIDEO = "grok-imagine-video-1.5";
+
+/** cook.ts slices to this. Hall-cook REJECT must stay in the kept prefix. */
+export const IMAGINE_PROMPT_MAX = 2200;
+
+/**
+ * Hall cooks: put SHOT_REJECT first so the 2200 slice cannot drop it.
+ * Non-hall prompts (door cutouts, sprint vault) are sliced as-is.
+ */
+export function clipImaginePrompt(raw: string, max = IMAGINE_PROMPT_MAX) {
+  const text = String(raw || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  const hall = /profile-hero|WHOLE hall|locked full-hall|REJECT LIST/i.test(text);
+  if (!hall) return text.slice(0, max);
+  const rest = text.split(SHOT_REJECT).join(" ").replace(/\s+/g, " ").trim();
+  return `${SHOT_REJECT} ${rest}`.slice(0, max);
+}
 
 export function runeStillJobs(input: {
   prompt: string;
@@ -16,7 +34,8 @@ export function runeStillJobs(input: {
   resolution: string;
   store: { filename: string; public_url: true };
 }): { path: string; body: Record<string, unknown> }[] {
-  const { prompt, pics, edit, editOnly, ratio, resolution, store } = input;
+  const { pics, edit, editOnly, ratio, resolution, store } = input;
+  const prompt = clipImaginePrompt(input.prompt);
   const model = IMAGINE_IMAGE;
   const jobs: { path: string; body: Record<string, unknown> }[] = [];
   if (edit && pics.length > 1) {
@@ -67,7 +86,8 @@ export function runeFilmVariants(input: {
   resolution: string;
   store: { filename: string; public_url: true };
 }): Record<string, unknown>[] {
-  const { prompt, imageUrl, duration, resolution, store } = input;
+  const { imageUrl, duration, resolution, store } = input;
+  const prompt = clipImaginePrompt(input.prompt);
   function plate(res?: string) {
     const body: Record<string, unknown> = {
       model: IMAGINE_VIDEO,
