@@ -48,6 +48,7 @@ import {
   type RuneNode,
   type WalkSecs,
 } from "@/game/rune";
+import { lookForgeStart } from "@/game/path-entry";
 import { freeRuneSlot, grabRuneFrame, pollCookPlate, startCookStill, startRuneExtend, startRuneFilm, startRuneStill, cacheClip, cacheStill } from "@/lib/cook";
 import { BIOMES, biomePlaylist, riftFilm, riftPrompt, type BiomeId } from "@/game/cook";
 import { FilmStage } from "@/components/film-stage";
@@ -3944,17 +3945,24 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
   }
 
-  function startRefs(keepSid = false) {
+  function startRefs(keepSid = false, pack: "live" | "sealed" = "live") {
     runId.current += 1;
     dead.current = false;
     cooking.current = false;
     liveForge.current = true;
-    enterHold.current = {
-      hall: bridgeOn.hall ? lookPackRef.current.find((p) => p.id === "same-hall")?.src || bridge.hall : "",
-      a: bridgeOn.a ? lookPackRef.current.find((p) => p.id === "door-a")?.src || bridge.a : "",
-      b: bridgeOn.b ? lookPackRef.current.find((p) => p.id === "door-b")?.src || bridge.b : "",
-      pick: enterDoorRef.current,
-    };
+    if (pack === "sealed") {
+      lookPackRef.current = [];
+      setLookPack([]);
+      lookHall.current = null;
+      enterHold.current = { hall: "", a: "", b: "", pick: enterDoorRef.current };
+    } else {
+      enterHold.current = {
+        hall: bridgeOn.hall ? lookPackRef.current.find((p) => p.id === "same-hall")?.src || bridge.hall : "",
+        a: bridgeOn.a ? lookPackRef.current.find((p) => p.id === "door-a")?.src || bridge.a : "",
+        b: bridgeOn.b ? lookPackRef.current.find((p) => p.id === "door-b")?.src || bridge.b : "",
+        pick: enterDoorRef.current,
+      };
+    }
     if (!keepSid && hallHold.current <= 1) sid.current = newSessionId();
     setPlate("");
     plateRef.current = "";
@@ -5870,7 +5878,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         <div className="relative z-10 mt-auto flex flex-col items-center gap-3">
           <button
             type="button"
-            data-forge="start"
+            data-forge={lookForgeStart("start").dataForge}
             className="flex h-16 w-full max-w-xs items-center justify-center font-display text-4xl text-[#f0d48a] drop-shadow-[0_0_22px_rgba(228,195,122,0.55)]"
             style={{ touchAction: "manipulation" }}
             onPointerUp={() => {
@@ -5880,6 +5888,18 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             }}
           >
             Forge
+          </button>
+          <button
+            type="button"
+            data-forge={lookForgeStart("bot").dataForge}
+            className="flex h-12 w-full max-w-xs items-center justify-center font-display text-2xl text-[#9ef0e4] drop-shadow-[0_0_18px_rgba(158,240,228,0.4)]"
+            style={{ touchAction: "manipulation" }}
+            onPointerUp={() => {
+              clearWish();
+              startRefs(false, "sealed");
+            }}
+          >
+            Grok Bot Forge
           </button>
           <button
             type="button"
