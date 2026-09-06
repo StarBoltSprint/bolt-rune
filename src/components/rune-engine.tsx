@@ -31,6 +31,9 @@ import {
   breathPrompt,
   gazeLaw,
   TOUR_PLATE,
+  HALL_STILL,
+  isHallFilm,
+  stockRoomBank,
   withSpawn,
   type RuneClip,
   type RuneGraph,
@@ -119,13 +122,12 @@ function stillOk(u?: string | null): u is string {
 
 function isStockArt(u?: string | null) {
   if (!u) return true;
+  if (isHallFilm(u)) return false;
   const s = u.toLowerCase();
   return (
-    s.includes("/ui/citadel") ||
+    s.includes("/ui/citadel.jpg") ||
     s.includes("hall-doors") ||
     s.includes("/films/cook-") ||
-    s.includes("citadel-tour") ||
-    s.includes("/films/citadel.jpg") ||
     s.includes("/films/hall.jpg") ||
     s.includes("/films/hall-p")
   );
@@ -640,6 +642,19 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   walkSecsRef.current = walkSecs;
 
   useEffect(() => {
+    if (phase !== "play") return;
+    if (playing.current || beatRef.current === "playvid" || beatRef.current === "walk") return;
+    const t = window.setTimeout(() => {
+      if (phaseRef.current !== "play") return;
+      if (playing.current || beatRef.current === "playvid") return;
+      if (!film.current && !filmB.current) return;
+      holdIdle();
+    }, 80);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  useEffect(() => {
     const bind = (el: HTMLVideoElement | null) => {
       if (!el) return () => {};
       const onTime = () => stampLoop(el);
@@ -684,8 +699,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         setRiftPick("ask");
         setFrost("hang your artefact on a door");
       } else {
-        setPhase("look");
-        phaseRef.current = "look";
+        enterLivingRoom(boot.first);
       }
     }
     return () => {
@@ -753,7 +767,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     snap.from = parent && parent !== snap.id ? parent : undefined;
     const hasFilm = (snap.bank || []).some((b) => b?.url) || (snap.halls || []).some((h) => (h.bank || []).some((b) => b?.url));
     const isRoom = !!(snap.from || extra?.from || (snap.hall && snap.hall > 1) || (snap.halls && snap.halls.length > 1));
-    if (!hasFilm && !snap.plate && !(snap.refs || []).length && !isRoom) return;
+    const living = ph === "play" || hasFilm || isHallFilm(snap.plate) || isHallFilm(snap.start);
+    if (!living && !hasFilm && !snap.plate && !(snap.refs || []).length && !isRoom) return;
     const slimU = (u?: string) => {
       if (!u || u.startsWith("data:") || u.startsWith("blob:")) return "";
       return u;
@@ -1341,6 +1356,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function idleTrusted(clip?: { url: string; end: string } | null) {
     if (!clip?.url) return null;
+    if (isHallFilm(clip.url) || isHallFilm(clip.end)) return clip;
     if (isStockArt(clip.end) || isStockArt(clip.url)) return null;
     const hall = startHold.current || plateRef.current || "";
     if (hall && clip.end && isStockArt(clip.end)) return null;
@@ -4707,6 +4723,76 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     void dropSession(id).then(() => setHub(listSessions()));
   }
 
+  /** New citadel play: locked hall camera, living breath/walks inside that frame. */
+  function enterLivingRoom(first: "m1" | "m2") {
+    pathFirst.current = first;
+    roomsHold.current = Math.max(1, roomsHold.current || 1);
+    hallHold.current = Math.max(1, hallHold.current || 1);
+    titleHold.current = titleHold.current || "Citadel";
+    const doors = plannedObjects(2).map((o) => ({ id: o.id, name: o.name, x: o.x, y: o.y }));
+    setWant(2);
+    wantRef.current = 2;
+    setFilmCap(6);
+    filmCapRef.current = 6;
+    setPins(doors);
+    pinsRef.current = doors;
+    lockHall(HALL_STILL);
+    hallKeep.current = HALL_STILL;
+    startHold.current = HALL_STILL;
+    plateRef.current = HALL_STILL;
+    setPlate(HALL_STILL);
+    rememberHall(sid.current, HALL_STILL);
+    bank.current = new Map(stockRoomBank(first).map((b) => [b.key, { url: b.url, end: b.end }]));
+    refsMap.current.set("hall", HALL_STILL);
+    refsMap.current.set("seed", HALL_STILL);
+    refsMap.current.set("room", HALL_STILL);
+    refsMap.current.set("empty", HALL_STILL);
+    const refs = [
+      { id: "hall", name: "hall", src: HALL_STILL },
+      { id: "seed", name: "seed", src: HALL_STILL },
+    ];
+    refsHold.current = refs;
+    setRefs(refs);
+    const g = compileCitadel(HALL_STILL, doors, walkSecsRef.current);
+    setGraph(g);
+    graphRef.current = g;
+    setHere(SPAWN.id);
+    hereRef.current = SPAWN.id;
+    cameFrom.current = "start";
+    bolt.current = { x: SPAWN.x, y: SPAWN.y };
+    setPhase("play");
+    phaseRef.current = "play";
+    armed.current = true;
+    playing.current = false;
+    liveForge.current = false;
+    setBeat("idle");
+    beatRef.current = "idle";
+    setNeedOther(false);
+    setNeedStill(false);
+    setFrost("");
+    syncWalks();
+    persist({
+      phase: "play",
+      plate: HALL_STILL,
+      start: HALL_STILL,
+      thumb: HALL_STILL,
+      title: titleHold.current,
+      name: titleHold.current,
+      here: SPAWN.id,
+      cameFrom: "start",
+      rooms: roomsHold.current,
+      hall: hallHold.current,
+      refs,
+    });
+    markLivePlay(sid.current, SPAWN.id, HALL_STILL);
+    holdIdle();
+    window.setTimeout(() => {
+      if (phaseRef.current === "play" && !playing.current) holdIdle();
+    }, 160);
+    sfxForge("enter");
+    for (const v of bank.current.values()) warmUrl(v.url);
+  }
+
   begin.current = () => {
     if (boot?.kind === "path") {
       pathFirst.current = boot.first;
@@ -4722,8 +4808,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         setRiftPick("ask");
         setFrost("hang your artefact on a door");
       } else {
-        setPhase("look");
-        phaseRef.current = "look";
+        enterLivingRoom(boot.first);
       }
     }
   };
@@ -5527,6 +5612,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     <div
       className="relative min-h-dvh overflow-hidden bg-bg"
       data-rune="engine"
+      data-camera="lock"
+      data-living={phase === "play" && (filmOn || Boolean(idleFor(here))) ? "1" : "0"}
       data-phase={phase}
       data-clips={counts.total}
       data-idles={counts.idles}
