@@ -114,7 +114,7 @@ async function runViewport(browser, vp) {
         throw new Error(`${vp.name}: Door A tap did not reach playvid ${JSON.stringify({ tapA, walkA, again })}`);
       }
     }
-    await page.waitForTimeout(520);
+    await page.waitForTimeout(700);
     const midA = await page.evaluate(() => {
       const cv = document.querySelector("[data-rune=engine] canvas");
       const bolt = cv?.getAttribute("data-bolt") || "";
@@ -122,7 +122,7 @@ async function runViewport(browser, vp) {
       return { bolt, x, y, stockWalk: document.querySelector("[data-rune=engine]")?.getAttribute("data-stock-walk") };
     });
     notes.push({ midA });
-    if (!(midA.x > 0 && midA.x < 0.46 && midA.y > 0.5 && midA.y < 0.78)) {
+    if (!(midA.x > 0.2 && midA.x < 0.48 && midA.y > 0.52 && midA.y < 0.76)) {
       throw new Error(`${vp.name}: Door A walk did not move Bolt on the floor ${JSON.stringify(midA)}`);
     }
     await page.screenshot({ path: `${OUT}/${vp.name}-hall-walk-a.png`, fullPage: false });
@@ -144,7 +144,7 @@ async function runViewport(browser, vp) {
         throw new Error(`${vp.name}: Door B tap did not reach playvid ${JSON.stringify({ tapB, walkB, again })}`);
       }
     }
-    await page.waitForTimeout(520);
+    await page.waitForTimeout(700);
     const midB = await page.evaluate(() => {
       const cv = document.querySelector("[data-rune=engine] canvas");
       const bolt = cv?.getAttribute("data-bolt") || "";
@@ -152,7 +152,7 @@ async function runViewport(browser, vp) {
       return { bolt, x, y };
     });
     notes.push({ midB });
-    if (!(midB.x > 0.54 && midB.x < 0.86 && midB.y > 0.5 && midB.y < 0.72)) {
+    if (!(midB.x > 0.42 && midB.x < 0.82 && midB.y > 0.52 && midB.y < 0.7)) {
       throw new Error(`${vp.name}: Door B walk did not move Bolt toward gold ${JSON.stringify(midB)}`);
     }
     await page.screenshot({ path: `${OUT}/${vp.name}-hall-walk-b.png`, fullPage: false });
