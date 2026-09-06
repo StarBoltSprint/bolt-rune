@@ -60,6 +60,7 @@ async function engineState(page) {
       camera: el.getAttribute("data-camera"),
       here: el.getAttribute("data-here"),
       living: el.getAttribute("data-living"),
+      stockWalk: el.getAttribute("data-stock-walk"),
       look: Boolean(document.querySelector("[data-look]")),
       films: /3 walks/i.test(document.body.innerText),
     };
@@ -102,7 +103,7 @@ async function runViewport(browser, vp) {
     }
     await page.screenshot({ path: `${OUT}/${vp.name}-hall-idle.png`, fullPage: false });
 
-    const tapA = await tapPicture(page, 0.26, 0.4);
+    const tapA = await tapPicture(page, 0.26, 0.42);
     notes.push({ door: "A", tap: tapA });
     const walkA = await waitBeat(page, "playvid", 4000);
     if (walkA.beat !== "playvid") {
@@ -114,7 +115,10 @@ async function runViewport(browser, vp) {
       }
     }
     await page.screenshot({ path: `${OUT}/${vp.name}-hall-walk-a.png`, fullPage: false });
-    const afterA = await waitBeat(page, "idle", 16000);
+    const afterA = await waitBeat(page, "idle", 8000);
+    if (afterA.here !== "m1") {
+      throw new Error(`${vp.name}: Door A walk did not land at m1 ${JSON.stringify(afterA)}`);
+    }
     notes.push({ afterA });
 
     await page.waitForTimeout(200);
@@ -130,7 +134,10 @@ async function runViewport(browser, vp) {
       }
     }
     await page.screenshot({ path: `${OUT}/${vp.name}-hall-walk-b.png`, fullPage: false });
-    const afterB = await waitBeat(page, "idle", 16000);
+    const afterB = await waitBeat(page, "idle", 8000);
+    if (afterB.here !== "m2") {
+      throw new Error(`${vp.name}: Door B walk did not land at m2 ${JSON.stringify(afterB)}`);
+    }
     const final = await engineState(page);
     if (final.camera !== "lock" || final.phase !== "play") {
       throw new Error(`${vp.name}: camera/phase regression ${JSON.stringify(final)}`);

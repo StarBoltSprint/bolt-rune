@@ -41,6 +41,8 @@ describe("stock living room", () => {
     assert.equal(doorAtPoint(0.12, 0.48, null), "m1");
     assert.equal(doorAtPoint(0.88, 0.48, null), "m2");
     assert.equal(doorAtPoint(0.5, 0.78, hits), "spawn");
+    assert.equal(doorAtPoint(0.2, 0.65, hits), "m1");
+    assert.equal(doorAtPoint(0.8, 0.65, hits), "m2");
     assert.notEqual(doorAtPoint(0.28, 0.58, hits), "spawn");
     assert.notEqual(doorAtPoint(0.7, 0.58, hits), "spawn");
     assert.equal(doorAtPoint(-0.1, 0.4, hits), null);
