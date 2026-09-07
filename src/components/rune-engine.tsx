@@ -5745,6 +5745,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       { id: sid.current, hall: hallHold.current, rooms: roomsHold.current },
       arts,
       extra,
+      liveHangRooms,
     );
   }
 

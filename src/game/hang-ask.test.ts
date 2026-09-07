@@ -74,6 +74,8 @@ describe("hang ask leftover tap", () => {
     assert.match(engine, /beginRift\(door, gateFromHung\(hangAsk\.a\), livingHangHall\(rooms, hall\)\)/);
     assert.match(engine, /pickHangHall/);
     assert.match(engine, /livingHangHall/);
+    assert.match(engine, /listHangRooms\(/);
+    assert.match(engine, /liveHangRooms/);
     assert.match(engine, /const \[liveHall, setLiveHall\]/);
     assert.doesNotMatch(engine, /const \[hallN,/);
     assert.match(engine, /goHungHall/);
