@@ -76,6 +76,40 @@ describe("hang room pick", () => {
     assert.equal(citadelRoomCount({ rooms: 1, halls: [{ n: 1 }, { n: 2 }] }), 2);
     assert.equal(citadelRoomCount({ rooms: 2, halls: [{ n: 1 }] }), 2);
     assert.equal(citadelRoomCount({ rooms: 1, hall: 2 }), 2);
+    assert.equal(citadelRoomCount({ rooms: 1, halls: [{}, {}, {}] }), 3);
+  });
+
+  it("rooms=3 or halls length 3 → three picks; living marked here", () => {
+    const byRooms = listHangRooms([cit(3, 2)], { id: "cit-1", hall: 2 });
+    assert.deepEqual(
+      byRooms.map((r) => r.hall),
+      [1, 2, 3],
+    );
+    assert.equal(byRooms.find((r) => r.living)?.hall, 2);
+    const byHalls = listHangRooms([{ ...cit(1, 2), halls: [{ n: 1 }, { n: 2 }, { n: 3 }] }], { id: "cit-1", hall: 2 });
+    assert.deepEqual(
+      byHalls.map((r) => r.hall),
+      [1, 2, 3],
+    );
+    assert.equal(byHalls.find((r) => r.living)?.hall, 2);
+  });
+
+  it("Door A/B child sessions appear as hang rooms of the living citadel", () => {
+    const parent = cit(1, 1, "cit-1");
+    const child = { ...cit(1, 2, "cit-1-b"), from: "cit-1", name: "Room 2" };
+    const rooms = listHangRooms([parent, child], { id: "cit-1", hall: 1 });
+    assert.deepEqual(
+      rooms.map((r) => r.hall),
+      [1, 2],
+    );
+  });
+
+  it("last-play rooms=1 does not collapse a 3-room catalog", () => {
+    const rooms = listHangRooms([cit(3, 1)], { id: "cit-1", hall: 1, rooms: 1 });
+    assert.deepEqual(
+      rooms.map((r) => r.hall),
+      [1, 2, 3],
+    );
   });
 
   it("Hang A/B and Grok Bot Hang always open the sheet before binding", () => {

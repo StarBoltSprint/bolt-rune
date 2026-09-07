@@ -36,7 +36,16 @@ function ownerKey(userId: string) {
   return String(userId || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
 }
 
+function hallHints(halls?: HallSlice[]): RuneSessionMeta["halls"] {
+  if (!Array.isArray(halls) || !halls.length) return undefined;
+  return halls.slice(0, 8).map((h, i) => ({
+    n: Math.max(1, Math.min(8, Number(h.n) || i + 1)),
+    still: httpUrl(h.still) || httpUrl(h.plate) || "",
+  }));
+}
+
 function metaFrom(session: RuneSession): RuneSessionMeta {
+  const halls = hallHints(session.halls);
   return {
     id: session.id,
     name: session.name || "Room",
@@ -45,12 +54,28 @@ function metaFrom(session: RuneSession): RuneSessionMeta {
     want: session.want || 2,
     walks: Array.isArray(session.bank) ? session.bank.filter((b) => b?.url).length : session.walks || 0,
     thumb: httpUrl(session.thumb) || httpUrl(session.plate) || "/refs/hall-doors.jpg",
-    rooms: citadelRoomCount({ rooms: session.rooms, hall: session.hall, halls: session.halls }),
+    rooms: citadelRoomCount({
+      rooms: session.rooms,
+      hall: session.hall,
+      halls: session.halls,
+      next: session.next,
+    }),
     hall: session.hall,
     from: session.from,
     via: session.via,
     title: session.title,
+    halls,
   };
+}
+
+function bodyHints(raw?: string): Pick<RuneSession, "halls" | "rooms" | "hall" | "next"> {
+  if (!raw) return {};
+  try {
+    const s = JSON.parse(raw) as RuneSession;
+    return { halls: s.halls, rooms: s.rooms, hall: s.hall, next: s.next };
+  } catch {
+    return {};
+  }
 }
 
 async function disk(userId: string) {
@@ -194,7 +219,7 @@ function pack(session: RuneSession): { meta: RuneSessionMeta; body: string; sess
     want: Math.max(1, Math.min(8, Number(session.want) || 2)),
     walks: bank.length,
     thumb: httpUrl(session.thumb) || httpUrl(session.plate) || "/refs/hall-doors.jpg",
-    rooms: citadelRoomCount({ rooms: session.rooms, hall: session.hall, halls: session.halls }),
+    rooms: citadelRoomCount({ rooms: session.rooms, hall: session.hall, halls: session.halls, next: session.next }),
     hall: session.hall,
     walkSecs: session.walkSecs === 6 ? 6 : 10,
     pins: Array.isArray(session.pins) ? session.pins.slice(0, 8) : [],
@@ -286,7 +311,8 @@ async function fetchCitadelList(userId: string): Promise<RuneSessionMeta[]> {
   try {
     const sql = await getSql();
     const rows = await sql<Row>`
-      select id, name, updated, phase, want, walks, thumb, rooms, hall, from_id, via, title
+      select id, name, updated, phase, want, walks, thumb, rooms, hall, from_id, via, title,
+        case when coalesce(rooms, 1) <= 1 then body else null end as body
       from citadels
       where user_id = ${userId}
       order by updated desc
@@ -294,6 +320,8 @@ async function fetchCitadelList(userId: string): Promise<RuneSessionMeta[]> {
     `;
     for (const r of rows) {
       if (!r.id) continue;
+      const body = bodyHints(r.body);
+      const halls = hallHints(body.halls);
       byId.set(r.id, {
         id: r.id,
         name: r.name,
@@ -302,11 +330,17 @@ async function fetchCitadelList(userId: string): Promise<RuneSessionMeta[]> {
         want: Number(r.want) || 2,
         walks: Number(r.walks) || 0,
         thumb: r.thumb || "/refs/hall-doors.jpg",
-        rooms: r.rooms ?? undefined,
-        hall: r.hall ?? undefined,
+        rooms: citadelRoomCount({
+          rooms: r.rooms ?? body.rooms,
+          hall: r.hall ?? body.hall,
+          halls: body.halls || halls,
+          next: body.next,
+        }),
+        hall: r.hall ?? body.hall ?? undefined,
         from: r.from_id || undefined,
         via: r.via || undefined,
         title: r.title || undefined,
+        halls,
       });
     }
   } catch {
