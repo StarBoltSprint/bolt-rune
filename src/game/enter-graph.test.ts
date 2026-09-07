@@ -342,7 +342,12 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.equal(enter3.door, "A");
     assert.deepEqual(hungPlayChrome(enter3.hall, enter3.door), { keeper: "Room 3 • Door A", name: "Play Sprint" });
     assert.notDeepEqual(hungPlayChrome(enter3.hall, enter3.door), hungPlayChrome(8, "A"));
-    const fromRoom8 = resolveDoorEnter("A", 8, "cit-8", hung, {
+    const staleOn8 = resolveDoorEnter("A", 8, "cit-8", hung, {
+      m1: { biome: "forest", name: "Forest", still: biomeStill("forest"), loop: "/films/forge-forest.mp4", art: id },
+    });
+    assert.equal(staleOn8.kind, "hall");
+    assert.equal(staleOn8.hall, 8);
+    const fromRoom8 = resolveHungEnter("A", 8, "cit-8", hung, {
       m1: { biome: "forest", name: "Forest", still: biomeStill("forest"), loop: "/films/forge-forest.mp4", art: id },
     });
     assert.equal(fromRoom8.kind, "biome");
