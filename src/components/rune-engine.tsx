@@ -100,7 +100,7 @@ import {
 import { BootScreen } from "@/components/citadel-hub";
 import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
 import { swallowOpeningTap } from "@/game/hang-ask";
-import { defaultHangRoom, hallN, listHangRooms, liveSlice, livingHangHall, putSlice, seedHalls, type HangRoomPick } from "@/game/rooms";
+import { confirmHangHall, defaultHangRoom, hallN, listHangRooms, liveSlice, livingHangHall, putSlice, seedHalls, type HangRoomPick } from "@/game/rooms";
 import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
 import { playableClipSrc } from "@/game/play-clip";
@@ -4734,7 +4734,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function beginRift(door: "m1" | "m2", gate: RiftGate, hall?: number) {
     const rooms = liveHangRooms.length ? liveHangRooms : livingHangRooms();
-    const bindHall = livingHangHall(rooms, hall || hangRoomRef.current || hallHold.current);
+    const bindHall = confirmHangHall(rooms, hall ?? hangRoomRef.current);
     hangRoomRef.current = bindHall;
     setHangRoomN(bindHall);
     setLiveHall(bindHall);
@@ -5762,7 +5762,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     swallowOpeningTap();
     const rooms = livingHangRooms();
     setLiveHangRooms(rooms);
-    const next = rooms.some((r) => r.hall === hangRoomRef.current) ? hangRoomRef.current : defaultHangRoom(rooms);
+    const next = livingHangHall(rooms, hangRoomRef.current) || defaultHangRoom(rooms);
     pickHangHall(next);
     setHangAsk({ a, door });
   }
@@ -5771,7 +5771,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (!riftPick && !hangAsk) return;
     const rooms = livingHangRooms();
     setLiveHangRooms(rooms);
-    const next = rooms.some((r) => r.hall === hangRoomRef.current) ? hangRoomRef.current : defaultHangRoom(rooms);
+    const next = livingHangHall(rooms, hangRoomRef.current) || defaultHangRoom(rooms);
     pickHangHall(next);
   }, [riftPick, hungArts, hangAsk]);
 
@@ -6093,7 +6093,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         onConfirm={(hall) => {
           const door = hangAsk.door === "B" ? "m2" : "m1";
           const rooms = liveHangRooms.length ? liveHangRooms : livingHangRooms();
-          beginRift(door, gateFromHung(hangAsk.a), livingHangHall(rooms, hall));
+          beginRift(door, gateFromHung(hangAsk.a), confirmHangHall(rooms, hall));
           setHangAsk(null);
         }}
       />
@@ -6466,7 +6466,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     seed: refsMap.current.get("seed"),
     room: refsMap.current.get("room"),
   });
-  const livingChrome = rift.m1 || rift.m2 ? hungPlayChrome(hangRoomN, rift.m1 ? "A" : "B") : null;
+  const hungDoor = rift.m1 ? "A" : rift.m2 ? "B" : null;
+  const chromeHall =
+    hallN(hangRoomN) || hallN(hungArts.find((a) => a.room?.door === hungDoor)?.room?.hall) || 1;
+  const livingChrome = hungDoor ? hungPlayChrome(chromeHall, hungDoor) : null;
 
   return (
     <div
@@ -6719,7 +6722,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       {phase === "play" && (rift.m1 || rift.m2) ? (
         <p
           className="pointer-events-none absolute left-4 right-4 top-[max(0.75rem,env(safe-area-inset-top))] z-[70] text-center font-mono text-[11px] uppercase tracking-[0.22em] text-white/70"
-          data-living-hall={hangRoomN}
+          data-living-hall={chromeHall}
           data-living-door={rift.m1 ? "A" : "B"}
         >
           {livingChrome ? `${livingChrome.keeper} ${livingChrome.name}` : ""}

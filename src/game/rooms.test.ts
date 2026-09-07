@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bindCitadel, citadelRoomCount, defaultHangRoom, hangOpensSheet, holdHangRooms, isBiomeArtefactMeta, listHangRooms, livingHangHall, livingLoadPacks, loadHangHallCount, packCitadels, resolveHangRoom } from "./rooms.ts";
+import { bindCitadel, citadelRoomCount, confirmHangHall, defaultHangRoom, hangOpensSheet, holdHangRooms, isBiomeArtefactMeta, listHangRooms, livingHangHall, livingLoadPacks, loadHangHallCount, packCitadels, resolveHangRoom } from "./rooms.ts";
 import type { RuneSessionMeta } from "./rune-session.ts";
 
 function cit(rooms: number, hall = 1, id = "cit-1"): RuneSessionMeta {
@@ -135,6 +135,25 @@ describe("hang room pick", () => {
     const living2 = listHangRooms([cit(3, 2)], { id: "cit-1", hall: 2 });
     assert.equal(resolveHangRoom(living2, undefined), 2);
     assert.equal(resolveHangRoom(living2, "9"), 2);
+  });
+
+  it("Hang confirm pick N ≠ living default binds N (Room 8, not Room 2)", () => {
+    const eight = listHangRooms([cit(8, 2)], { id: "cit-1", hall: 2 });
+    assert.equal(defaultHangRoom(eight), 2);
+    assert.equal(resolveHangRoom(eight, 8), 8);
+    assert.equal(livingHangHall(eight, 8), 8);
+    assert.equal(confirmHangHall(eight, 8), 8);
+    assert.equal(confirmHangHall(eight, "8"), 8);
+    assert.notEqual(confirmHangHall(eight, 8), defaultHangRoom(eight));
+    const short = listHangRooms([cit(2, 2)], { id: "cit-1", hall: 2, rooms: 2 });
+    assert.equal(defaultHangRoom(short), 2);
+    assert.equal(livingHangHall(short, 8), 8);
+    assert.equal(confirmHangHall(short, 8), 8);
+    assert.equal(resolveHangRoom(short, 8), 8);
+    const living2 = listHangRooms([cit(3, 2)], { id: "cit-1", hall: 2 });
+    assert.equal(defaultHangRoom(living2), 2);
+    assert.equal(resolveHangRoom(living2, 8), 8);
+    assert.equal(confirmHangHall(living2, 8), 8);
   });
 
   it("skips biome artefacts so Hang matches Load’s saved citadel halls", () => {

@@ -6,7 +6,7 @@ import { vaultHangRoom, vaultHangStart } from "@/game/path-entry";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/lib/cook";
 import { hangHall, listHall } from "@/lib/hall";
-import { bindCitadel, defaultHangRoom, hangOpensSheet, holdHangRooms, listHangRooms, resolveHangRoom, type HangRoomPick } from "@/game/rooms";
+import { bindCitadel, confirmHangHall, defaultHangRoom, hallN, hangOpensSheet, holdHangRooms, listHangRooms, resolveHangRoom, type HangRoomPick } from "@/game/rooms";
 import { hydrateSessions, lastPlay, listSessions, listStoredHallHints } from "@/game/rune-session";
 import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
 import { HANG_LEFTOVER_SWALLOW_MS, swallowOpeningTap } from "@/game/hang-ask";
@@ -114,7 +114,10 @@ export function VaultHall() {
     hangRoomsRef.current = rooms;
     writeHangFloor(rooms.length);
     setHangRooms(rooms);
-    setHangHallN((prev) => (rooms.some((r) => r.hall === prev) ? prev : defaultHangRoom(rooms)));
+    setHangHallN((prev) => {
+      if (hangAskRef.current && hallN(prev)) return prev;
+      return rooms.some((r) => r.hall === prev) ? prev : defaultHangRoom(rooms);
+    });
     return rooms;
   }
 
@@ -158,10 +161,10 @@ export function VaultHall() {
   function hangDoor(a: HungArtifact, door: "A" | "B", from?: HungArtifact[], hallWant?: number | string | null) {
     const cit = bindCitadel(listSessions(), lastPlay());
     const rooms = refreshHangRooms(from?.length ? from : hungRef.current);
-    const hall = resolveHangRoom(rooms, hallWant ?? hangHallRef.current);
+    const hall = confirmHangHall(rooms, hallWant ?? hangHallRef.current);
     const pick = rooms.find((r) => r.hall === hall);
     const citadel = pick?.citadel || cit.citadel || undefined;
-    const bindHall = pick?.bindHall || hall;
+    const bindHall = hall;
     const hung = hangOnRoom(a.id, bindHungRoom(a, door, { citadel, hall: bindHall }), from?.length ? from : hungRef.current);
     setHung(hung);
     setHangHallN(hall);
