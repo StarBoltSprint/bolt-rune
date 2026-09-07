@@ -4,7 +4,6 @@ import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, swallowOpeningTap } from
 import { type HangRoomPick } from "@/game/rooms";
 import { press } from "@/lib/press";
 
-export { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, swallowOpeningTap } from "@/game/hang-ask";
 
 export function HangRoomStrip({
   rooms,

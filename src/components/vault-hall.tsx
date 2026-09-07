@@ -8,7 +8,8 @@ import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/
 import { hangHall, listHall } from "@/lib/hall";
 import { bindCitadel, defaultHangRoom, hangOpensSheet, listHangRooms, resolveHangRoom, type HangRoomPick } from "@/game/rooms";
 import { hydrateSessions, lastPlay, listSessions, listStoredHallHints } from "@/game/rune-session";
-import { HangAskSheet, HangRoomStrip, swallowOpeningTap } from "@/components/hang-ask";
+import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
+import { HANG_LEFTOVER_SWALLOW_MS, swallowOpeningTap } from "@/game/hang-ask";
 import { HallMark } from "@/components/hall-mark";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { FilmStage } from "@/components/film-stage";
@@ -54,6 +55,9 @@ export function VaultHall() {
   hungRef.current = hung;
   const hangHallRef = useRef(hangHallN);
   hangHallRef.current = hangHallN;
+  const hangAskRef = useRef(hangAsk);
+  hangAskRef.current = hangAsk;
+  const hangGuard = useRef(0);
   const { user, isPending: authPending } = useCurrentUserState();
   const owned = Boolean(user);
 
@@ -116,7 +120,12 @@ export function VaultHall() {
     setHung(hung);
     setHangHallN(hall);
     const live = hung.find((x) => x.id === a.id);
-    if (live) persistArt(live);
+    if (!live?.room?.door) {
+      setFrost("hang missed — pick the room on the sheet");
+      window.setTimeout(() => setFrost(""), 2400);
+      return;
+    }
+    persistArt(live);
     sfxForge("enter");
     setFrost(
       cit.citadel
@@ -135,19 +144,25 @@ export function VaultHall() {
     const head = list[0];
     if (!head) return;
     const rooms = refreshHangRooms(list);
-    if (hangOpensSheet("bot", rooms.length)) {
-      askHang(head, "A", hallWant);
-      return;
-    }
-    hangDoor(head, "A", list, resolveHangRoom(rooms, hallWant ?? hangHallRef.current));
+    if (!hangOpensSheet("bot", rooms.length)) return;
+    askHang(head, "A", hallWant);
   }
 
   function askHang(a: HungArtifact, door: "A" | "B", hallWant?: number | string | null) {
     swallowOpeningTap();
+    hangGuard.current = (typeof performance !== "undefined" ? performance.now() : Date.now()) + HANG_LEFTOVER_SWALLOW_MS;
     const rooms = refreshHangRooms();
     const hall = resolveHangRoom(rooms, hallWant ?? hangHallRef.current);
     setHangHallN(hall);
     setHangAsk({ a, door });
+  }
+
+  function playArt(a: HungArtifact) {
+    if (hangAskRef.current) return;
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (now < hangGuard.current) return;
+    const live = hungRef.current.find((x) => x.id === a.id) || a;
+    setPlay(live);
   }
 
   function unhangDoor(a: HungArtifact) {
@@ -358,14 +373,15 @@ export function VaultHall() {
   const clipCount = packs.reduce((n, f) => n + f.playlist.length, 0);
 
   if (play) {
-    const film = filmOf(play, hung);
+    const live = hung.find((x) => x.id === play.id) || play;
+    const film = filmOf(live, hung);
     return (
       <FilmStage
         id="sprint"
         original={false}
         custom={film}
         onHallDoor={(letter) => {
-          const hall = play.room?.hall || hangHallRef.current || 1;
+          const hall = live.room?.hall || hangHallRef.current || 1;
           const first = letter === "B" ? "m2" : "m1";
           setPlay(null);
           window.location.href = `/rune?first=${first}&drive=engine&rooms=${Math.max(2, hall)}&hall=${hall}&stills=0`;
@@ -425,9 +441,7 @@ export function VaultHall() {
           >
             Grok Bot Hang
             <span className="mt-0.5 block font-mono text-[9px] uppercase tracking-[0.14em] text-white/40">
-              {hangOpensSheet("bot", hangRooms.length)
-                ? `pick room · then door A · ${hangRooms.length} halls`
-                : `sealed door A · room ${resolveHangRoom(hangRooms, hangHallN)}`}
+              pick room · then door A · {hangRooms.length} hall{hangRooms.length === 1 ? "" : "s"}
             </span>
           </button>
         </div>
@@ -484,17 +498,18 @@ export function VaultHall() {
                   </div>
                   <button
                     type="button"
+                    data-play-sprint=""
                     className="block w-full px-3 pt-2 pb-2 text-left"
                     style={{ touchAction: "manipulation" }}
-                    onPointerUp={() => {
+                    {...press(() => {
                       if (busy) return;
                       if (n < 1) {
                         setFrost("No clip yet. Howl again — Imagine never landed a video.");
                         return;
                       }
                       sfxForge("enter");
-                      setPlay(head);
-                    }}
+                      playArt(head);
+                    })}
                   >
                     <p className="font-display text-xl text-ice">{f.name}</p>
                     <p className={`mt-1 font-mono text-[9px] uppercase tracking-[0.16em] ${hungOn ? "text-[#9ef0e4]" : "text-white/35"}`}>

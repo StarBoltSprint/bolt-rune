@@ -72,6 +72,20 @@ export function sprintHallDoor(url: string | null | undefined, nx: number, ny: n
   return null;
 }
 
+/** True while a sprint plate is the locked hall — QTE must not score MISS. */
+export function hallPlateAt(
+  playlist: Array<string | null | undefined> = [],
+  i = 0,
+  liveUrl?: string | null,
+): boolean {
+  return Boolean(
+    isHallFilm(playlist[i]) ||
+      isHallFilm(liveUrl) ||
+      sprintHallDoor(playlist[i], 0.22, 0.42) ||
+      sprintHallDoor(liveUrl, 0.22, 0.42),
+  );
+}
+
 export function biomeStill(id: BiomeName) {
   return `/films/cook-${id}.jpg`;
 }
