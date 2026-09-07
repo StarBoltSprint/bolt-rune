@@ -30,6 +30,7 @@ import {
   stockBiomePlaylist,
   stockTransUrl,
   vaultHangCaption,
+  walkHungHref,
 } from "./enter-graph.ts";
 import { biomeBotStart, createBotForgeHref, lookForgeStart, parseLookForge, vaultHangRoom, vaultHangStart } from "./path-entry.ts";
 import { HALL_LOOP } from "./stock-room.ts";
@@ -368,6 +369,12 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.equal(hangThumbStill({ still: "/films/cook-forest.jpg", name: "Luxuriant forest" }), "/films/cook-forest.jpg");
     assert.equal(hangThumbStill({ still: "/films/citadel-tour.jpg", name: "Luxuriant forest" }), biomeStill("forest"));
     assert.equal(hangThumbStill({ still: "", name: "Asteroid", room: { hall: 4, door: "A", still: "" } }), biomeStill("asteroid"));
+    assert.match(walkHungHref({ hall: 3, door: "A" }, 8), /hall=3/);
+    assert.match(walkHungHref({ hall: 3, door: "A" }, 8), /stills=0/);
+    assert.match(walkHungHref({ hall: 4, door: "A", citadel: "cit-8" }), /session=cit-8/);
+    assert.match(walkHungHref({ hall: 4, door: "A", citadel: "cit-8" }), /hall=4/);
+    assert.equal(walkHungHref({ hall: 4 }), "");
+    assert.notEqual(walkHungHref({ hall: 3, door: "A" }), walkHungHref({ hall: 8, door: "A" }));
     const here = dirname(fileURLToPath(import.meta.url));
     const cook = readFileSync(join(here, "./cook.ts"), "utf8");
     assert.match(cook, /hungPlayChrome\(n, door \|\| "A"\)/);
@@ -379,9 +386,12 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(vault, /vaultHangCaption\(head\.room\)/);
     assert.match(vault, /holdHall=\{hangBindHall\(live\.room\?\.hall\)/);
     assert.match(vault, /hangThumbStill\(head\)/);
+    assert.match(vault, /walkHungHref\(live\.room/);
+    assert.match(vault, /window\.location\.assign\(href\)/);
     const cine = readFileSync(join(here, "../components/cine-app.tsx"), "utf8");
     assert.match(cine, /hungFilmHold\(custom\)/);
     assert.match(cine, /holdHall=\{hold\.hall\}/);
+    assert.match(cine, /walkHungHref\(a\.room\)/);
     const arts = readFileSync(join(here, "./artifacts.ts"), "utf8");
     assert.match(arts, /isCitadelStill\(bound\.still\)/);
     assert.match(arts, /before\?\.still && !isCitadelStill\(before\.still\)/);

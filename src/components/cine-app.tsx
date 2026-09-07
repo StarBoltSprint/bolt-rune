@@ -12,7 +12,7 @@ import { RuneEngine } from "@/components/rune-engine";
 import { boltFull, press } from "@/lib/press";
 import { boltBack, boltHome, boltDepth, locFromHash, pushBolt, readBolt, replaceBolt, sameBolt, type BoltLoc } from "@/lib/bolt-history";
 import { bootCookLoc } from "@/game/cook-ready";
-import { hungFilmHold } from "@/game/enter-graph";
+import { hungFilmHold, walkHungHref } from "@/game/enter-graph";
 
 type Screen = "title" | "how" | "play" | "result" | "cook";
 type From = Mark | "idle";
@@ -279,6 +279,11 @@ export function CineApp({ bootScreen, playArt }: { bootScreen?: Screen; playArt?
       stopPad();
     } catch {
       /* */
+    }
+    const href = walkHungHref(a.room);
+    if (href) {
+      window.location.assign(href);
+      return;
     }
     setArtId(a.id);
     setCustom(filmOf(a));

@@ -331,6 +331,21 @@ export function hungPlayChrome(hall?: number | string | null, door?: string | nu
   };
 }
 
+/** After Hang Room N Door A — walk that living hall, not a floating FilmStage. */
+export function walkHungHref(
+  room?: { hall?: number | string | null; door?: string | null; citadel?: string } | null,
+  rooms = 1,
+): string {
+  const raw = typeof room?.hall === "number" ? room.hall : Number(room?.hall);
+  const hall = Number.isFinite(raw) && raw >= 1 && raw <= 8 ? Math.round(raw) : 0;
+  if (!hall || !room?.door) return "";
+  const first = room.door === "B" || room.door === "b" || room.door === "m2" ? "m2" : "m1";
+  const cap = Math.max(hall, Math.min(8, Math.round(rooms) || hall));
+  const cit = String(room.citadel || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+  if (cit) return `/rune?session=${encodeURIComponent(cit)}&hall=${hall}&drive=engine`;
+  return `/rune?first=${first}&drive=engine&rooms=${cap}&hall=${hall}&stills=0`;
+}
+
 /** Vault card / unhang line — Room N • Door A Play Sprint from the bound artefact. */
 export function vaultHangCaption(room?: { hall?: number; door?: string | null } | null): string {
   if (!room?.door) return "not on a door";

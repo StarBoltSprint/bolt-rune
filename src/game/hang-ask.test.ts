@@ -232,6 +232,10 @@ describe("hang ask leftover tap", () => {
     assert.match(engine, /if \(hangAsk\) return/);
     assert.match(engine, /if \(now < hangGuard\.current\) return/);
     assert.match(engine, /hangGuard\.current/);
+    assert.match(engine, /Leftover Hang A \/ Door A after confirm must stay on hall N/);
+    const vaultWalk = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
+    assert.match(vaultWalk, /walkHungHref\(live\.room/);
+    assert.match(vaultWalk, /window\.location\.assign\(href\)/);
     const vaultHang = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
     const hangDoorFn = vaultHang.slice(vaultHang.indexOf("function hangDoor"), vaultHang.indexOf("function botHang"));
     assert.match(hangDoorFn, /swallowOpeningTap\(\)/);

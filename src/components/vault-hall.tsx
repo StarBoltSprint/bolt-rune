@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { dropClipAt, dropRoom, familiesOf, familyHead, filmOf, hangArtifact, hangOnRoom, lastClip, mergeHall, readArtifacts, setPlaylist, uniqueClips, type HungArtifact } from "@/game/artifacts";
 import { continuePrompt, readClipSpec, shiftPrompt, stockBiomeFilm, SHIFTS } from "@/game/cook";
-import { bindHungRoom, doorLetterOf, hangThumbStill, hungPlayChrome, vaultHangCaption } from "@/game/enter-graph";
+import { bindHungRoom, doorLetterOf, hangThumbStill, hungPlayChrome, vaultHangCaption, walkHungHref } from "@/game/enter-graph";
 import { vaultHangRoom, vaultHangStart } from "@/game/path-entry";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/lib/cook";
 import { hangHall, listHall } from "@/lib/hall";
 import { bindCitadel, defaultHangRoom, hallN, hangOpensSheet, holdHangRooms, listHangRooms, resolveHangRoom, type HangRoomPick } from "@/game/rooms";
-import { hydrateSessions, lastPlay, listSessions, listStoredHallHints } from "@/game/rune-session";
+import { hydrateSessions, lastPlay, listSessions, listStoredHallHints, stampPlay } from "@/game/rune-session";
 import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
 import { HANG_LEFTOVER_SWALLOW_MS, hangBindHall, swallowOpeningTap } from "@/game/hang-ask";
 import { HallMark } from "@/components/hall-mark";
@@ -195,6 +195,13 @@ export function VaultHall() {
     swallowOpeningTap();
     setHangRooms((prev) => prev.map((r) => ({ ...r, living: r.hall === bindHall })));
     sfxForge("enter");
+    const roomsN = Math.max(bindHall, hangRoomsRef.current.length, lastPlay()?.rooms || 1);
+    if (citadel || cit.citadel) stampPlay(citadel || cit.citadel, cit.title, bindHall, roomsN);
+    const href = walkHungHref(live.room, roomsN);
+    if (href) {
+      window.location.assign(href);
+      return;
+    }
     const chrome = hungPlayChrome(bindHall, letter);
     setFrost(
       cit.citadel
@@ -248,6 +255,13 @@ export function VaultHall() {
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
     if (now < hangGuard.current) return;
     const live = hungRef.current.find((x) => x.id === a.id) || a;
+    const roomsN = Math.max(hangBindHall(live.room?.hall) || 1, hangRoomsRef.current.length, lastPlay()?.rooms || 1);
+    const href = walkHungHref(live.room, roomsN);
+    if (href) {
+      if (live.room?.citadel) stampPlay(live.room.citadel, undefined, hangBindHall(live.room.hall) || undefined, roomsN);
+      window.location.assign(href);
+      return;
+    }
     setPlay(live);
   }
 

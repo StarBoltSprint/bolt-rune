@@ -1434,6 +1434,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (riftPickRef.current || riftDraftRef.current) return;
     if (entering.current) return;
     if ((id === "m1" || id === "m2") && hungDoorReady(id)) {
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      /* Leftover Hang A / Door A after confirm must stay on hall N — not jump to FilmStage. */
+      if (now < hangGuard.current) return;
       void goEnter(id);
       return;
     }
@@ -4779,6 +4782,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     riftCookTok.current += 1;
     /* Write the artefact bind first so applyHall / hydrateRift see hall N. */
     attachRift(door, gate, bindHall);
+    hangGuard.current = (typeof performance !== "undefined" ? performance.now() : Date.now()) + HANG_LEFTOVER_SWALLOW_MS;
+    swallowOpeningTap();
     void goHungHall(bindHall, true).then(() => {
       if (hallHold.current !== bindHall) return goHungHall(bindHall, false);
     }).then(() => {
