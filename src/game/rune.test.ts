@@ -305,7 +305,10 @@ describe("Imagine prompt rails", () => {
     assert.match(src, /HangRoomStrip/);
     assert.match(src, /vaultHangRoom/);
     assert.match(src, /HangAskSheet/);
+    assert.match(src, /HangCitadelStrip/);
+    assert.match(src, /listHangCitadels/);
     assert.match(ask, /data-hang-pick=/);
+    assert.match(ask, /data-hang-citadel-pick/);
     assert.match(ask, /data-hang-rooms=/);
     assert.match(ask, /data-hang-room/);
     assert.match(src, /askHang\(/);

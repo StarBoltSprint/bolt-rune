@@ -6,9 +6,9 @@ import { vaultHangRoom, vaultHangStart } from "@/game/path-entry";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/lib/cook";
 import { hangHall, listHall } from "@/lib/hall";
-import { bindCitadel, defaultHangRoom, hallN, hangOpensSheet, holdHangRooms, listHangRooms, resolveHangRoom, type HangRoomPick } from "@/game/rooms";
+import { bindCitadel, defaultHangRoom, hallN, hangOpensSheet, holdHangRooms, listHangCitadels, listHangRooms, resolveHangRoom, type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import { hydrateSessions, lastPlay, listSessions, listStoredHallHints, stampPlay } from "@/game/rune-session";
-import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
+import { HangAskSheet, HangCitadelStrip, HangRoomStrip } from "@/components/hang-ask";
 import { HANG_LEFTOVER_SWALLOW_MS, hangBindHall, swallowOpeningTap } from "@/game/hang-ask";
 import { HallMark } from "@/components/hall-mark";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
@@ -73,6 +73,8 @@ export function VaultHall() {
   const [seed, setSeed] = useState("");
   const [hangRooms, setHangRooms] = useState<HangRoomPick[]>(() => (typeof window === "undefined" ? [{ hall: 1, name: "Room 1", still: "", living: true }] : readHangFloorPicks()));
   const [hangHallN, setHangHallN] = useState(1);
+  const [hangCitadel, setHangCitadel] = useState("");
+  const [hangCitadels, setHangCitadels] = useState<HangCitadelPick[]>([]);
   const [hangAsk, setHangAsk] = useState<{ a: HungArtifact; door: "A" | "B"; rooms: HangRoomPick[] } | null>(null);
   const lock = useRef(false);
   const abort = useRef(false);
@@ -83,6 +85,8 @@ export function VaultHall() {
   const hangAskRef = useRef(hangAsk);
   hangAskRef.current = hangAsk;
   const hangRoomsRef = useRef(hangRooms);
+  const hangCitadelRef = useRef(hangCitadel);
+  hangCitadelRef.current = hangCitadel;
   const hangGuard = useRef(0);
   const { user, isPending: authPending } = useCurrentUserState();
   const owned = Boolean(user);
@@ -108,8 +112,15 @@ export function VaultHall() {
   }, []);
 
   function refreshHangRooms(arts = hungRef.current) {
-    const extra = listStoredHallHints().map((h) => ({ ...h, living: false }));
-    const computed = listHangRooms(listSessions(), lastPlay(), arts, extra, hangRoomsRef.current);
+    const last = lastPlay();
+    const rows = listSessions();
+    const cit = bindCitadel(rows, last, hangCitadelRef.current);
+    hangCitadelRef.current = cit.citadel;
+    setHangCitadel(cit.citadel);
+    const citadels = listHangCitadels(rows, last, cit.citadel);
+    setHangCitadels(citadels);
+    const extra = listStoredHallHints(cit.citadel).map((h) => ({ ...h, living: false, citadel: cit.citadel || undefined }));
+    const computed = listHangRooms(rows, last, arts, extra, hangRoomsRef.current, cit.citadel);
     const held = holdHangRooms(hangRoomsRef.current, computed);
     const bind = hangBindHall(hangHallRef.current);
     const rooms = held.map((r) => ({ ...r, living: bind ? r.hall === bind : r.living }));
@@ -117,7 +128,7 @@ export function VaultHall() {
     writeHangFloor(rooms.length);
     setHangRooms(rooms);
     setHangHallN((prev) => {
-      if (hangAskRef.current && hallN(prev)) return prev;
+      if (hangAskRef.current && hallN(prev) && rooms.some((r) => r.hall === prev)) return prev;
       if (bind && rooms.some((r) => r.hall === bind)) return bind;
       return rooms.some((r) => r.hall === prev) ? prev : defaultHangRoom(rooms);
     });
@@ -168,8 +179,22 @@ export function VaultHall() {
     setHangHallN(hall);
   }
 
+  function pickHangCitadel(id: string) {
+    if (!id || id === hangCitadelRef.current) return;
+    hangCitadelRef.current = id;
+    setHangCitadel(id);
+    const kept = hangRoomsRef.current.filter((r) => r.citadel === id);
+    hangRoomsRef.current = kept;
+    hangHallRef.current = 0;
+    const rooms = refreshHangRooms();
+    setHangAsk((cur) => (cur ? { ...cur, rooms } : cur));
+    const next = defaultHangRoom(rooms);
+    hangHallRef.current = next;
+    setHangHallN(next);
+  }
+
   function hangDoor(a: HungArtifact, door: "A" | "B", from?: HungArtifact[], hallWant?: number | string | null) {
-    const cit = bindCitadel(listSessions(), lastPlay());
+    const cit = bindCitadel(listSessions(), lastPlay(), hangCitadelRef.current);
     const rooms = refreshHangRooms(from?.length ? from : hungRef.current);
     const bindHall = hangBindHall(hallWant);
     if (!bindHall) {
@@ -179,7 +204,7 @@ export function VaultHall() {
     }
     const letter = doorLetterOf(door);
     const pick = rooms.find((r) => r.hall === bindHall);
-    const citadel = pick?.citadel || cit.citadel || undefined;
+    const citadel = pick?.citadel || hangCitadelRef.current || cit.citadel || undefined;
     const hung = hangOnRoom(a.id, bindHungRoom(a, letter, { citadel, hall: bindHall }), from?.length ? from : hungRef.current);
     setHung(hung);
     hangHallRef.current = bindHall;
@@ -195,7 +220,11 @@ export function VaultHall() {
     swallowOpeningTap();
     setHangRooms((prev) => prev.map((r) => ({ ...r, living: r.hall === bindHall })));
     sfxForge("enter");
-    const roomsN = Math.max(bindHall, hangRoomsRef.current.length, lastPlay()?.rooms || 1);
+    const roomsN = Math.max(
+      bindHall,
+      hangRoomsRef.current.filter((r) => !r.citadel || r.citadel === citadel).length,
+      lastPlay()?.id === citadel ? lastPlay()?.rooms || 1 : 1,
+    );
     if (citadel || cit.citadel) stampPlay(citadel || cit.citadel, cit.title, bindHall, roomsN);
     const href = walkHungHref(live.room, roomsN);
     if (href) {
@@ -549,11 +578,24 @@ export function VaultHall() {
           <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto pb-4">
             <div className="sticky top-0 z-20 -mx-1 mb-3 rounded-2xl border border-[#9ef0e4]/25 bg-black/80 px-3 py-3 backdrop-blur-sm">
               <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[#9ef0e4]">
-                Hang on room{hangRooms.length > 1 ? ` · ${hangRooms.length} halls` : " · Room 1"}
+                {hangCitadels.length > 1
+                  ? `Hang · ${hangCitadels.length} citadels`
+                  : `Hang on room${hangRooms.length > 1 ? ` · ${hangRooms.length} halls` : " · Room 1"}`}
               </p>
+              {hangCitadels.length > 1 ? (
+                <HangCitadelStrip citadels={hangCitadels} citadel={hangCitadel} onCitadel={pickHangCitadel} disabled={busy} />
+              ) : null}
+              {hangCitadels.length > 1 ? (
+                <p className="mt-3 mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[#9ef0e4]">
+                  {hangCitadels.find((c) => c.id === hangCitadel)?.title || "Citadel"} · {hangRooms.length} room
+                  {hangRooms.length === 1 ? "" : "s"}
+                </p>
+              ) : null}
               <HangRoomStrip rooms={hangRooms} hall={hangHallN} onHall={pickHangHall} disabled={busy} />
               <p className="mt-2 font-mono text-[9px] uppercase tracking-[0.16em] text-white/45">
-                then Hang A or Hang B on a pack — pick the room on the sheet
+                {hangCitadels.length > 1
+                  ? "pick the citadel, then the room — Hang A or Hang B on a pack"
+                  : "then Hang A or Hang B on a pack — pick the room on the sheet"}
               </p>
             </div>
             <div className={`grid min-h-0 gap-3 ${packs.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
@@ -775,6 +817,9 @@ export function VaultHall() {
           rooms={hangRooms.length >= hangAsk.rooms.length ? hangRooms : hangAsk.rooms}
           hall={hangHallN}
           onHall={pickHangHall}
+          citadels={hangCitadels}
+          citadel={hangCitadel}
+          onCitadel={pickHangCitadel}
           onClose={() => setHangAsk(null)}
           onConfirm={(hall) => {
             hangDoor(hangAsk.a, hangAsk.door, undefined, hangBindHall(hall));

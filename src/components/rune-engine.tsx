@@ -77,6 +77,7 @@ import {
   hungEnterBindHall,
   stayBiomePlay,
   stockTransUrl,
+  walkHungHref,
   type BiomeName,
 } from "@/game/enter-graph";
 import { hangHall, listHall } from "@/lib/hall";
@@ -93,15 +94,16 @@ import {
   peekLivePlay,
   clearLivePlay,
   listStoredHallHints,
+  stampPlay,
   type RuneSession,
   type RuneSessionMeta,
   type CitadelStart,
   type RiftGate,
 } from "@/game/rune-session";
 import { BootScreen } from "@/components/citadel-hub";
-import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
+import { HangAskSheet, HangCitadelStrip, HangRoomStrip } from "@/components/hang-ask";
 import { HANG_LEFTOVER_SWALLOW_MS, hangBindHall, swallowOpeningTap } from "@/game/hang-ask";
-import { defaultHangRoom, hallN, listHangRooms, liveSlice, livingHangHall, putSlice, seedHalls, type HangRoomPick } from "@/game/rooms";
+import { bindCitadel, defaultHangRoom, hallN, listHangCitadels, listHangRooms, liveSlice, livingHangHall, putSlice, seedHalls, type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
 import { playableClipSrc } from "@/game/play-clip";
@@ -752,6 +754,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
   const [hangAsk, setHangAsk] = useState<{ a: HungArtifact; door: "A" | "B" } | null>(null);
   const [liveHangRooms, setLiveHangRooms] = useState<HangRoomPick[]>([{ hall: 1, name: "Room 1", still: "", living: true }]);
+  const [hangCitadel, setHangCitadel] = useState("");
+  const hangCitadelRef = useRef("");
+  const [hangCitadels, setHangCitadels] = useState<HangCitadelPick[]>([]);
   const [hungArts, setHungArts] = useState<HungArtifact[]>(() => (typeof window === "undefined" ? [] : readArtifacts()));
   const [doorHit, setDoorHit] = useState<{ m1: DoorHit; m2: DoorHit } | null>(() => STOCK_HITS);
   const doorHitRef = useRef<{ m1: DoorHit; m2: DoorHit } | null>(STOCK_HITS);
@@ -2450,7 +2455,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const live = hallsHold.current.find((h) => h.n === hallHold.current);
     const hintStill =
       (liveHangRooms.find((r) => r.hall === bind)?.still || "") ||
-      listStoredHallHints().find((h) => h.hall === bind)?.still ||
+      listStoredHallHints(sid.current).find((h) => h.hall === bind)?.still ||
       "";
     if (!slice) {
       const first = pathFirst.current || "m1";
@@ -4684,7 +4689,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         const wired = hangOnRoom(
           artId,
           bindHungRoom(head, letter, {
-            citadel: sid.current,
+            citadel: hangCitadelRef.current || sid.current,
             hall: bindHall,
             still: gate.still && !isHallFilm(gate.still) ? gate.still : biomeStill((gate.biome as BiomeName) || "open"),
             trans: gate.trans || stockTransUrl(door),
@@ -5807,23 +5812,52 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  function livingHangRooms(arts = hungArts): HangRoomPick[] {
+  function computeHangRooms(arts = hungArts): { rooms: HangRoomPick[]; citadels: HangCitadelPick[]; citadel: string } {
+    const rows = listSessions();
+    const last = { id: hangCitadelRef.current || sid.current, hall: hallHold.current, rooms: roomsHold.current };
+    const cit = bindCitadel(rows, last, hangCitadelRef.current || sid.current);
     const extra = [
-      ...listStoredHallHints().map((h) => ({ ...h, living: h.hall === hallHold.current })),
-      ...hallsHold.current.map((h) => ({
-        hall: h.n,
-        name: `Room ${h.n}`,
-        still: h.still || h.plate || "",
-        living: h.n === hallHold.current,
+      ...listStoredHallHints(cit.citadel).map((h) => ({
+        ...h,
+        living: h.hall === hallHold.current && cit.citadel === sid.current,
+        citadel: cit.citadel || undefined,
       })),
+      ...(cit.citadel === sid.current
+        ? hallsHold.current.map((h) => ({
+            hall: h.n,
+            name: `Room ${h.n}`,
+            still: h.still || h.plate || "",
+            living: h.n === hallHold.current,
+            citadel: sid.current,
+          }))
+        : []),
     ];
-    return listHangRooms(
-      listSessions(),
-      { id: sid.current, hall: hallHold.current, rooms: roomsHold.current },
-      arts,
-      extra,
-      liveHangRooms,
-    );
+    return {
+      rooms: listHangRooms(rows, last, arts, extra, liveHangRooms, cit.citadel),
+      citadels: listHangCitadels(rows, last, cit.citadel),
+      citadel: cit.citadel,
+    };
+  }
+
+  function livingHangRooms(arts = hungArts): HangRoomPick[] {
+    return computeHangRooms(arts).rooms;
+  }
+
+  function refreshLiveHang(arts = hungArts): HangRoomPick[] {
+    const next = computeHangRooms(arts);
+    hangCitadelRef.current = next.citadel;
+    setHangCitadel(next.citadel);
+    setHangCitadels(next.citadels);
+    setLiveHangRooms(next.rooms);
+    return next.rooms;
+  }
+
+  function pickHangCitadel(id: string) {
+    if (!id || id === hangCitadelRef.current) return;
+    hangCitadelRef.current = id;
+    setHangCitadel(id);
+    const rooms = refreshLiveHang();
+    pickHangHall(defaultHangRoom(rooms));
   }
 
   function askLiveHang(a: HungArtifact, door: "A" | "B") {
@@ -5832,8 +5866,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (now < hangGuard.current) return;
     swallowOpeningTap();
     hangGuard.current = now + HANG_LEFTOVER_SWALLOW_MS;
-    const rooms = livingHangRooms();
-    setLiveHangRooms(rooms);
+    const rooms = refreshLiveHang();
     const next = livingHangHall(rooms, hangRoomRef.current) || defaultHangRoom(rooms);
     pickHangHall(next);
     setHangAsk({ a, door });
@@ -5841,8 +5874,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   useEffect(() => {
     if (!riftPick && !hangAsk) return;
-    const rooms = livingHangRooms();
-    setLiveHangRooms(rooms);
+    const rooms = refreshLiveHang();
     /* Sheet pick is the source of truth — a late hydrate must not snap
        Room 3 back to last-hung / living hall 8. */
     if (hangAsk) return;
@@ -6055,6 +6087,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             : `room ${hangRoomN} · hang on A or B, then a transition film`}
         </p>
         <div className="relative z-10 mt-4">
+          {hangCitadels.length > 1 ? (
+            <div className="mb-3">
+              <HangCitadelStrip citadels={hangCitadels} citadel={hangCitadel} onCitadel={pickHangCitadel} />
+            </div>
+          ) : null}
           <HangRoomStrip
             rooms={(liveHangRooms.length ? liveHangRooms : livingHangRooms(hung)).map((r) => ({
               ...r,
@@ -6165,10 +6202,42 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         rooms={rooms}
         hall={hangRoomN}
         onHall={pickHangHall}
+        citadels={hangCitadels}
+        citadel={hangCitadel}
+        onCitadel={pickHangCitadel}
         onClose={() => setHangAsk(null)}
         onConfirm={(hall) => {
           const door = hangAsk.door === "B" ? "m2" : "m1";
-          beginRift(door, gateFromHung(hangAsk.a), hangBindHall(hall));
+          const dest = hangCitadelRef.current || sid.current;
+          const bindHall = hangBindHall(hall);
+          if (dest && dest !== sid.current && bindHall) {
+            const letter = hangAsk.door === "B" ? "B" : "A";
+            const from = hungArts.length ? hungArts : readArtifacts();
+            const wired = hangOnRoom(hangAsk.a.id, bindHungRoom(hangAsk.a, letter, { citadel: dest, hall: bindHall }), from);
+            if (wired.length) setHungArts(wired);
+            const live = wired.find((x) => x.id === hangAsk.a.id);
+            if (live) {
+              void hangHall({
+                data: {
+                  id: live.id,
+                  name: live.name,
+                  still: live.still,
+                  playlist: live.playlist,
+                  prompt: live.prompt || "",
+                  room: live.room === undefined ? null : live.room,
+                },
+              }).catch(() => {});
+            }
+            const roomsN = Math.max(bindHall, rooms.filter((r) => !r.citadel || r.citadel === dest).length, 1);
+            stampPlay(dest, hangCitadels.find((c) => c.id === dest)?.title, bindHall, roomsN);
+            hangGuard.current = (typeof performance !== "undefined" ? performance.now() : Date.now()) + HANG_LEFTOVER_SWALLOW_MS;
+            swallowOpeningTap();
+            setHangAsk(null);
+            const href = walkHungHref(live?.room || { hall: bindHall, door: letter, citadel: dest }, roomsN);
+            if (href) window.location.assign(href);
+            return;
+          }
+          beginRift(door, gateFromHung(hangAsk.a), bindHall);
           hangGuard.current = (typeof performance !== "undefined" ? performance.now() : Date.now()) + HANG_LEFTOVER_SWALLOW_MS;
           swallowOpeningTap();
           setHangAsk(null);
