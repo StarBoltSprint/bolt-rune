@@ -317,6 +317,8 @@ describe("Imagine prompt rails", () => {
     assert.match(ask, /data-hang-confirm=/);
     assert.match(ask, /data-hang-confirm-wait=/);
     assert.match(ask, /data-hang-armed=/);
+    assert.match(ask, /data-hang-load-halls/);
+    assert.match(readFileSync(join(here, "./rooms.ts"), "utf8"), /hang-load-halls/);
     assert.match(ask, /HANG_CONFIRM_ARM_MS/);
     assert.match(ask, /HANG_LEFTOVER_SWALLOW_MS/);
     assert.match(ask, /\{armed \? \(/);

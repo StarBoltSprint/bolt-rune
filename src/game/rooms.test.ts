@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bindCitadel, citadelRoomCount, defaultHangRoom, hangOpensSheet, listHangRooms, resolveHangRoom } from "./rooms.ts";
+import { bindCitadel, citadelRoomCount, defaultHangRoom, hangOpensSheet, isBiomeArtefactMeta, listHangRooms, packCitadels, resolveHangRoom } from "./rooms.ts";
 import type { RuneSessionMeta } from "./rune-session.ts";
 
 function cit(rooms: number, hall = 1, id = "cit-1"): RuneSessionMeta {
@@ -132,5 +132,53 @@ describe("hang room pick", () => {
     const living2 = listHangRooms([cit(3, 2)], { id: "cit-1", hall: 2 });
     assert.equal(resolveHangRoom(living2, undefined), 2);
     assert.equal(resolveHangRoom(living2, "9"), 2);
+  });
+
+  it("skips biome artefacts so Hang matches Load’s saved citadel halls", () => {
+    const hall = cit(3, 2);
+    const forest: RuneSessionMeta = {
+      id: "art-lux",
+      name: "Luxuriant forest",
+      title: "Luxuriant forest",
+      updated: 99,
+      phase: "play",
+      want: 2,
+      walks: 0,
+      thumb: "/films/cook-forest.jpg",
+      rooms: 1,
+      hall: 1,
+    };
+    assert.equal(isBiomeArtefactMeta(forest), true);
+    assert.equal(isBiomeArtefactMeta(hall), false);
+    assert.equal(isBiomeArtefactMeta({ ...cit(1, 1, "art-cook"), title: "Citadel", name: "Citadel" }), true);
+    const rooms = listHangRooms([forest, hall], { id: forest.id, hall: 1, rooms: 1 });
+    assert.deepEqual(
+      rooms.map((r) => r.hall),
+      [1, 2, 3],
+    );
+    assert.deepEqual(
+      rooms.map((r) => r.name),
+      ["Room 1", "Room 2", "Room 3"],
+    );
+    assert.equal(
+      rooms.some((r) => /forest|luxuriant/i.test(r.name)),
+      false,
+    );
+    const bound = bindCitadel([forest, hall], { id: forest.id, hall: 1, rooms: 1 });
+    assert.equal(bound.citadel, "cit-1");
+    assert.notEqual(bound.title.toLowerCase().includes("forest"), true);
+    const load = packCitadels([forest, hall]);
+    assert.equal(load.some((p) => /forest/i.test(p.title)), true);
+    assert.equal(load.find((p) => p.root.id === "cit-1")?.rooms.length, 3);
+  });
+
+  it("a rooms>1 citadel titled after a biome still lists its halls", () => {
+    const named = { ...cit(3, 1), title: "Luxuriant forest", name: "Luxuriant forest" };
+    assert.equal(isBiomeArtefactMeta(named), false);
+    const rooms = listHangRooms([named], { id: "cit-1", hall: 1 });
+    assert.deepEqual(
+      rooms.map((r) => r.hall),
+      [1, 2, 3],
+    );
   });
 });

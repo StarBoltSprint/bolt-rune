@@ -17,7 +17,7 @@ export function HangRoomStrip({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1" data-hang-rooms="">
+    <div className="flex gap-2 overflow-x-auto pb-1" data-hang-rooms="" data-hang-load-halls={rooms.length}>
       {rooms.map((r) => {
         const on = hall === r.hall;
         return (
@@ -88,6 +88,7 @@ export function HangAskSheet({
       className="fixed inset-0 z-[90] flex flex-col bg-black/92 px-5 pt-[max(1.6rem,env(safe-area-inset-top))] pb-[max(1.6rem,env(safe-area-inset-bottom))]"
       data-hang-ask={door}
       data-hang-sheet="1"
+      data-hang-load-halls={rooms.length}
       data-hang-armed={armed ? "1" : "0"}
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
