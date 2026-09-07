@@ -4,7 +4,7 @@
  * without spinning up server functions.
  */
 
-import { HALL_PROMPT_MAX, SHOT_REJECT } from "./rune.ts";
+import { HALL_PROMPT_MAX, pinHallLead } from "./rune.ts";
 
 export const IMAGINE_IMAGE = "grok-imagine-image-2.0";
 export const IMAGINE_VIDEO = "grok-imagine-video-1.5";
@@ -15,16 +15,15 @@ export const IMAGINE_PROMPT_MAX = 2200;
 export const HALL_PROMPT_BUDGET = HALL_PROMPT_MAX;
 
 /**
- * Hall cooks: put SHOT_REJECT first so the slice cannot drop it.
+ * Hall cooks: pin SHOT_REJECT + COAT_LOCK first so the slice cannot drop rails.
  * Non-hall prompts (door cutouts, sprint vault) keep the 2200 cap.
  */
 export function clipImaginePrompt(raw: string, max = IMAGINE_PROMPT_MAX) {
   const text = String(raw || "").replace(/\s+/g, " ").trim();
   if (!text) return "";
-  const hall = /profile-hero|WHOLE hall|locked full-hall|REJECT LIST/i.test(text);
+  const hall = /profile-hero|WHOLE hall|ENTIRE hall|locked full-hall|REJECT LIST|COAT:/i.test(text);
   if (!hall) return text.slice(0, max);
-  const rest = text.split(SHOT_REJECT).join(" ").replace(/\s+/g, " ").trim();
-  return `${SHOT_REJECT} ${rest}`.slice(0, Math.min(max, HALL_PROMPT_BUDGET));
+  return pinHallLead(text, Math.min(max, HALL_PROMPT_BUDGET));
 }
 
 export function runeStillJobs(input: {

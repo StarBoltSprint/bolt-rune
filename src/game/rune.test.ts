@@ -23,12 +23,14 @@ import {
   BOLT_FACE,
   BOLT_ID,
   CAM_LOCK,
+  COAT_LOCK,
   GAIT_LOCK,
   HALL_SHOT,
   SHOT_REJECT,
   SPAWN,
   STAND_LOCK,
   TRAVEL_FACE,
+  WALK_LOCK,
   boltKit,
   breathPrompt,
   faceRow,
@@ -116,10 +118,11 @@ describe("Imagine prompt rails", () => {
   it("locks a full white coat and forbids tan / cream / saddle / mask", () => {
     const still = idlePrompt(gazeLaw("m1"));
     const walk = walkPrompt(SPAWN, m1, true, gazeLaw("m1"));
+    const breath = breathPrompt(gazeLaw("m1"));
     const pose = poseBoltPrompt("LEFT");
     const place = placeBoltPrompt();
     const seed = seedHallPrompt();
-    for (const p of [BOLT_ID, still, walk, pose, place, seed, genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 }), stillLaws()]) {
+    for (const p of [BOLT_ID, COAT_LOCK, still, walk, breath, pose, place, seed, genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 }), stillLaws()]) {
       assert.match(p, /WHITE|white|snow-white/);
       assert.doesNotMatch(p, /cream-ivory/i);
       assert.doesNotMatch(p, /\bPROFILE\b/);
@@ -128,8 +131,13 @@ describe("Imagine prompt rails", () => {
     }
     assert.match(BOLT_ID, /zero tan/i);
     assert.match(BOLT_ID, /saddle/);
+    assert.match(BOLT_ID, /ginger/);
     assert.match(BOLT_ID, /TEXT COAT WINS/);
+    assert.match(BOLT_ID, /tinted ref/);
     assert.match(BOLT_ID, /Swiss Shepherd/);
+    assert.match(COAT_LOCK, /FULL snow-white ONLY/);
+    assert.match(COAT_LOCK, /ginger/);
+    assert.match(COAT_LOCK, /tinted ref/);
     assert.match(CAM_LOCK, /profile-hero|REJECT LIST/);
     assert.match(place, /<IMAGE_0>/);
     assert.match(place, /<IMAGE_1>/);
@@ -162,14 +170,15 @@ describe("Imagine prompt rails", () => {
   it("walk prompts head travel without FACE LEFT/RIGHT shot language", () => {
     const ab = walkPrompt(m1, m2, false, gazeLaw("m2"));
     const ba = walkPrompt(m2, m1, false, gazeLaw("m1"));
-    assert.match(ab, /nose and chest point right/i);
+    assert.match(ab, /body heads right/i);
     assert.match(ab, /RIGHT across the frame/);
     assert.match(ab, /glance toward the LEFT door/);
     assert.match(ab, /Never moonwalk/);
-    assert.match(ab, /SMALL figure/);
+    assert.match(ab, /SMALL figure|SMALL Bolt/);
     assert.match(ab, /foot-slide|Paws plant/);
-    assert.match(TRAVEL_FACE, /Walk left → nose left/);
-    assert.match(ba, /nose and chest point left/i);
+    assert.match(ab, /BEHIND|back-to-camera|from BEHIND/);
+    assert.match(TRAVEL_FACE, /Walk left → body heads left/);
+    assert.match(ba, /body heads left/i);
     assert.match(ba, /LEFT across the frame/);
     assert.doesNotMatch(ab, /HEAD and BODY FACE/);
     assert.doesNotMatch(ab, /Ignore the/);
@@ -189,9 +198,12 @@ describe("Imagine prompt rails", () => {
       /profile close-up/,
       /profile-hero/,
       /side hero/,
+      /side mid-walk L→R hero/,
+      /close-up silhouette fill/,
       /medium shot of the dog/,
       /tracking cam/,
       /orbit/,
+      /tan\/beige\/ginger\/saddle\/mask/,
       /wolf morph/,
       /fox morph/,
     ];
@@ -206,8 +218,16 @@ describe("Imagine prompt rails", () => {
     assert.match(idle, /LOWER center/);
     assert.match(breath, /3\/4-from-behind|back-to-camera/);
     assert.match(walk, /BOTH doors stay visible/);
+    assert.match(walk, /from BEHIND \(rear\) only/);
+    assert.match(WALK_LOCK, /entire hall visible/);
+    assert.match(WALK_LOCK, /locked CCTV/);
+    assert.match(HALL_SHOT, /entire hall visible/);
+    assert.match(HALL_SHOT, /From BEHIND \(rear\) only/);
     const clipped = clipImaginePrompt(`${walk} ${"pad ".repeat(800)}`);
     assert.ok(clipped.startsWith("REJECT LIST"));
+    assert.match(clipped.slice(0, 400), /COAT:/);
+    assert.match(clipped.slice(0, 400), /ginger/);
+    assert.match(clipped.slice(0, 400), /silhouette fill|mid-walk/);
     assert.ok(clipped.length <= HALL_PROMPT_BUDGET);
     assert.ok(HALL_PROMPT_BUDGET <= IMAGINE_PROMPT_MAX);
     for (const re of forbids) assert.match(clipped, re);
@@ -233,8 +253,32 @@ describe("Imagine prompt rails", () => {
       assert.ok(p.length <= HALL_PROMPT_BUDGET, `prompt ${p.length} > ${HALL_PROMPT_BUDGET}`);
       assert.match(p.slice(0, 200), /REJECT LIST/);
       assert.match(p.slice(0, 400), /profile-hero/);
+      assert.match(p.slice(0, 400), /ginger|COAT:/);
+      assert.match(p.slice(0, 500), /silhouette fill|mid-walk|BEHIND/);
       assert.match(p.slice(0, 900), /snow-white|Swiss Shepherd/);
     }
+  });
+
+  it("walk packing puts coat + hall-shot rails before flavor", () => {
+    const walk = walkPrompt(m1, m2, false, [gazeLaw("m2"), genePrompt({ cam: 1, strides: 8, morph: 1, dest: 1 })].join(" "));
+    const breath = breathPrompt(gazeLaw("m1"));
+    for (const p of [walk, breath]) {
+      const rejectAt = p.indexOf("REJECT LIST");
+      const coatAt = p.search(/COAT:|FULL snow-white ONLY/);
+      const gingerAt = p.indexOf("ginger");
+      const flavorAt = p.search(/Eight planted strides|CONTINUE\. Already stopped|Thunderwolf|Nanite/);
+      assert.ok(rejectAt === 0, `REJECT LIST must lead (${rejectAt})`);
+      assert.ok(coatAt >= 0 && coatAt < 360, `coat rail must be early (${coatAt})`);
+      assert.ok(gingerAt >= 0 && gingerAt < 360, `ginger ban must be early (${gingerAt})`);
+      assert.ok(flavorAt < 0 || rejectAt < flavorAt, "rails before flavor");
+      assert.ok(flavorAt < 0 || coatAt < flavorAt, "coat before flavor");
+    }
+    assert.match(walk, /WALK:/);
+    assert.match(walk, /side mid-walk L→R hero/);
+    assert.match(walk, /close-up silhouette fill/);
+    assert.match(walk, /TEXT COAT WINS over any tinted ref/);
+    assert.match(breath, /Rear\/behind|from BEHIND/);
+    assert.ok(walk.indexOf("WALK:") < walk.indexOf("Eight planted strides"));
   });
 
   it("create path look → Forge contract is unchanged", () => {
@@ -361,6 +405,8 @@ describe("Imagine still / film payloads", () => {
     assert.equal(jobs[0]?.body.image, undefined);
     assert.match(String(jobs[0]?.body.prompt), /^REJECT LIST/);
     assert.match(String(jobs[0]?.body.prompt), /profile-hero/);
+    assert.match(String(jobs[0]?.body.prompt), /COAT:/);
+    assert.match(String(jobs[0]?.body.prompt), /ginger/);
   });
 
   it("video variants never combine image with reference_images", () => {
@@ -376,6 +422,7 @@ describe("Imagine still / film payloads", () => {
       assert.deepEqual(body.image, { url: "data:still" });
       assert.equal(body.reference_images, undefined);
       assert.match(String(body.prompt), /^REJECT LIST/);
+      assert.match(String(body.prompt), /COAT:/);
     }
   });
 });

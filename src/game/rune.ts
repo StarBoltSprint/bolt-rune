@@ -341,7 +341,21 @@ export const HALL_PROMPT_MAX = 2100;
 
 /** Lead every hall cook. Must stay first — cook slices video prompts at 2100. */
 export const SHOT_REJECT =
-  "REJECT LIST — never output: profile close-up, profile-hero, side hero, medium shot of the dog, tracking cam, orbit, push-in, wolf morph, fox morph.";
+  "REJECT LIST — never output: profile close-up, profile-hero, side hero, side mid-walk L→R hero, close-up silhouette fill, medium shot of the dog, tracking cam, orbit, push-in, tan/beige/ginger/saddle/mask coat, wolf morph, fox morph.";
+
+/** Second lead rail. Coat bans sit with SHOT_REJECT so a 2100 slice cannot drop them. */
+export const COAT_LOCK =
+  "COAT: FULL snow-white ONLY — zero tan, beige, ginger, saddle, mask. TEXT COAT WINS over any tinted ref. REPAINT snow-white.";
+
+const HALL_LEAD = [SHOT_REJECT, COAT_LOCK] as const;
+
+/** Pin REJECT + COAT first, then flavor. Used when extras would overflow 2100. */
+export function pinHallLead(text: string, max = HALL_PROMPT_MAX) {
+  let rest = String(text || "");
+  for (const rail of HALL_LEAD) rest = rest.split(rail).join(" ");
+  rest = rest.replace(/\s+/g, " ").trim();
+  return `${SHOT_REJECT} ${COAT_LOCK} ${rest}`.replace(/\s+/g, " ").trim().slice(0, max);
+}
 
 export function fitHallPrompt(...parts: (string | false | undefined)[]) {
   const text = parts
@@ -350,24 +364,27 @@ export function fitHallPrompt(...parts: (string | false | undefined)[]) {
     .replace(/\s+/g, " ")
     .trim();
   if (text.length <= HALL_PROMPT_MAX) return text;
-  const rest = text.split(SHOT_REJECT).join(" ").replace(/\s+/g, " ").trim();
-  return `${SHOT_REJECT} ${rest}`.slice(0, HALL_PROMPT_MAX);
+  return pinHallLead(text, HALL_PROMPT_MAX);
 }
 
 export const DOG_SCALE =
   "Dog is a SMALL figure in the LOWER center, ≤20% frame height. Both doors visible the entire clip.";
 
 export const HALL_SHOT =
-  `${SHOT_REJECT} LEGAL SHOT: locked CCTV of the WHOLE hall. ${DOG_SCALE} Welded camera — no orbit, no push-in, no track.`;
+  `${SHOT_REJECT} ${COAT_LOCK} LEGAL SHOT: locked CCTV of the WHOLE hall (entire hall visible). ${DOG_SCALE} From BEHIND (rear) only. Welded camera — no orbit, no push-in, no track.`;
 
 export const CAM_LOCK =
   `${HALL_SHOT} Start=room 1:1. Same lens/crop. HALL FROZEN. Only the dog moves. Both doors CLOSED.`;
 
+/** Walk plates only — rear CCTV, never a side-profile mid-walk hero. */
+export const WALK_LOCK =
+  "WALK: SMALL Bolt, entire hall visible, locked CCTV, from BEHIND (rear) only. Never a side mid-walk L→R hero.";
+
 export const TRAVEL_FACE =
-  "BODY heading ≠ shot: Walk left → nose left. Walk right → nose right. Toward far wall → rear. Moonwalk REJECT.";
+  "BODY heading ≠ camera: Walk left → body heads left. Walk right → body heads right. Camera stays BEHIND. Moonwalk REJECT.";
 
 export const GAIT_LOCK =
-  "Paws plant. Stride = travel. No foot-slide, no skating. REAL dog size.";
+  "Paws plant. Stride = travel. No foot-slide. REAL dog size.";
 
 export const STAND_LOCK =
   "STAND: rear / back-to-camera or 3/4-from-behind. Not a profile-hero.";
@@ -383,7 +400,7 @@ export const BOLT_BODY = "/refs/bolt-white.jpg";
 const TAINTED_BOLT = new Set(["/refs/bolt-face.jpg", "/refs/bolt-body.jpg", "/refs/bolt.jpg"]);
 
 export const BOLT_ID =
-  "ONE dog: StarBoltSprint. White Swiss Shepherd only — never a classic German Shepherd. FULL solid snow-white coat — zero tan, beige, cream, ivory, sable, saddle, mask, grey. TEXT COAT WINS: REPAINT cream/tan/saddle snow-white. No wolf, no fox, no second dog. REAL dog size.";
+  "ONE dog: StarBoltSprint. White Swiss Shepherd only — never a classic German Shepherd. FULL snow-white coat ONLY — zero tan, ginger, saddle, mask. TEXT COAT WINS over any tinted ref. No wolf, no fox, no second dog.";
 
 /** Identity still only. Drop cream side-profile / face crops so @ref cannot override the coat. */
 export function boltKit(extra: (string | null | undefined)[] = []) {
@@ -580,7 +597,7 @@ export function breathPrompt(extra = "") {
     CAM_LOCK,
     STAND_LOCK,
     BOLT_ID,
-    "CONTINUE. Already stopped. ZERO steps. Feet glued. Chest only. Last=first. No text.",
+    "CONTINUE. Already stopped. ZERO steps. Feet glued. Chest only. Rear/behind. Last=first. No text.",
     extra,
   );
 }
@@ -592,12 +609,17 @@ function doorTag(n: RuneNode) {
 }
 
 function headingLine(face: RuneFacing) {
-  if (face === "left") return "nose and chest point left — body heading only, NOT a profile-hero";
-  if (face === "right") return "nose and chest point right — body heading only, NOT a profile-hero";
+  if (face === "left") return "body heads left — no moonwalk. Camera BEHIND, see his BACK, never a side-profile hero";
+  if (face === "right") return "body heads right — no moonwalk. Camera BEHIND, see his BACK, never a side-profile hero";
   if (face === "up") return "nose points toward the far wall — rear / back-to-camera";
   return "body stays a SMALL figure toward camera — still wide hall, never a close-up";
 }
 
+/**
+ * Walk packing (first → last): SHOT_REJECT + COAT_LOCK (via CAM_LOCK / HALL_SHOT),
+ * WALK_LOCK, travel/gait, BOLT_ID, then door/land flavor + extras.
+ * Rails stay early so fitHallPrompt / clipImaginePrompt cannot drop coat or rear-CCTV.
+ */
 export function walkPrompt(from: RuneNode, to: RuneNode, emptyStart = false, extra = "", lockHome = false) {
   const side = to.x < 0.5 ? "LEFT" : "RIGHT";
   const other = side === "LEFT" ? "RIGHT" : "LEFT";
@@ -608,14 +630,15 @@ export function walkPrompt(from: RuneNode, to: RuneNode, emptyStart = false, ext
       : "STOP. SMALL figure beside the RIGHT door, 3/4-from-behind, glance toward the LEFT door (B looks at A).";
   const heading = headingLine(travel.face);
   const land = lockHome
-    ? `Walk ${travel.horiz}. SMALL figure. ${heading}. Never moonwalk. Last=HOME still 1:1. ${landLook} No walk to center.`
-    : `Walk ${travel.horiz}. SMALL figure. Eight planted strides. ${heading}. Never moonwalk. Last: ${landLook} No walk to center.`;
+    ? `Walk ${travel.horiz}. ${heading}. Never moonwalk. Last=HOME still 1:1. ${landLook} No walk to center.`
+    : `Walk ${travel.horiz}. Eight planted strides. ${heading}. Never moonwalk. Last: ${landLook} No walk to center.`;
   return fitHallPrompt(
     CAM_LOCK,
+    WALK_LOCK,
     TRAVEL_FACE,
     GAIT_LOCK,
     BOLT_ID,
-    emptyStart ? "Frame 1 1:1. Dog SMALL in LOWER center, rear / back-to-camera." : "Frame 1 1:1. Same doors, same pose, same wide crop.",
+    emptyStart ? "Frame 1 1:1. Dog SMALL LOWER center, rear / back-to-camera." : "Frame 1 1:1. Same doors, same pose, same wide crop.",
     `Start ${doorTag(from)}. Go ${doorTag(to)}. BOTH doors stay visible — do not crop the ${other} door.`,
     land,
     extra,
