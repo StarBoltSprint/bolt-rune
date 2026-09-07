@@ -9,14 +9,19 @@ import { clipWarmSrc, playableClipSrc, sameClipSrc, warmClip, warmedClip } from 
 import {
   arrivalBreathUrl,
   arrivalEndStill,
+  breathSeamSameClip,
   breathTapWalksNow,
   cookHasWalks,
   doorArrivalNeedsCook,
   filmTrayStillKeep,
   hallStillOf,
+  holdBreathUrl,
   isBoltSilhouette,
   isHallPlayStill,
+  isNodeArrivalBreath,
+  isNodeIdleKey,
   isStockHallClip,
+  keepHeldBreath,
   livingPlayFrame,
   mergeBankClips,
   packIdentityStill,
@@ -452,6 +457,101 @@ describe("breath tap interrupts any idle — spawn↔A, spawn↔B, A↔B", () =>
     assert.match(enterBreath, /kickPlay\(url, true, true\)/);
     assert.doesNotMatch(holdIdle, /freezeVis\(/);
     assert.doesNotMatch(enterBreath, /freezeVis\(/);
+  });
+});
+
+describe("hold arrival breath — no idle-spawn / m1 / m2 teleport", () => {
+  const spawnB = "https://imgen.example/idle-spawn.mp4";
+  const m1B = "https://imgen.example/idle-m1.mp4";
+  const m2B = "https://imgen.example/idle-m2.mp4";
+  const bank = {
+    "idle-spawn": { url: spawnB, end: COOKED_HALL },
+    "idle-m1": { url: m1B, end: COOKED_HALL },
+    "idle-m1←spawn": { url: m1B, end: COOKED_HALL },
+    "idle-m2": { url: m2B, end: COOKED_HALL },
+    "spawn→m1": { url: WALK, end: COOKED_HALL },
+  };
+
+  it("isNodeIdleKey / isNodeArrivalBreath never cross markers", () => {
+    assert.equal(isNodeIdleKey("idle-spawn", "spawn"), true);
+    assert.equal(isNodeIdleKey("idle-m1←spawn", "m1"), true);
+    assert.equal(isNodeIdleKey("idle-m1", "m2"), false);
+    assert.equal(isNodeIdleKey("idle-spawn", "m1"), false);
+    assert.equal(isNodeIdleKey("idle-m2", "spawn"), false);
+    assert.equal(isNodeArrivalBreath(bank, "m1", m1B, WALK), true);
+    assert.equal(isNodeArrivalBreath(bank, "m1", spawnB, WALK), false);
+    assert.equal(isNodeArrivalBreath(bank, "m1", m2B, WALK), false);
+    assert.equal(isNodeArrivalBreath(bank, "m1", WALK, WALK), false);
+    assert.equal(isNodeArrivalBreath(bank, "spawn", spawnB, WALK), true);
+    assert.equal(isNodeArrivalBreath(bank, "spawn", m1B, WALK), false);
+    assert.equal(isNodeArrivalBreath(bank, "m2", HALL_LOOP, WALK), false);
+  });
+
+  it("keepHeldBreath locks this marker's clip; other-node / walk / mid-walk do not", () => {
+    const hold = { bank, filmLoop: true, beat: "idle" as const, walkUrl: WALK };
+    assert.equal(keepHeldBreath({ ...hold, here: "m1", showing: m1B }), true);
+    assert.equal(keepHeldBreath({ ...hold, here: "A", showing: m1B }), true);
+    assert.equal(keepHeldBreath({ ...hold, here: "m1", showing: spawnB }), false);
+    assert.equal(keepHeldBreath({ ...hold, here: "m1", showing: m2B }), false);
+    assert.equal(keepHeldBreath({ ...hold, here: "spawn", showing: spawnB }), true);
+    assert.equal(keepHeldBreath({ ...hold, here: "spawn", showing: m1B }), false);
+    assert.equal(keepHeldBreath({ ...hold, here: "m1", showing: m1B, beat: "playvid" }), false);
+    assert.equal(keepHeldBreath({ ...hold, here: "m1", showing: m1B, filmLoop: false }), false);
+    assert.equal(keepHeldBreath({ ...hold, here: "m1", showing: WALK }), false);
+  });
+
+  it("holdBreathUrl stays node-local and ignores livingPlayFrame spawn-first clips", () => {
+    assert.equal(holdBreathUrl(bank, "m1", "spawn", WALK), m1B);
+    assert.equal(holdBreathUrl(bank, "m2", "spawn", WALK), m2B);
+    assert.equal(holdBreathUrl(bank, "spawn", "start", WALK), spawnB);
+    assert.notEqual(holdBreathUrl(bank, "m1", "spawn", WALK), spawnB);
+    assert.notEqual(holdBreathUrl({ "idle-spawn": bank["idle-spawn"] }, "m1", "spawn", WALK), spawnB);
+    assert.equal(holdBreathUrl({ "idle-spawn": bank["idle-spawn"] }, "m1", "spawn", WALK), "");
+    const stock = { url: HALL_LOOP, end: HALL_STILL };
+    assert.equal(holdBreathUrl({ "idle-m1": stock, "idle-spawn": stock }, "m1", "spawn", WALK), "");
+    assert.equal(holdBreathUrl({ "idle-spawn": stock }, "spawn", "start", ""), HALL_LOOP);
+  });
+
+  it("breathSeamSameClip rejects a prefetched walk or other idle", () => {
+    assert.equal(breathSeamSameClip(m1B, m1B), true);
+    assert.equal(breathSeamSameClip(m1B, playableClipSrc(m1B)), true);
+    assert.equal(breathSeamSameClip(m1B, WALK), false);
+    assert.equal(breathSeamSameClip(m1B, spawnB), false);
+    assert.equal(breathSeamSameClip(m1B, ""), false);
+  });
+
+  it("engine holdIdle / kickPlay / seam / vis resume never re-pick another idle", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const holdIdle = src.slice(src.indexOf("function holdIdle"), src.indexOf("async function playEnterThenIdle"));
+    const kickPlay = src.slice(src.indexOf("function kickPlay"), src.indexOf("function playStockWalk"));
+    const stampLoop = src.slice(src.indexOf("function stampLoop"), src.indexOf("function wrapLoop"));
+    const againLoop = src.slice(src.indexOf("function againLoop"), src.indexOf("function startAtSkip"));
+    const prefetch = src.slice(src.indexOf("function prefetchFrom"), src.indexOf("function notePaint"));
+    const enterBreath = src.slice(src.indexOf("async function enterDoorBreath"), src.indexOf("async function saveFilms"));
+    assert.match(holdIdle, /keepHeldBreath\(/);
+    assert.match(holdIdle, /holdBreathUrl\(/);
+    assert.match(holdIdle, /arrivalBreathUrl\(/);
+    assert.match(holdIdle, /resumeHeldBreath\(/);
+    assert.match(holdIdle, /kickPlay\(breathUrl, true, true\)/);
+    assert.match(holdIdle, /atDoor \? ""/);
+    assert.doesNotMatch(holdIdle, /frame\.url/);
+    assert.doesNotMatch(holdIdle, /freezeVis\(/);
+    assert.match(kickPlay, /sameClipSrc\(visSrc\(\), url\)/);
+    assert.match(kickPlay, /vis\.paused/);
+    assert.doesNotMatch(kickPlay, /filmLoop\.current && vis && !vis\.paused/);
+    assert.match(stampLoop, /breathSeamSameClip\(/);
+    assert.match(againLoop, /breathSeamSameClip\(/);
+    assert.match(againLoop, /Walk ended/);
+    assert.doesNotMatch(againLoop, /freezeVis\(/);
+    assert.match(prefetch, /if \(filmLoop\.current\) return;/);
+    assert.match(src, /resumeHeldBreath\(/);
+    assert.match(src, /visibilitychange/);
+    assert.match(src, /Never holdIdle at spawn/);
+    assert.match(src, /addEventListener\("pause"/);
+    assert.match(enterBreath, /holdBreathUrl\(/);
+    assert.match(enterBreath, /stockSprite\.current = false/);
+    assert.match(src, /if \(filmLoop\.current\) return;/);
   });
 });
 
