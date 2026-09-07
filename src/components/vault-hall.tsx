@@ -57,6 +57,8 @@ export function VaultHall() {
   hangHallRef.current = hangHallN;
   const hangAskRef = useRef(hangAsk);
   hangAskRef.current = hangAsk;
+  const hangRoomsRef = useRef(hangRooms);
+  hangRoomsRef.current = hangRooms;
   const hangGuard = useRef(0);
   const { user, isPending: authPending } = useCurrentUserState();
   const owned = Boolean(user);
@@ -83,7 +85,9 @@ export function VaultHall() {
 
   function refreshHangRooms(arts = hungRef.current) {
     const extra = listStoredHallHints().map((h) => ({ ...h, living: false }));
-    const rooms = listHangRooms(listSessions(), lastPlay(), arts, extra);
+    const next = listHangRooms(listSessions(), lastPlay(), arts, extra);
+    const rooms = next.length >= hangRoomsRef.current.length ? next : hangRoomsRef.current;
+    hangRoomsRef.current = rooms;
     setHangRooms(rooms);
     setHangHallN((prev) => (rooms.some((r) => r.hall === prev) ? prev : defaultHangRoom(rooms)));
     return rooms;
@@ -94,9 +98,23 @@ export function VaultHall() {
   }, [hung]);
 
   useEffect(() => {
-    void hydrateSessions((rows) => {
-      if (rows.length) refreshHangRooms(hungRef.current);
-    }).then(() => refreshHangRooms(hungRef.current));
+    const kick = () => {
+      void hydrateSessions((rows) => {
+        if (rows.length) refreshHangRooms(hungRef.current);
+      }).then(() => refreshHangRooms(hungRef.current));
+    };
+    kick();
+    const onVis = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") kick();
+    };
+    window.addEventListener("focus", kick);
+    window.addEventListener("storage", kick);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", kick);
+      window.removeEventListener("storage", kick);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   function persistArt(a: HungArtifact) {

@@ -110,19 +110,37 @@ export function CitadelHub({
   const [hub, setHub] = useState<RuneSessionMeta[]>(() => (typeof window === "undefined" ? [] : listSessions()));
   const [hubReady, setHubReady] = useState(false);
   const [hunt, setHunt] = useState(true);
+  function takeHub(rows: RuneSessionMeta[]) {
+    if (!rows.length) return;
+    setHub((prev) => {
+      if (!prev.length) return rows;
+      const byId = new Map(rows.map((s) => [s.id, { ...s }]));
+      for (const s of prev) {
+        const n = byId.get(s.id);
+        if (!n) {
+          byId.set(s.id, s);
+          continue;
+        }
+        const rooms = Math.max(Number(n.rooms) || 0, Number(s.rooms) || 0);
+        const hints = (s.hallHints?.length || 0) > (n.hallHints?.length || 0) ? s.hallHints : n.hallHints;
+        byId.set(s.id, { ...n, rooms: rooms || n.rooms, hallHints: hints });
+      }
+      return [...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0));
+    });
+  }
   useEffect(() => {
-    setHub(listSessions());
+    takeHub(listSessions());
     setHubReady(true);
     void hydrateSessions((rows) => {
-      if (rows.length) setHub(rows);
+      takeHub(rows);
     }).then(async (rows) => {
-      if (rows.length) setHub(rows);
+      takeHub(rows);
       const last = lastPlay();
       if (last?.id && !listSessions().some((s) => s.id === last.id)) {
         try {
           const { loadSession } = await import("@/game/rune-session");
           const got = await loadSession(last.id);
-          if (got?.id) setHub(listSessions());
+          if (got?.id) takeHub(listSessions());
         } catch {
           /* */
         }
@@ -408,15 +426,15 @@ export function CitadelHub({
             onPointerUp={(e) => {
               e.stopPropagation();
               loadAt.current = Date.now();
-              setHub(listSessions());
+              takeHub(listSessions());
               setHunt(false);
               setHubReady(true);
               setLoadOn(true);
               sfxForge("page");
               void hydrateSessions((rows) => {
-                if (rows.length) setHub(rows);
+                takeHub(rows);
               }).then((rows) => {
-                if (rows.length) setHub(rows);
+                takeHub(rows);
               });
             }}
           >
