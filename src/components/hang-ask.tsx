@@ -87,10 +87,12 @@ export function HangAskSheet({
   const pickedRef = useRef(picked);
   const choseRef = useRef(false);
   useEffect(() => {
-    const release = swallowOpeningTap(HANG_LEFTOVER_SWALLOW_MS);
+    /* Do not release swallow on unmount — confirm click unmounts the sheet
+       and leftover touchend would hit Hang B / Play Sprint underneath
+       (Room 1 · Door B after Hang Room 4). The leftover timer removes it. */
+    swallowOpeningTap(HANG_LEFTOVER_SWALLOW_MS);
     const t = window.setTimeout(() => setArmed(true), HANG_CONFIRM_ARM_MS);
     return () => {
-      release();
       window.clearTimeout(t);
     };
   }, []);

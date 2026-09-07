@@ -123,10 +123,11 @@ describe("hang room pick", () => {
     assert.equal(hangOpensSheet("bot", 2), true);
   });
 
-  it("bot: one room hangs there; many prefer data-hang-room then living", () => {
+  it("explicit pick N wins even on a 1-card list; missing want uses the only room", () => {
     const one = listHangRooms([cit(1)], { id: "cit-1", hall: 1 });
-    assert.equal(resolveHangRoom(one, 8), 1);
-    assert.equal(resolveHangRoom(one, "2"), 1);
+    assert.equal(resolveHangRoom(one, 8), 8);
+    assert.equal(resolveHangRoom(one, "2"), 2);
+    assert.equal(resolveHangRoom(one, undefined), 1);
     const many = listHangRooms([cit(3, 1)], { id: "cit-1", hall: 1 });
     assert.equal(resolveHangRoom(many, 2), 2);
     assert.equal(resolveHangRoom(many, "2"), 2);
@@ -179,6 +180,35 @@ describe("hang room pick", () => {
     const short = listHangRooms([cit(2, 8)], { id: "cit-1", hall: 8, rooms: 2 });
     assert.equal(confirmHangHall(short, 3), 3);
     assert.equal(livingHangHall(short, 3), 3);
+  });
+
+  it("leftover Hang B after Hang Room 4 does not collapse a 1-card hydrate to Room 1", () => {
+    const one = [{ hall: 1, name: "Room 1", still: "", living: true }];
+    assert.equal(resolveHangRoom(one, 4), 4);
+    assert.equal(livingHangHall(one, 4), 4);
+    assert.equal(confirmHangHall(one, 4), 4);
+    assert.notEqual(resolveHangRoom(one, 4), 1);
+  });
+
+  it("holdHangRooms does not keep Room 1 · HERE after Hang Room 4", () => {
+    const older = [1, 2, 3, 4].map((hall) => ({
+      hall,
+      name: `Room ${hall}`,
+      still: hall === 4 ? "/films/cook-forest.jpg" : "",
+      living: hall === 1,
+    }));
+    const newer = older.map((r) => ({ ...r, living: r.hall === 4 }));
+    const held = holdHangRooms(older, newer);
+    assert.equal(held.find((r) => r.living)?.hall, 4);
+    assert.equal(held.find((r) => r.hall === 1)?.living, false);
+    assert.equal(held.find((r) => r.hall === 4)?.still, "/films/cook-forest.jpg");
+  });
+
+  it("Room 4 still from a hung artefact fills an empty padded hall", () => {
+    const rooms = listHangRooms([cit(8, 8)], { id: "cit-1", hall: 8 }, [
+      { still: "/films/cook-forest.jpg", room: { hall: 4, still: "/films/cook-forest.jpg" } },
+    ]);
+    assert.equal(rooms.find((r) => r.hall === 4)?.still, "/films/cook-forest.jpg");
   });
 
   it("after last-hung 8, pick Room 3 / 5 / 1 still bind that N", () => {

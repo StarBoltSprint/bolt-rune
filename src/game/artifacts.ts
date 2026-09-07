@@ -1,5 +1,5 @@
 import type { Film, Grade } from "./films";
-import { hungPlayChrome } from "./enter-graph";
+import { hungPlayChrome } from "./enter-graph.ts";
 import { biomeSprintFilm, cookFilm, quietBiomeFilm } from "./cook";
 import { isHallFilm, isLivingHallLoop } from "./stock-room";
 
@@ -34,9 +34,13 @@ let RAM: HungArtifact[] = [];
 
 function keepArt(u?: string) {
   if (!u) return "";
-  if (u.startsWith("http") || u.startsWith("/films/") || u.startsWith("/refs/") || u.startsWith("/ui/")) return u;
-  if (u.startsWith("data:image/") && u.length < 480000) return u;
+  if (u.startsWith("http") || u.startsWith("/films/") || u.startsWith("/refs/") || u.startsWith("/ui/") || u.startsWith("/api/clip")) return u;
+  if (u.startsWith("data:image/") && u.length < 900000) return u;
   return "";
+}
+
+function isCitadelStill(u?: string) {
+  return Boolean(u && /citadel-tour|\/ui\/citadel/i.test(u));
 }
 
 export function artifactId(film: Film) {
@@ -251,10 +255,17 @@ export function hangOnRoom(id: string, room: HungRoom, from?: HungArtifact[]): H
   const bound = packRoom(room);
   if (!bound) return src;
   const before = src.find((a) => a.id === id);
-  const next = write(src.map((a) => (a.id === id ? { ...a, room: bound, hungAt: Date.now() } : a)));
+  const roomStill =
+    bound.still && !isCitadelStill(bound.still)
+      ? bound.still
+      : before?.still && !isCitadelStill(before.still)
+        ? before.still
+        : bound.still;
+  const wired = { ...bound, still: roomStill || bound.still };
+  const next = write(src.map((a) => (a.id === id ? { ...a, room: wired, still: a.still || roomStill, hungAt: Date.now() } : a)));
   const after = next.find((a) => a.id === id);
   if (before?.still && after && !after.still) {
-    const restored = next.map((a) => (a.id === id ? { ...a, still: before.still } : a));
+    const restored = next.map((a) => (a.id === id ? { ...a, still: before.still, room: a.room ? { ...a.room, still: a.room.still && !isCitadelStill(a.room.still) ? a.room.still : before.still } : a.room } : a));
     RAM = restored;
     return restored;
   }

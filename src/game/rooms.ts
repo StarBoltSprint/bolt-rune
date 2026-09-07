@@ -278,7 +278,8 @@ export function holdHangRooms(prev: HangRoomPick[] = [], next: HangRoomPick[] = 
       hall: r.hall,
       name: r.name || cur?.name || `Room ${r.hall}`,
       still: r.still || cur?.still || "",
-      living: Boolean(r.living || cur?.living),
+      /* Newer living wins — OR-merge left Room 1 · HERE after Hang Room 4. */
+      living: Boolean(r.living),
       citadel: r.citadel || cur?.citadel,
       bindHall: r.bindHall ?? cur?.bindHall,
     });
@@ -348,7 +349,12 @@ export function listHangRooms(
   const seen = new Set<number>();
   const rooms: HangRoomPick[] = [];
   const put = (hall: number, still: string, citadel?: string, bindHall?: number) => {
-    if (hall < 1 || hall > 8 || seen.has(hall)) return;
+    if (hall < 1 || hall > 8) return;
+    if (seen.has(hall)) {
+      const i = rooms.findIndex((r) => r.hall === hall);
+      if (i >= 0 && still && !rooms[i]?.still) rooms[i] = { ...rooms[i]!, still };
+      return;
+    }
     seen.add(hall);
     rooms.push({
       hall,
@@ -457,9 +463,11 @@ export function defaultHangRoom(rooms: HangRoomPick[]): number {
  */
 export function resolveHangRoom(rooms: HangRoomPick[], want?: number | string | null): number {
   const list = rooms.length ? rooms : [{ hall: 1, name: "Room 1", still: "", living: true }];
-  if (list.length === 1) return list[0]!.hall;
   const n = hallN(typeof want === "number" ? want : want == null || want === "" ? 0 : want);
+  /* Explicit pick N wins even if a late hydrate list is one card — leftover
+     Hang B after Hang Room 4 must not collapse to Room 1. */
   if (n) return n;
+  if (list.length === 1) return list[0]!.hall;
   return defaultHangRoom(list);
 }
 

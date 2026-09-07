@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { dropClipAt, dropRoom, familiesOf, familyHead, filmOf, hangArtifact, hangOnRoom, lastClip, mergeHall, readArtifacts, setPlaylist, uniqueClips, type HungArtifact } from "@/game/artifacts";
 import { continuePrompt, readClipSpec, shiftPrompt, stockBiomeFilm, SHIFTS } from "@/game/cook";
-import { bindHungRoom, doorLetterOf, hungPlayChrome, vaultHangCaption } from "@/game/enter-graph";
+import { bindHungRoom, doorLetterOf, hangThumbStill, hungPlayChrome, vaultHangCaption } from "@/game/enter-graph";
 import { vaultHangRoom, vaultHangStart } from "@/game/path-entry";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/lib/cook";
@@ -110,12 +110,15 @@ export function VaultHall() {
   function refreshHangRooms(arts = hungRef.current) {
     const extra = listStoredHallHints().map((h) => ({ ...h, living: false }));
     const computed = listHangRooms(listSessions(), lastPlay(), arts, extra, hangRoomsRef.current);
-    const rooms = holdHangRooms(hangRoomsRef.current, computed);
+    const held = holdHangRooms(hangRoomsRef.current, computed);
+    const bind = hangBindHall(hangHallRef.current);
+    const rooms = held.map((r) => ({ ...r, living: bind ? r.hall === bind : r.living }));
     hangRoomsRef.current = rooms;
     writeHangFloor(rooms.length);
     setHangRooms(rooms);
     setHangHallN((prev) => {
       if (hangAskRef.current && hallN(prev)) return prev;
+      if (bind && rooms.some((r) => r.hall === bind)) return bind;
       return rooms.some((r) => r.hall === prev) ? prev : defaultHangRoom(rooms);
     });
     return rooms;
@@ -188,6 +191,8 @@ export function VaultHall() {
       return;
     }
     persistArt(live);
+    hangGuard.current = (typeof performance !== "undefined" ? performance.now() : Date.now()) + HANG_LEFTOVER_SWALLOW_MS;
+    swallowOpeningTap();
     setHangRooms((prev) => prev.map((r) => ({ ...r, living: r.hall === bindHall })));
     sfxForge("enter");
     const chrome = hungPlayChrome(bindHall, letter);
@@ -214,6 +219,8 @@ export function VaultHall() {
 
   async function askHang(a: HungArtifact, door: "A" | "B", hallWant?: number | string | null) {
     if (hangAskRef.current) return;
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (now < hangGuard.current) return;
     swallowOpeningTap();
     hangGuard.current = (typeof performance !== "undefined" ? performance.now() : Date.now()) + HANG_LEFTOVER_SWALLOW_MS;
     const rooms = refreshHangRooms();
@@ -553,7 +560,7 @@ export function VaultHall() {
                     {hungOn ? (
                       <div className="relative min-w-[22%] flex-1 ring-2 ring-inset ring-[#9ef0e4]">
                         <img
-                          src={head.still && !/citadel-tour|\/ui\/citadel/i.test(head.still) ? head.still : "/films/citadel-tour.jpg"}
+                          src={hangThumbStill(head)}
                           alt=""
                           className="h-full w-full object-cover"
                         />

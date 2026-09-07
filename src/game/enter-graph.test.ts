@@ -23,6 +23,8 @@ import {
   sprintHallDoor,
   stayBiomePlay,
   hallPlateAt,
+  hangThumbStill,
+  hungFilmHold,
   hungPlayChrome,
   hungStageChrome,
   stockBiomePlaylist,
@@ -360,6 +362,12 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
       play: "Play Sprint",
       biome: "Forest",
     });
+    assert.deepEqual(hungFilmHold({ keeper: "Room 4 • Door A" }), { hall: 4, door: "A" });
+    assert.deepEqual(hungFilmHold({ keeper: "Room 1 • Door B" }), { hall: 1, door: "B" });
+    assert.deepEqual(hungFilmHold({ keeper: "Asteroid" }), {});
+    assert.equal(hangThumbStill({ still: "/films/cook-forest.jpg", name: "Luxuriant forest" }), "/films/cook-forest.jpg");
+    assert.equal(hangThumbStill({ still: "/films/citadel-tour.jpg", name: "Luxuriant forest" }), biomeStill("forest"));
+    assert.equal(hangThumbStill({ still: "", name: "Asteroid", room: { hall: 4, door: "A", still: "" } }), biomeStill("asteroid"));
     const here = dirname(fileURLToPath(import.meta.url));
     const cook = readFileSync(join(here, "./cook.ts"), "utf8");
     assert.match(cook, /hungPlayChrome\(n, door \|\| "A"\)/);
@@ -370,6 +378,13 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     const vault = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
     assert.match(vault, /vaultHangCaption\(head\.room\)/);
     assert.match(vault, /holdHall=\{hangBindHall\(live\.room\?\.hall\)/);
+    assert.match(vault, /hangThumbStill\(head\)/);
+    const cine = readFileSync(join(here, "../components/cine-app.tsx"), "utf8");
+    assert.match(cine, /hungFilmHold\(custom\)/);
+    assert.match(cine, /holdHall=\{hold\.hall\}/);
+    const arts = readFileSync(join(here, "./artifacts.ts"), "utf8");
+    assert.match(arts, /isCitadelStill\(bound\.still\)/);
+    assert.match(arts, /before\?\.still && !isCitadelStill\(before\.still\)/);
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
     assert.match(stage, /holdHall/);
     assert.match(stage, /hungStageChrome\(holdHall, holdDoor, film\)/);

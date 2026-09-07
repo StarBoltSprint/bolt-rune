@@ -99,7 +99,7 @@ import {
 } from "@/game/rune-session";
 import { BootScreen } from "@/components/citadel-hub";
 import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
-import { hangBindHall, swallowOpeningTap } from "@/game/hang-ask";
+import { HANG_LEFTOVER_SWALLOW_MS, hangBindHall, swallowOpeningTap } from "@/game/hang-ask";
 import { defaultHangRoom, hallN, listHangRooms, liveSlice, livingHangHall, putSlice, seedHalls, type HangRoomPick } from "@/game/rooms";
 import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
@@ -742,6 +742,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const sprintHold = useRef(false);
   const [hangRoomN, setHangRoomN] = useState(1);
   const hangRoomRef = useRef(1);
+  const hangGuard = useRef(0);
   const [liveHall, setLiveHall] = useState(() => (boot?.kind === "path" ? boot.hall || 1 : 1));
   function pickHangHall(n: number) {
     const hall = Math.max(1, Math.min(8, n || 1));
@@ -2462,8 +2463,16 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         via: live?.via,
       };
     }
-    if (hintStill && !slice.still) {
-      slice = { ...slice, n: bind, still: hintStill, start: slice.start || hintStill, plate: slice.plate || hintStill };
+    const filled =
+      hintStill ||
+      slice.still ||
+      live?.still ||
+      live?.plate ||
+      plateRef.current ||
+      startHold.current ||
+      HALL_STILL;
+    if (!slice.still || (hintStill && /citadel-tour|\/ui\/citadel/i.test(slice.still))) {
+      slice = { ...slice, n: bind, still: filled, start: slice.start || filled, plate: slice.plate || filled };
     }
     if (!(slice.bank || []).length) {
       const first = pathFirst.current || "m1";
@@ -5792,7 +5801,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function askLiveHang(a: HungArtifact, door: "A" | "B") {
     if (hangAsk) return;
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (now < hangGuard.current) return;
     swallowOpeningTap();
+    hangGuard.current = now + HANG_LEFTOVER_SWALLOW_MS;
     const rooms = livingHangRooms();
     setLiveHangRooms(rooms);
     const next = livingHangHall(rooms, hangRoomRef.current) || defaultHangRoom(rooms);
@@ -6130,6 +6142,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         onConfirm={(hall) => {
           const door = hangAsk.door === "B" ? "m2" : "m1";
           beginRift(door, gateFromHung(hangAsk.a), hangBindHall(hall));
+          hangGuard.current = (typeof performance !== "undefined" ? performance.now() : Date.now()) + HANG_LEFTOVER_SWALLOW_MS;
+          swallowOpeningTap();
           setHangAsk(null);
         }}
       />

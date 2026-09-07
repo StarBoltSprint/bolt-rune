@@ -342,6 +342,36 @@ export function vaultHangCaption(room?: { hall?: number; door?: string | null } 
 
 const ROOM_DOOR = /^Room ([1-8]) • Door ([AB])$/;
 
+/** FilmStage hold from a hung film — Room N • Door A, never a floating biome. */
+export function hungFilmHold(film?: { keeper?: string } | null): { hall?: number; door?: DoorLetter } {
+  const fromKeeper = ROOM_DOOR.exec(String(film?.keeper || ""));
+  if (!fromKeeper) return {};
+  return { hall: Number(fromKeeper[1]), door: fromKeeper[2] as DoorLetter };
+}
+
+/** Vault / hang-strip thumb — never a blank or citadel-tour stand-in when the artefact has a biome still. */
+export function hangThumbStill(
+  a?: {
+    still?: string;
+    name?: string;
+    prompt?: string;
+    playlist?: string[];
+    room?: { still?: string; biome?: string; hall?: number; door?: string } | null;
+  } | null,
+): string {
+  const raw = [a?.still, a?.room?.still].find((u) => u && !/citadel-tour|\/ui\/citadel/i.test(u));
+  if (raw) return raw;
+  return biomeStill(
+    inferBiome({
+      name: a?.name || "",
+      still: a?.still || "",
+      playlist: a?.playlist || [],
+      prompt: a?.prompt || "",
+      room: a?.room as HungArtifact["room"],
+    }),
+  );
+}
+
 /**
  * Play / vault title: Room N • Door A is the headline.
  * Biome name (Asteroid) is never the big title once a room is hung.
