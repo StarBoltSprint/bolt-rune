@@ -7,24 +7,29 @@ import { createServerFn } from "@tanstack/react-start";
 import { platePrompt, stillPrompt, type BiomeId, ACTS } from "@/game/cook";
 import { clipImaginePrompt, runeFilmVariants, runeStillJobs } from "@/game/imagine-payload";
 import { CAM_LOCK, citadelPrompt } from "@/game/rune";
+import { bindCookSlot, classifyImagineRaw, emptyCookSlot, freeCookSlot, releaseCookSlot, slotStatus, sweepStale, takeCookSlot, type CookSlot } from "@/lib/cook-slot";
 
 const exec = promisify(execFile);
 const API = "https://api.x.ai/v1";
-const MIN_GAP_MS = 8_000;
-const STALE_MS = 90_000;
-
-let lastStart = 0;
-let inflight = 0;
+let slot: CookSlot = emptyCookSlot();
 const stillCache = new Map<string, string>();
 
 type StartOk = { ok: true; requestId: string };
-type StartErr = { ok: false; error: string };
+type StartErr = { ok: false; error: string; reason?: string; ageMs?: number };
 function clipStillErr(raw: string): string {
-  const t = raw.toLowerCase();
-  if (t.includes("overload") || t.includes("unavailable") || t.includes("429") || t.includes("capacity") || t.includes("rate limit")) return "busy";
-  if (t.includes("timeout") || t.includes("abort")) return "timeout";
-  if (t.includes("echo-off") || t.includes("unauthorized") || t.includes("401")) return "echo-off";
-  return raw.replace(/[{}"\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 42) || "rejected";
+  return classifyImagineRaw(raw) ?? (raw.replace(/[{}"\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 42) || "rejected");
+}
+
+function takeOrBlock(): StartErr | null {
+  const now = Date.now();
+  const next = takeCookSlot(slot, now);
+  slot = next.slot;
+  if (next.error) return { ok: false, error: next.error, reason: next.error, ageMs: next.ageMs };
+  return null;
+}
+
+function dropSlot() {
+  slot = releaseCookSlot(slot);
 }
 type PollOk = { ok: true; status: "pending" | "done" | "failed"; url?: string; pct?: number; frame?: string };
 type PollErr = { ok: false; error: string };
@@ -151,9 +156,16 @@ async function frameFromPrev(url: string): Promise<string | null> {
 }
 
 export const cookStatus = createServerFn({ method: "GET" }).handler(async () => {
+  const now = Date.now();
+  slot = sweepStale(slot, now);
+  const st = slotStatus(slot, now);
   return {
     hasKey: Boolean(process.env.XAI_API_KEY),
-    busy: inflight > 0,
+    busy: st.busy,
+    reason: st.reason,
+    ageMs: st.ageMs,
+    hasJob: st.hasJob,
+    stale: st.stale,
   };
 });
 
@@ -260,13 +272,9 @@ export const startCookPlate = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<StartOk | StartErr> => {
     const headers = auth();
     if (!headers) return { ok: false, error: "echo-off" };
-    const now = Date.now();
-    if (inflight > 0 && now - lastStart > STALE_MS) inflight = 0;
-    if (inflight > 0) return { ok: false, error: "busy" };
-    if (now - lastStart < MIN_GAP_MS) return { ok: false, error: "cooldown" };
+    const blocked = takeOrBlock();
+    if (blocked) return blocked;
     const act = ACTS[Math.max(0, Math.min(ACTS.length - 1, data.act | 0))];
-    inflight += 1;
-    lastStart = now;
     const chained = data.prevUrl ? await frameFromPrev(data.prevUrl) : null;
     const customImg = data.stillUrl && !/\/films\/cook-/.test(data.stillUrl) ? data.stillUrl : "";
     const imageUrl =
@@ -293,19 +301,20 @@ export const startCookPlate = createServerFn({ method: "POST" })
       });
       const raw = await res.text();
       if (!res.ok) {
-        inflight = Math.max(0, inflight - 1);
+        dropSlot();
         const clip = raw.replace(/\s+/g, " ").slice(0, 140);
-        return { ok: false, error: `imagine ${res.status}${clip ? ` ${clip}` : ""}` };
+        return { ok: false, error: clipStillErr(clip) === "capacity" ? "capacity" : `imagine ${res.status}${clip ? ` ${clip}` : ""}` };
       }
       const body = JSON.parse(raw) as { request_id?: string; id?: string };
       const requestId = body.request_id || body.id;
       if (!requestId) {
-        inflight = Math.max(0, inflight - 1);
+        dropSlot();
         return { ok: false, error: "no-id" };
       }
+      slot = bindCookSlot(slot, requestId);
       return { ok: true, requestId };
     } catch {
-      inflight = Math.max(0, inflight - 1);
+      dropSlot();
       return { ok: false, error: "net" };
     }
   });
@@ -315,12 +324,8 @@ export const startRuneFilm = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<StartOk | StartErr> => {
     const headers = auth();
     if (!headers) return { ok: false, error: "echo-off" };
-    const now = Date.now();
-    if (inflight > 0 && now - lastStart > STALE_MS) inflight = 0;
-    if (inflight > 0) return { ok: false, error: "busy" };
-    if (now - lastStart < MIN_GAP_MS) return { ok: false, error: "cooldown" };
-    inflight += 1;
-    lastStart = now;
+    const blocked = takeOrBlock();
+    if (blocked) return blocked;
     const imageUrl = resolveRuneStill(data.still);
     const duration = data.duration === 6 || data.duration === 15 ? data.duration : 10;
     const rawPrompt = data.prompt.trim();
@@ -343,12 +348,15 @@ export const startRuneFilm = createServerFn({ method: "POST" })
         if (!res.ok) continue;
         const parsed = JSON.parse(raw) as { request_id?: string; id?: string };
         const requestId = parsed.request_id || parsed.id;
-        if (requestId) return { ok: true, requestId };
+        if (requestId) {
+          slot = bindCookSlot(slot, requestId);
+          return { ok: true, requestId };
+        }
       }
-      inflight = Math.max(0, inflight - 1);
+      dropSlot();
       return { ok: false, error: clipStillErr(last) };
     } catch {
-      inflight = Math.max(0, inflight - 1);
+      dropSlot();
       return { ok: false, error: "net" };
     }
   });
@@ -361,12 +369,8 @@ export const startRuneExtend = createServerFn({ method: "POST" })
     const video = String(data.video || "").slice(0, 2000);
     if (!/^https:\/\//i.test(video)) return { ok: false, error: "no-extend" };
     if (/\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(video)) return { ok: false, error: "no-extend" };
-    const now = Date.now();
-    if (inflight > 0 && now - lastStart > STALE_MS) inflight = 0;
-    if (inflight > 0) return { ok: false, error: "busy" };
-    if (now - lastStart < MIN_GAP_MS) return { ok: false, error: "cooldown" };
-    inflight += 1;
-    lastStart = now;
+    const blocked = takeOrBlock();
+    if (blocked) return blocked;
     const duration = data.duration === 10 ? 10 : 6;
     const rawPrompt = data.prompt.trim();
     const already = /STATIC CCTV|LOCKED-OFF|CAMERA LOCK|PORTAL CROSS|WIDE LOCKED CCTV|LOCKED CCTV|LEGAL SHOT ONLY|REJECT LIST/i.test(rawPrompt);
@@ -406,12 +410,15 @@ export const startRuneExtend = createServerFn({ method: "POST" })
         if (!res.ok) continue;
         const parsed = JSON.parse(raw) as { request_id?: string; id?: string };
         const requestId = parsed.request_id || parsed.id;
-        if (requestId) return { ok: true, requestId };
+        if (requestId) {
+          slot = bindCookSlot(slot, requestId);
+          return { ok: true, requestId };
+        }
       }
-      inflight = Math.max(0, inflight - 1);
+      dropSlot();
       return { ok: false, error: clipStillErr(last) };
     } catch {
-      inflight = Math.max(0, inflight - 1);
+      dropSlot();
       return { ok: false, error: "net" };
     }
   });
@@ -479,7 +486,10 @@ export const pollCookPlate = createServerFn({ method: "POST" })
         body = (await res.json()) as Record<string, unknown>;
         break;
       }
-      if (!body) return { ok: false, error: lastErr || "poll" };
+      if (!body) {
+        if (/404|410/.test(lastErr)) dropSlot();
+        return { ok: false, error: lastErr || "poll" };
+      }
       const status = String(body.status || body.state || "pending").toLowerCase();
       const url = lastingUrl(body);
       const done =
@@ -491,13 +501,13 @@ export const pollCookPlate = createServerFn({ method: "POST" })
         status === "ready" ||
         status === "finished";
       if (done || url) {
-        inflight = Math.max(0, inflight - 1);
+        dropSlot();
         if (!url) return { ok: false, error: "no-url" };
         const local = await stashClip(url);
         return { ok: true, status: "done", url: local, pct: 100 };
       }
       if (status === "failed" || status === "expired" || status === "error" || status === "cancelled") {
-        inflight = Math.max(0, inflight - 1);
+        dropSlot();
         const why = String(body.error || body.message || body.reason || status).slice(0, 80);
         return { ok: true, status: "failed", url: undefined, pct: 0, frame: why };
       }
@@ -510,8 +520,8 @@ export const pollCookPlate = createServerFn({ method: "POST" })
 export const freeRuneSlot = createServerFn({ method: "POST" })
   .validator(() => ({}))
   .handler(async () => {
-    inflight = 0;
-    return { ok: true as const };
+    slot = freeCookSlot();
+    return { ok: true as const, reason: "idle" as const };
   });
 
 export const grabRuneFrame = createServerFn({ method: "POST" })

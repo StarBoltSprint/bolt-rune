@@ -58,7 +58,7 @@ import {
   type BoltForgeHook,
 } from "@/game/path-entry";
 import { freeRuneSlot, grabRuneFrame, pollCookPlate, startCookStill, startRuneExtend, startRuneFilm, startRuneStill, cacheClip, cacheStill } from "@/lib/cook";
-import { COOK_BUSY_FROST, COOK_BUSY_WAIT_MS, COOK_START_ACCEPTED_PCT, cookBusyNext, isCookSlotBlock } from "@/lib/cook-busy";
+import { COOK_BUSY_WAIT_MS, COOK_START_ACCEPTED_PCT, cookBusyGiveUpFrost, cookBusyNext, cookBusyWaitFrost, isCookSlotBlock, isLocalSlotHold } from "@/lib/cook-busy";
 import { BIOMES, biomePlaylist, riftFilm, riftPrompt, type BiomeId } from "@/game/cook";
 import { FilmStage } from "@/components/film-stage";
 import { dropRoom, hangArtifact, hangOnRoom, isClip, mergeHall, readArtifacts, uniqueClips, ROOM_ONE_STILL, type HungArtifact } from "@/game/artifacts";
@@ -553,6 +553,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const [howl, setHowl] = useState(false);
   const [cook, setCook] = useState(false);
   const [frost, setFrost] = useState("");
+  const [slotReason, setSlotReason] = useState("");
   const [bootOn, setBootOn] = useState(() => {
     if (boot?.kind !== "session") return false;
     return !firstStill([peekLivePlay(boot.id)?.plate, recallHall(boot.id)]);
@@ -959,7 +960,14 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setLoadPct(8);
     setBeat("cook");
     beatRef.current = "cook";
-    void freeRuneSlot({ data: {} }).catch(() => {});
+    void freeRuneSlot({ data: {} })
+      .catch(() => {})
+      .then(() => {
+        retryForgeAfterFree();
+      });
+  }
+
+  function retryForgeAfterFree() {
     let g = graphRef.current;
     if (!g && pinsRef.current.length) {
       g = compileCitadel(plateRef.current || plate, pinsRef.current, walkSecsRef.current);
@@ -3083,7 +3091,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     let url: string | null = null;
     let slotBusy = false;
     let busyFails = 0;
+    let lastBlock = "";
     const blocked = () => (quiet ? dead.current : !liveForge.current);
+    try {
     for (let tryN = 0; tryN < 12; tryN++) {
       if (blocked()) return null;
       try {
@@ -3101,6 +3111,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       }
       if (started.ok) {
         slotBusy = false;
+        setSlotReason("");
         if (!quiet) setLoadPct((p) => Math.max(p, COOK_START_ACCEPTED_PCT));
         break;
       }
@@ -3110,9 +3121,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       }
       if (isCookSlotBlock(started.error)) {
         slotBusy = true;
+        lastBlock = started.error;
+        setSlotReason(started.error);
+        if (isLocalSlotHold(started.error)) await freeRuneSlot({ data: {} }).catch(() => {});
         busyFails += 1;
         if (cookBusyNext(busyFails) === "give-up") break;
-        if (!quiet) setFrost("Imagine busy · waiting");
+        if (!quiet) setFrost(cookBusyWaitFrost(started.error));
         await sleep(COOK_BUSY_WAIT_MS);
         continue;
       }
@@ -3122,8 +3136,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     if (!started?.ok) {
       if (slotBusy) {
-        if (!quiet) setFrost(COOK_BUSY_FROST);
-        void freeRuneSlot({ data: {} }).catch(() => {});
+        if (!quiet) setFrost(cookBusyGiveUpFrost(lastBlock));
       }
       return null;
     }
@@ -3148,6 +3161,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       }
     }
     return url;
+    } finally {
+      if (!url) void freeRuneSlot({ data: {} }).catch(() => {});
+    }
   }
 
   function filmInto(node: string) {
@@ -3167,6 +3183,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     let url: string | null = null;
     let slotBusy = false;
     let busyFails = 0;
+    let lastBlock = "";
+    try {
     for (let tryN = 0; tryN < 10; tryN++) {
       if (!liveForge.current) return null;
       try {
@@ -3178,6 +3196,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       }
       if (started.ok) {
         slotBusy = false;
+        setSlotReason("");
         setLoadPct((p) => Math.max(p, COOK_START_ACCEPTED_PCT));
         break;
       }
@@ -3188,9 +3207,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if (started.error === "no-extend") return null;
       if (isCookSlotBlock(started.error)) {
         slotBusy = true;
+        lastBlock = started.error;
+        setSlotReason(started.error);
+        if (isLocalSlotHold(started.error)) await freeRuneSlot({ data: {} }).catch(() => {});
         busyFails += 1;
         if (cookBusyNext(busyFails) === "give-up") break;
-        setFrost("Imagine busy · waiting");
+        setFrost(cookBusyWaitFrost(started.error));
         await sleep(COOK_BUSY_WAIT_MS);
         continue;
       }
@@ -3199,7 +3221,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       await sleep(1200);
     }
     if (!started?.ok) {
-      if (slotBusy) setFrost(COOK_BUSY_FROST);
+      if (slotBusy) setFrost(cookBusyGiveUpFrost(lastBlock));
       return null;
     }
     for (let p = 0; p < 140; p++) {
@@ -3224,6 +3246,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setFrost(`breath continues · ${label} · ${p + 1}`);
     }
     return url;
+    } finally {
+      if (!url) void freeRuneSlot({ data: {} }).catch(() => {});
+    }
   }
 
   async function shotEnd(url: string, fallback: string) {
@@ -3675,7 +3700,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         }
         if (got.ok) break;
         if (got.error === "echo-off") break;
-        setFrost(got.error === "busy" ? `Imagine busy · ${label}` : `Imagine · ${label} ${got.error}`);
+        setFrost(isCookSlotBlock(got.error) ? `${cookBusyWaitFrost(got.error)} · ${label}` : `Imagine · ${label} ${got.error}`);
         await sleep(got.error === "busy" ? 4000 * (t + 1) : 900);
       }
     } finally {
@@ -3710,6 +3735,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     phaseRef.current = "refs";
     let started: { ok: true; requestId: string } | { ok: false; error: string } | null = null;
     let busyFails = 0;
+    let lastBlock = "";
     for (let t = 0; t < 16; t++) {
       if (dead.current) return hallUrl;
       try {
@@ -3720,6 +3746,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         started = { ok: false, error: "net" };
       }
       if (started.ok) {
+        setSlotReason("");
         setLoadPct((p) => Math.max(p, COOK_START_ACCEPTED_PCT));
         break;
       }
@@ -3728,9 +3755,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         return hallUrl;
       }
       if (isCookSlotBlock(started.error)) {
+        lastBlock = started.error;
+        setSlotReason(started.error);
+        if (isLocalSlotHold(started.error)) await freeRuneSlot({ data: {} }).catch(() => {});
         busyFails += 1;
         if (cookBusyNext(busyFails) === "give-up") break;
-        setFrost("Imagine busy · waiting");
+        setFrost(cookBusyWaitFrost(started.error));
         await sleep(COOK_BUSY_WAIT_MS);
         continue;
       }
@@ -3739,7 +3769,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     if (!started?.ok) {
       void freeRuneSlot({ data: {} }).catch(() => {});
-      setFrost(busyFails ? COOK_BUSY_FROST : "seed film dropped · hall kept");
+      setFrost(busyFails ? cookBusyGiveUpFrost(lastBlock) : "seed film dropped · hall kept");
       setLoadPct(0);
       return hallUrl;
     }
@@ -3988,7 +4018,6 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     cooking.current = false;
     liveForge.current = true;
     hallStyleOnly.current = pack === "hall";
-    void freeRuneSlot({ data: {} }).catch(() => {});
     if (pack === "sealed") {
       lookPackRef.current = [];
       setLookPack([]);
@@ -4029,7 +4058,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setForgeWish(worldHold.current.trim());
     setFrost(worldHold.current.trim() ? `ref · ${worldHold.current.trim().slice(0, 32)}` : "ref · hall");
     sfxForge("cook");
-    void cookRefs().catch(() => failStay("forge paused · tap retry"));
+    void freeRuneSlot({ data: {} })
+      .catch(() => {})
+      .then(() => {
+        void cookRefs().catch(() => failStay("forge paused · tap retry"));
+      });
   }
 
   function stayHere() {
@@ -4508,15 +4541,22 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           setFrost("Imagine is dark");
           return null;
         }
-        if (started?.error === "busy" || started?.error === "cooldown") {
-          setFrost("Imagine busy · waiting");
+        if (isCookSlotBlock(started?.error)) {
+          setSlotReason(started?.error || "busy");
+          if (isLocalSlotHold(started?.error)) await freeRuneSlot({ data: {} }).catch(() => {});
+          setFrost(cookBusyWaitFrost(started?.error));
           await sleep(4000 + t * 2000);
           continue;
         }
         setFrost(started?.error || "opening failed");
         await sleep(900);
       }
-      if (!started?.ok) return null;
+      if (!started?.ok) {
+        void freeRuneSlot({ data: {} }).catch(() => {});
+        return null;
+      }
+      let landed: string | null = null;
+      try {
       for (let p = 0; p < 80; p++) {
         if (riftCookTok.current !== tok) return null;
         if (p) await sleep(1200);
@@ -4536,12 +4576,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             setRift(next);
             persist({ phase: "play", rift: next });
           }
+          landed = polled.url;
           return polled.url;
         }
         if (polled.status === "failed") return null;
         setFrost(`Imagine is drawing the opening · ${p + 1}`);
       }
+      } finally {
+        if (!landed) void freeRuneSlot({ data: {} }).catch(() => {});
+      }
     } catch {
+      void freeRuneSlot({ data: {} }).catch(() => {});
       return null;
     }
     return null;
@@ -6044,6 +6089,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       data-rift={rift.m1 || rift.m2 ? "1" : "0"}
       data-pick={pick ? "1" : "0"}
       data-cook={cook ? "1" : "0"}
+      data-slot-reason={slotReason || undefined}
       style={{ touchAction: "manipulation" }}
       onPointerDown={onDown}
       onPointerUp={onUp}
