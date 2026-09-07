@@ -122,15 +122,14 @@ describe("enter graph · hang any artefact on any door", () => {
     assert.match(enter.still, /cook-forest/);
     assert.notEqual(enter.still, "/films/citadel-tour.jpg");
     assert.ok(!enter.still.includes("citadel-tour"));
-    assert.equal(enter.clips[0], enter.trans);
-    assert.equal(enter.trans, HALL_LOOP);
-    const biomeClips = enter.clips.filter((u) => !u.includes("citadel"));
-    assert.ok(biomeClips.length >= 1, "biome playlist missing after trans");
+    assert.ok(!enter.clips.some((u) => u.includes("citadel") || u.includes("/ui/citadel")), enter.clips.join(","));
+    assert.notEqual(enter.clips[0], HALL_LOOP);
+    assert.ok(enter.clips.length >= 1, "biome playlist missing");
     assert.ok(
-      biomeClips.some((u) => u.includes("forge-forest") || u.includes("/ui/forge.mp4")),
-      `expected forest/stock loop, got ${biomeClips.join(",")}`,
+      enter.clips.some((u) => u.includes("forge-forest") || u.includes("/ui/forge.mp4")),
+      `expected forest/stock loop, got ${enter.clips.join(",")}`,
     );
-    assert.equal(firstBiomePlate(enter.clips) > 0, true);
+    assert.equal(firstBiomePlate(enter.clips), 0);
     assert.equal(shouldHoldBiome(enter.clips, firstBiomePlate(enter.clips)), true);
     assert.equal(shouldHoldBiome(enter.clips, enter.clips.length - 1), true);
     assert.equal(hallDoorTap(0, 0, "A", "A"), "stay");

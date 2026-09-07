@@ -304,10 +304,13 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     laneRef.current = 0;
     swapLock.current = 0;
     const raw = uniqueClips(film.playlist || []);
-    const list = raw.map(localizeClip);
+    const keep = holdDoor ? raw.filter((u) => !isHallFilm(u)) : raw;
+    const list = (keep.length ? keep : raw).map(localizeClip);
     platesRef.current = list.slice();
-    hallFlagsRef.current = raw.map((u) => isHallFilm(u) || Boolean(sprintHallDoor(u, 0.22, 0.42)));
-    const first = list[0] || (original ? film.origin : portrait ? film.portrait : film.local);
+    hallFlagsRef.current = list.map((u) => isHallFilm(u) || Boolean(sprintHallDoor(u, 0.22, 0.42)));
+    const startI = holdDoor ? firstBiomePlate(list) : 0;
+    plateRef.current = startI;
+    const first = list[startI] || list[0] || (original ? film.origin : portrait ? film.portrait : film.local);
     if (isClip(first)) setSrc(first);
     const pic = [film.portraitStill, film.still].find((u) => u && (/\.(jpe?g|png|webp)(\?|$)/i.test(u) || u.startsWith("data:image")));
     setPoster(pic || "");
@@ -329,8 +332,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         return;
       }
       videoRef.current = a;
-      armPlate(a, list[0] || first);
-      armPlate(b, list[1]);
+      armPlate(a, list[startI] || first);
+      armPlate(b, list[startI + 1]);
       a.muted = true;
       a.defaultMuted = true;
       a.loop = false;
@@ -392,7 +395,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       gone = true;
       for (const l of links) l.remove();
     };
-  }, [film.playlist?.join("|") ?? film.local, original, ramp]);
+  }, [film.playlist?.join("|") ?? film.local, original, ramp, holdDoor]);
 
   useEffect(() => {
     if (original) return;

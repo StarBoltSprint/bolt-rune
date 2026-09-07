@@ -323,15 +323,17 @@ export function shouldHoldBiome(playlist: Array<string | null | undefined> = [],
 }
 
 /**
- * Hung / stock rift handoff: trans (if any) then biome loops that can actually play.
- * Always keeps a non-hall biome clip so FilmStage does not bounce to the living-hall still.
+ * Hung / stock rift handoff: cooked room→biome trans (if any) then biome loops.
+ * Stock hall loop / citadel still are not a trans — playing them is the
+ * "biome flashes then snaps back to the room" fail.
  */
 export function stayBiomePlay(enter: DoorEnter): DoorEnter {
   if (enter.kind !== "biome") return enter;
   const still = enter.still && !isHallFilm(enter.still) ? enter.still : biomeStill(enter.biome);
-  const trans = enter.trans && /\.mp4(\?|$)/i.test(enter.trans) ? enter.trans : "";
+  const rawTrans = enter.trans && /\.mp4(\?|$)/i.test(enter.trans) ? enter.trans : "";
+  const trans = rawTrans && !isHallFilm(rawTrans) ? rawTrans : "";
   const loops = uniq(
-    [...(enter.playlist || []), ...stockBiomePlaylist(enter.biome), stockBiomeLoop(enter.biome)].filter((u) => !isHallFilm(u)),
+    [...(enter.playlist || []), ...stockBiomePlaylist(enter.biome), stockBiomeLoop(enter.biome)].filter((u) => u && !isHallFilm(u)),
   );
   if (!loops.length) loops.push(stockBiomeLoop(enter.biome));
   const clips = uniq([trans, ...loops].filter(Boolean));

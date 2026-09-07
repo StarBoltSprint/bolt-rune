@@ -4560,7 +4560,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     playing.current = true;
     setRiftBloom(null);
     setSprint({
-      film: riftFilm(stay.name, stay.still, stay.clips.length ? stay.clips : [stay.trans, stockTransUrl(door)]),
+      film: riftFilm(stay.name, stay.still, stay.clips),
       door,
       name: stay.name,
     });
@@ -5748,13 +5748,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           custom={sprint.film}
           ramp={false}
           holdDoor={sprint.door === "m2" ? "B" : "A"}
-          onHallDoor={(letter) => {
-            const hold = sprint.door === "m2" ? "B" : "A";
-            if (letter === hold) return;
-            leaveSprint();
-            window.setTimeout(() => {
-              void goEnter(letter === "B" ? "m2" : "m1");
-            }, 0);
+          onHallDoor={() => {
+            /* hung enter stays on biome — Leave exits */
           }}
           onExit={() => leaveSprint()}
           onDone={() => {

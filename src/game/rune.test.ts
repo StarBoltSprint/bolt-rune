@@ -381,6 +381,8 @@ describe("Imagine prompt rails", () => {
     assert.match(engine, /data-biome-stay/);
     assert.match(engine, /holdDoor=/);
     assert.match(engine, /if \(!sprintHold\.current\) playing\.current = false/);
+    assert.match(engine, /riftFilm\(stay\.name, stay\.still, stay\.clips\)/);
+    assert.doesNotMatch(engine, /stockTransUrl\(door\)\]/);
     assert.match(stage, /hallDoorTap/);
     assert.match(stage, /shouldHoldBiome/);
     assert.match(stage, /holdBiomePlate/);

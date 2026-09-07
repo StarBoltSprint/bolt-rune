@@ -37,10 +37,15 @@ async function snapStay(page) {
   return page.evaluate(() => {
     const play = document.querySelector("[data-biome-play]");
     const engine = document.querySelector("[data-rune=engine]");
+    const vid = play?.querySelector("video");
+    const src = vid?.getAttribute("data-url") || vid?.currentSrc || vid?.getAttribute("src") || "";
     return {
       play: Boolean(play),
       stay: play?.getAttribute("data-biome-stay") === "1",
       door: play?.getAttribute("data-biome-door") || "",
+      name: play?.getAttribute("data-biome-name") || "",
+      src,
+      hallFilm: /citadel/i.test(src),
       hall: engine?.getAttribute("data-hall") || "",
       phase: engine?.getAttribute("data-phase") || "",
       rift: engine?.getAttribute("data-rift") || "",
@@ -82,7 +87,7 @@ async function runCase(browser, name, url) {
     await page.waitForSelector("[data-biome-play]", { timeout: 8000 });
     await page.waitForTimeout(1400);
     const stay = await snapStay(page);
-    if (!stay.play || !stay.stay || stay.miss || stay.fracture || stay.room1) {
+    if (!stay.play || !stay.stay || stay.miss || stay.fracture || stay.room1 || stay.hallFilm) {
       throw new Error(`${name}: hang hall 2 door A did not stay biome ${JSON.stringify(stay)}`);
     }
     await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: false });
