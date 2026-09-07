@@ -219,8 +219,11 @@ describe("A↔B last-frame seed chain", () => {
     assert.equal(walkLastFrameSeed(HALL_STILL, BOLT_BODY, COOKED_HALL), COOKED_HALL);
     assert.equal(walkLastFrameSeed(HALL_STILL, HALL_LOOP), "");
     assert.equal(walkClipHoldsSeed(stockIdle, landed), false);
-    assert.equal(walkClipHoldsSeed({ url: WALK, end: landed }, landed), true);
-    assert.equal(walkClipHoldsSeed(stockIdle, ""), true);
+    assert.equal(walkClipHoldsSeed({ url: WALK, end: landed }, landed), false);
+    assert.equal(walkClipHoldsSeed({ url: WALK, end: landed, start: landed }, landed), true);
+    assert.equal(walkClipHoldsSeed({ url: WALK, end: COOKED_HALL, start: COOKED_HALL }, landed), false);
+    assert.equal(walkClipHoldsSeed({ url: WALK, end: landed, start: landed }, ""), true);
+    assert.equal(walkClipHoldsSeed(stockIdle, ""), false);
   });
 
   it("stock idle-* is not a visible door breath — play must not stitch walk→HALL_LOOP", () => {
@@ -256,8 +259,10 @@ describe("A↔B last-frame seed chain", () => {
     assert.match(playWalk, /walkClipHoldsSeed\(/);
     assert.match(playWalk, /doorBreathPlayable\(/);
     assert.match(playWalk, /enterDoorBreath\(/);
+    assert.match(playWalk, /shotEnd\(idleNow/);
     assert.match(playWalk, /shotEnd\(clip\.url/);
     assert.match(playWalk, /pose-\$\{id\}/);
+    assert.match(playWalk, /start: clip\.start \|\| seed/);
     assert.match(playWalk, /setPose\(null\)/);
     assert.doesNotMatch(playWalk, /setPose\(walkLastFrameSeed/);
     const enterBreath = src.slice(src.indexOf("async function enterDoorBreath"), src.indexOf("async function saveFilms"));
@@ -271,5 +276,7 @@ describe("A↔B last-frame seed chain", () => {
     assert.doesNotMatch(holdIdle, /stickCover\(arrival\)/);
     const forgeNow = src.slice(src.indexOf("async function forgeWalkNow"), src.indexOf("async function recookWalk"));
     assert.match(forgeNow, /walkLastFrameSeed\(/);
+    assert.match(forgeNow, /start: fromStill/);
+    assert.match(cookWalks, /start: fromStill/);
   });
 });

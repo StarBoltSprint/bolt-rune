@@ -2,7 +2,7 @@ import { playableClipSrc } from "./play-clip.ts";
 import { BOLT_BODY, TOUR_PLATE } from "./rune.ts";
 import { HALL_STILL, isHallFilm } from "./stock-room.ts";
 
-export type PlayClip = { url: string; end?: string };
+export type PlayClip = { url: string; end?: string; start?: string };
 export type PlayBank = Map<string, PlayClip> | Iterable<[string, PlayClip]> | Record<string, PlayClip>;
 export type PlayFrameKind = "walk" | "breath" | "hall" | "fail";
 
@@ -74,18 +74,20 @@ export function walkLastFrameSeed(...candidates: (string | null | undefined)[]):
 }
 
 /**
- * Reuse a bank walk only when it already continues this last-frame seed.
- * Stock HALL_LOOP cannot start from an arrival still — next walk must Imagine from the seed.
+ * Reuse a bank walk only when it was cooked FROM this last-frame seed (`clip.start`).
+ * A prior A→B (mid-stride / other facing / other coat) must not play after breath at A.
+ * Stock HALL_LOOP never holds a seed — next walk Imagines from the still.
  */
 export function walkClipHoldsSeed(
-  clip?: { url?: string | null; end?: string | null } | null,
+  clip?: { url?: string | null; end?: string | null; start?: string | null } | null,
   seed?: string | null,
 ): boolean {
   if (!clip?.url) return false;
+  if (isStockHallClip(clip)) return false;
   const next = walkLastFrameSeed(seed);
   if (!next) return true;
-  if (isStockHallClip(clip)) return false;
-  return true;
+  const from = walkLastFrameSeed(clip.start);
+  return Boolean(from) && from === next;
 }
 
 /**

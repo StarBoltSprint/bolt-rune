@@ -73,7 +73,7 @@ export type HallSlice = {
   plate?: string;
   here?: string;
   cameFrom?: string;
-  bank: { key: string; url: string; end: string }[];
+  bank: { key: string; url: string; end: string; start?: string }[];
   refs: { id: string; name: string; src: string }[];
   pins: RuneNode[];
   forged?: number;
@@ -109,7 +109,7 @@ export type RuneSession = RuneSessionMeta & {
   cameFrom: string;
   forged: number;
   refs: { id: string; name: string; src: string }[];
-  bank: { key: string; url: string; end: string }[];
+  bank: { key: string; url: string; end: string; start?: string }[];
   wish?: string;
   from?: string;
   via?: string;

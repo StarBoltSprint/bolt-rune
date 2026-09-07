@@ -686,7 +686,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const entering = useRef(false);
   const lastLive = useRef<string | null>(null);
   const cameFrom = useRef("start");
-  const bank = useRef(new Map<string, { url: string; end: string }>());
+  const bank = useRef(new Map<string, { url: string; end: string; start?: string }>());
   const film = useRef<HTMLVideoElement | null>(null);
   const filmB = useRef<HTMLVideoElement | null>(null);
   const useBRef = useRef(false);
@@ -947,7 +947,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       forged: extra?.forged ?? forgedRef.current,
       refs: extra?.refs ?? refsHold.current,
       wish: worldHold.current.slice(0, 280),
-      bank: extra?.bank ?? [...bank.current].map(([key, v]) => ({ key, url: v.url, end: v.end })),
+      bank: extra?.bank ?? [...bank.current].map(([key, v]) => ({ key, url: v.url, end: v.end, start: v.start })),
       ...extra,
     };
     if (!snap.id) snap.id = newSessionId();
@@ -1570,7 +1570,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function clipFor(from: string, to: string) {
     const via = cameFrom.current;
-    const pick = (c: { url: string; end: string } | undefined) => (c?.url ? c : null);
+    const pick = (c: { url: string; end: string; start?: string } | undefined) => (c?.url ? c : null);
     return (
       pick(bank.current.get(`${from}←${via}→${to}`)) ??
       pick(bank.current.get(`${from}→${to}`)) ??
@@ -2220,6 +2220,19 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       return;
     }
     walkingTo.current = id;
+    const idleNow = idleFor(at);
+    if (doorBreathPlayable(idleNow)) {
+      const breathEnd = await shotEnd(idleNow!.url, breathStill(at) || lastLive.current || "");
+      const keep = walkLastFrameSeed(breathEnd) || breathEnd;
+      if (keep) {
+        refsMap.current.set(`pose-${at}`, keep);
+        lastLive.current = keep;
+        lastPose.current = keep;
+        bank.current.set(`idle-${at}`, { url: idleNow!.url, end: keep, start: idleNow!.end });
+        const viaIdle = cameFrom.current && cameFrom.current !== at ? cameFrom.current : "start";
+        bank.current.set(`idle-${at}←${viaIdle}`, { url: idleNow!.url, end: keep, start: idleNow!.end });
+      }
+    }
     const seed = walkLastFrameSeed(
       breathStill(at),
       startFromPrev(at),
@@ -2292,9 +2305,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const stampDoorEnd = (end: string) => {
       const keep = walkLastFrameSeed(end, lastPose.current, refsMap.current.get(`pose-${id}`)) || end;
       if (!keep) return;
-      bank.current.set(`${at}→${id}`, { url: clip.url, end: keep });
+      bank.current.set(`${at}→${id}`, { url: clip.url, end: keep, start: clip.start || seed });
       const via = at === "spawn" ? "start" : at;
-      bank.current.set(`${at}←${via}→${id}`, { url: clip.url, end: keep });
+      bank.current.set(`${at}←${via}→${id}`, { url: clip.url, end: keep, start: clip.start || seed });
       refsMap.current.set(`pose-${id}`, keep);
       if (walkLastFrameSeed(keep)) {
         lastLive.current = keep;
@@ -2661,7 +2674,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         thumb: hallKeep.current || "",
         here: hereRef.current,
         cameFrom: cameFrom.current,
-        bank: [...bank.current].map(([key, v]) => ({ key, url: v.url, end: v.end })),
+        bank: [...bank.current].map(([key, v]) => ({ key, url: v.url, end: v.end, start: v.start })),
         refs: refsHold.current,
         pins: pinsRef.current,
         forged: forgedRef.current,
@@ -2696,7 +2709,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     hallKeep.current = plateRef.current;
     lockHall(plateRef.current);
     rememberHall(sid.current, plateRef.current);
-    bank.current = new Map((slice.bank || []).filter((b) => b?.key && b.url).map((b) => [b.key, { url: b.url, end: b.end || "" }]));
+    bank.current = new Map((slice.bank || []).filter((b) => b?.key && b.url).map((b) => [b.key, { url: b.url, end: b.end || "", start: b.start }]));
     refsHold.current = forgeTrayRefs(slice.refs || []);
     refsMap.current = new Map(refsHold.current.map((r) => [r.id, r.src]));
     setRefs(refsHold.current);
@@ -2928,8 +2941,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       /* */
     }
     const via = from === "spawn" ? "start" : from;
-    bank.current.set(`${from}→${to}`, { url, end: landed });
-    bank.current.set(`${from}←${via}→${to}`, { url, end: landed });
+    bank.current.set(`${from}→${to}`, { url, end: landed, start: fromStill });
+    bank.current.set(`${from}←${via}→${to}`, { url, end: landed, start: fromStill });
     refsMap.current.set(`pose-${to}`, landed);
     liveForge.current = false;
     setPhase("play");
@@ -3888,8 +3901,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         setLoadPct(0);
         continue;
       }
-      bank.current.set(`${clip.from}←${clip.via}→${clip.to}`, { url, end: fromStill });
-      bank.current.set(`${clip.from}→${clip.to}`, { url, end: fromStill });
+      bank.current.set(`${clip.from}←${clip.via}→${clip.to}`, { url, end: fromStill, start: fromStill });
+      bank.current.set(`${clip.from}→${clip.to}`, { url, end: fromStill, start: fromStill });
       setLoadPct(100);
       setFilmUrl(url);
       setBeat("playvid");
@@ -3947,8 +3960,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       still = landed;
       latest.set(clip.to, landed);
       pose.set(`${clip.to}←${clip.from}`, landed);
-      bank.current.set(`${clip.from}←${clip.via}→${clip.to}`, { url, end: landed });
-      bank.current.set(`${clip.from}→${clip.to}`, { url, end: landed });
+      bank.current.set(`${clip.from}←${clip.via}→${clip.to}`, { url, end: landed, start: fromStill });
+      bank.current.set(`${clip.from}→${clip.to}`, { url, end: landed, start: fromStill });
       refsMap.current.set(`pose-${clip.to}`, landed);
       syncWalks();
       setHere(clip.to);
