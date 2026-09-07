@@ -427,3 +427,21 @@ export const getGuestCitadel = createServerFn({ method: "GET" })
     if (!owner) return null;
     return fetchCitadel(owner, data.id);
   });
+
+export const dropGuestCitadel = createServerFn({ method: "POST" })
+  .validator((input: { guest: string; id: string }) => ({
+    guest: safeId(input?.guest ?? ""),
+    id: safeId(input?.id ?? ""),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    const owner = guestOwner(data.guest);
+    if (!owner || !data.id) return { ok: false };
+    await dropCitadelFile(owner, data.id);
+    try {
+      const sql = await getSql();
+      await sql`delete from citadels where id = ${data.id} and user_id = ${owner}`;
+    } catch {
+      /* */
+    }
+    return { ok: true };
+  });

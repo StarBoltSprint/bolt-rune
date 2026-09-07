@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bindCitadel, citadelRoomCount, confirmHangHall, defaultHangRoom, dropCitadelHall, hangOpensSheet, holdHangRooms, isBiomeArtefactMeta, listHangCitadels, listHangRooms, livingHangHall, livingLoadPacks, loadHangHallCount, packCitadels, resolveHangRoom, unbindDroppedHalls } from "./rooms.ts";
+import { bindCitadel, citadelRoomCount, confirmHangHall, defaultHangRoom, dropCitadelAll, dropCitadelHall, hangOpensSheet, holdHangRooms, isBiomeArtefactMeta, listHangCitadels, listHangRooms, livingHangHall, livingLoadPacks, loadHangHallCount, packCitadels, resolveHangRoom, unbindDroppedHalls } from "./rooms.ts";
 import type { RuneSessionMeta } from "./rune-session.ts";
 
 function cit(rooms: number, hall = 1, id = "cit-1"): RuneSessionMeta {
@@ -554,5 +554,61 @@ describe("hang room pick", () => {
     assert.equal(other[0]?.room?.hall, 2);
     const all = unbindDroppedHalls([art(1), art(2)], "cit-1", "all");
     assert.equal(all.every((a) => a.room == null), true);
+  });
+
+  it("erase-all drops every hall of a multi-room citadel in one shot", () => {
+    const keep = { ...cit(2, 1, "cit-keep"), updated: 9, title: "Keep", name: "Keep" };
+    const { rows, drop } = dropCitadelAll([cit(3, 2), keep], "cit-1");
+    assert.equal(drop.gone, true);
+    assert.equal(drop.remaining, 0);
+    assert.equal(
+      rows.some((s) => s.id === "cit-1"),
+      false,
+    );
+    assert.equal(
+      rows.some((s) => s.id === "cit-keep"),
+      true,
+    );
+    const picks = listHangCitadels(rows, { id: "cit-keep", hall: 1, rooms: 2 });
+    assert.equal(
+      picks.some((p) => p.id === "cit-1"),
+      false,
+    );
+    assert.equal(
+      picks.some((p) => p.id === "cit-keep"),
+      true,
+    );
+    const hang = listHangRooms(rows, { id: "cit-keep", hall: 1, rooms: 2 }, [], [], [], "cit-keep");
+    assert.deepEqual(
+      hang.map((r) => r.hall),
+      [1, 2],
+    );
+  });
+
+  it("drop? on a missing / biome-titled Load card still purges — confirm cannot no-op", () => {
+    const junk = { ...cit(1, 1, "cit-forest"), title: "Forest", name: "Forest" };
+    const { rows, drop } = dropCitadelHall([junk], "cit-forest", "all");
+    assert.equal(drop.gone, true);
+    assert.equal(drop.citadel, "cit-forest");
+    assert.equal(rows.length, 0);
+    const ghost = dropCitadelAll([], "cit-ghost");
+    assert.equal(ghost.drop.gone, true);
+    assert.equal(ghost.drop.citadel, "cit-ghost");
+    const binds = unbindDroppedHalls(
+      [{ id: "art-1", room: { door: "A" as const, still: "/films/cook-forest.jpg", citadel: "cit-forest", hall: 1 } }],
+      drop.citadel,
+      "all",
+    );
+    assert.equal(binds[0]?.room, null);
+  });
+
+  it("per-room drop still compacts a multi-room citadel after whole-citadel erase exists", () => {
+    const { rows, drop } = dropCitadelHall([cit(8, 3)], "cit-1", 4);
+    assert.equal(drop.gone, false);
+    assert.equal(drop.remaining, 7);
+    assert.equal(rows[0]?.rooms, 7);
+    const hang = listHangRooms(rows, { id: "cit-1", hall: 3, rooms: 7 });
+    assert.equal(hang.length, 7);
+    assert.equal(hang.some((r) => r.hall === 8), false);
   });
 });

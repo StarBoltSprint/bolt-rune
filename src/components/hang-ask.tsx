@@ -89,6 +89,11 @@ function StillActions({
   );
 }
 
+function dropCaption(kind: "citadel" | "room" | undefined, armed: boolean) {
+  if (kind === "citadel") return armed ? "erase all?" : "drop citadel";
+  return armed ? "drop?" : "drop";
+}
+
 function StillStage({
   still,
   index,
@@ -99,6 +104,7 @@ function StillStage({
   onBack,
   onDrop,
   dropArmed,
+  dropKind,
   disabled,
   kind,
   lockAttr,
@@ -114,6 +120,7 @@ function StillStage({
   onBack: () => void;
   onDrop?: () => void;
   dropArmed?: boolean;
+  dropKind?: "citadel" | "room";
   disabled?: boolean;
   kind: "citadel" | "room" | "load" | "vault";
   lockAttr?: Record<string, string | number | undefined>;
@@ -188,20 +195,22 @@ function StillStage({
       {onDrop ? (
         <button
           type="button"
-          aria-label={dropArmed ? "confirm drop" : "drop room"}
+          aria-label={dropArmed ? "confirm erase" : dropKind === "citadel" ? "drop citadel" : "drop room"}
           data-load-drop=""
+          data-load-drop-kind={dropKind || "room"}
           data-load-drop-arm={dropArmed ? "1" : "0"}
-          className={`absolute right-5 top-[max(1.2rem,env(safe-area-inset-top))] z-10 font-mono text-[11px] uppercase tracking-[0.22em] ${
+          className={`absolute right-5 top-[max(1.2rem,env(safe-area-inset-top))] z-20 font-mono text-[11px] uppercase tracking-[0.18em] ${
             dropArmed ? "text-danger" : "text-white/55"
           }`}
           style={{ touchAction: "manipulation" }}
           onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
           {...press(() => {
             if (disabled) return;
             onDrop();
           })}
         >
-          {dropArmed ? "drop?" : "drop"}
+          {dropCaption(dropKind, Boolean(dropArmed))}
         </button>
       ) : null}
       {title || actions || n > 1 ? (
@@ -393,6 +402,7 @@ export function StillCarousel({
   onBack,
   onDrop,
   dropArmed,
+  dropKind,
   disabled,
   kind,
   title,
@@ -407,6 +417,7 @@ export function StillCarousel({
   onBack: () => void;
   onDrop?: () => void;
   dropArmed?: boolean;
+  dropKind?: "citadel" | "room";
   disabled?: boolean;
   kind: "load" | "vault";
   title?: string;
@@ -423,6 +434,7 @@ export function StillCarousel({
       onBack={onBack}
       onDrop={onDrop}
       dropArmed={dropArmed}
+      dropKind={dropKind}
       disabled={disabled}
       kind={kind}
       title={title}
