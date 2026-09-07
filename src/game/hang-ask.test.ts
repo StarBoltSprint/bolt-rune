@@ -199,6 +199,8 @@ describe("hang ask leftover tap", () => {
     assert.match(engine, /hungPlayChrome/);
     assert.match(engine, /data-living-hall=/);
     assert.match(engine, /riftFilm\(stay\.name, stay\.still, stay\.clips, hall, letter\)/);
+    assert.match(engine, /hungEnterBindHall\(/);
+    assert.match(engine, /liveArt\?\.room\?\.hall/);
     assert.match(engine, /setLiveHall\(bindHall\)/);
     assert.match(engine, /chromeHall/);
     assert.match(vault, /vaultHangCaption\(head\.room\)/);

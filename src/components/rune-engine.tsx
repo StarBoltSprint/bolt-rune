@@ -74,6 +74,7 @@ import {
   resolveDoorEnter,
   resolveHungEnter,
   hungPlayChrome,
+  hungEnterBindHall,
   stayBiomePlay,
   stockTransUrl,
   type BiomeName,
@@ -4496,7 +4497,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     playTok.current += 1;
     try {
       if (enter.kind === "biome") {
-        if (enter.hall !== hallHold.current) await goHungHall(enter.hall, false);
+        const bindHall =
+          hungEnterBindHall(
+            arts.find((a) => a.id === enter.art)?.room?.hall,
+            enter.hall,
+            hangRoomRef.current,
+          ) || enter.hall;
+        if (bindHall !== hallHold.current) await goHungHall(bindHall, false);
         const restored = hydrateRift(sid.current, hallHold.current, riftRef.current, arts);
         riftRef.current = restored;
         setRift(restored);
@@ -4597,7 +4604,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         : stayBiomePlay({
             kind: "biome",
             door: doorLetterOf(door),
-            hall: hangRoomRef.current || hallHold.current,
+            hall: hungEnterBindHall(liveArt?.room?.hall, hangRoomRef.current, 0) || hangRoomRef.current || hallHold.current,
             art: liveGate.art || "",
             biome: (liveGate.biome as BiomeName) || "open",
             name: liveGate.name,
@@ -4606,7 +4613,14 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             playlist: liveGate.playlist || [],
             clips: uniqueClips([liveGate.trans || "", ...(liveGate.playlist || []), liveGate.loop].filter(Boolean)),
           });
-    const hall = stay.kind === "biome" ? stay.hall : hangRoomRef.current || hallHold.current;
+    const hall =
+      hungEnterBindHall(
+        liveArt?.room?.hall,
+        stay.kind === "biome" ? stay.hall : 0,
+        hangRoomRef.current,
+      ) ||
+      hangBindHall(hallHold.current) ||
+      1;
     hangRoomRef.current = hall;
     setHangRoomN(hall);
     setLiveHall(hall);

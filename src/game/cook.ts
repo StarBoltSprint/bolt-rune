@@ -1,4 +1,5 @@
-import { hungPlayChrome } from "./enter-graph";
+import { hungBiomePlaylist, hungPlayChrome } from "./enter-graph";
+import { playableClipSrc } from "./play-clip";
 import { b, turnBeatsForRun, turnCue, type Beat, type Film } from "./films";
 import { ENGINE } from "./laws";
 
@@ -427,10 +428,12 @@ function filmFromPlates(name: string, still: string, plates: string[], prompt?: 
 }
 
 function asPlates(urls: string[], keepStock: boolean) {
+  if (keepStock) return hungBiomePlaylist(urls);
   const plates: string[] = [];
-  for (const u of urls.filter(Boolean)) {
-    if (!/\.mp4(\?|$)/i.test(u) && !u.includes("xai-vidgen") && !u.startsWith("/api/clip")) continue;
-    if (!keepStock && /\/films\/forge-[a-z0-9]+\.mp4$/i.test(u)) continue;
+  for (const raw of urls.filter(Boolean)) {
+    const u = playableClipSrc(raw);
+    if (!u) continue;
+    if (/\/films\/forge-[a-z0-9-]+\.mp4$/i.test(u.split("?")[0] || u)) continue;
     if (!plates.includes(u)) plates.push(u);
   }
   return plates;
