@@ -184,7 +184,7 @@ describe("hang room pick", () => {
   it("after last-hung 8, pick Room 3 / 5 / 1 still bind that N", () => {
     const eight = listHangRooms([cit(8, 8)], { id: "cit-1", hall: 8 });
     assert.equal(defaultHangRoom(eight), 8);
-    for (const n of [3, 5, 1]) {
+    for (const n of [3, 4, 5, 1]) {
       assert.equal(confirmHangHall(eight, n), n);
       assert.equal(livingHangHall(eight, n), n);
       assert.notEqual(confirmHangHall(eight, n), 8);

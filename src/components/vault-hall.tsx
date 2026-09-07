@@ -188,6 +188,7 @@ export function VaultHall() {
       return;
     }
     persistArt(live);
+    setHangRooms((prev) => prev.map((r) => ({ ...r, living: r.hall === bindHall })));
     sfxForge("enter");
     const chrome = hungPlayChrome(bindHall, letter);
     setFrost(
@@ -551,7 +552,11 @@ export function VaultHall() {
                   <div className={`flex ${packs.length === 1 ? "h-52" : "h-40"}`}>
                     {hungOn ? (
                       <div className="relative min-w-[22%] flex-1 ring-2 ring-inset ring-[#9ef0e4]">
-                        <img src="/films/citadel-tour.jpg" alt="" className="h-full w-full object-cover" />
+                        <img
+                          src={head.still && !/citadel-tour|\/ui\/citadel/i.test(head.still) ? head.still : "/films/citadel-tour.jpg"}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
                         <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-[#9ef0e4]">
                           {roomN ? hungPlayChrome(roomN, hungOn).keeper : "door"}
                         </span>
@@ -588,9 +593,13 @@ export function VaultHall() {
                       playArt(head);
                     })}
                   >
-                    <p className="font-display text-xl text-ice">{f.name}</p>
+                    <p className="font-display text-xl text-ice">
+                      {roomN && hungOn ? hungPlayChrome(roomN, hungOn).keeper : f.name}
+                    </p>
                     <p className={`mt-1 font-mono text-[9px] uppercase tracking-[0.16em] ${hungOn ? "text-[#9ef0e4]" : "text-white/35"}`}>
-                      {vaultHangCaption(head.room)}
+                      {hungOn
+                        ? `${vaultHangCaption(head.room)}${f.name ? ` · ${f.name}` : ""}`
+                        : "not on a door"}
                     </p>
                     <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/40">
                       {n > 1 ? `play all · ${n} clips` : n === 1 ? "play sprint" : "still only · no video yet"}

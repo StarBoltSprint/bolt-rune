@@ -250,7 +250,15 @@ export function hangOnRoom(id: string, room: HungRoom, from?: HungArtifact[]): H
   if (!src.some((a) => a.id === id)) return src;
   const bound = packRoom(room);
   if (!bound) return src;
-  return write(src.map((a) => (a.id === id ? { ...a, room: bound, hungAt: Date.now() } : a)));
+  const before = src.find((a) => a.id === id);
+  const next = write(src.map((a) => (a.id === id ? { ...a, room: bound, hungAt: Date.now() } : a)));
+  const after = next.find((a) => a.id === id);
+  if (before?.still && after && !after.still) {
+    const restored = next.map((a) => (a.id === id ? { ...a, still: before.still } : a));
+    RAM = restored;
+    return restored;
+  }
+  return next;
 }
 
 export function dropRoom(id: string, from?: HungArtifact[]): HungArtifact[] {

@@ -19,7 +19,7 @@ import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
 import { playableClipSrc, stockBiomeLoop } from "@/game/play-clip";
 import { HazardLayer } from "@/components/hazard-layer";
-import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, hungPlayChrome, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
+import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, hungStageChrome, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
 import { doorAtPoint, isHallFilm, isLivingHallLoop } from "@/game/stock-room";
 
 export type RunResult = {
@@ -1322,15 +1322,20 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
             </button>
             )}
           </div>
-          <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.22em] text-muted">
-            {(holdDoor ? hungPlayChrome(holdHall, holdDoor) : null)?.keeper || film.keeper}
-          </p>
-          <h1 className="font-display text-2xl leading-tight">
-            {(holdDoor ? hungPlayChrome(holdHall, holdDoor) : null)?.name || film.name}
-          </h1>
-          {holdDoor && film.line && film.line !== "Play Sprint" ? (
-            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-white/45">{film.line}</p>
-          ) : null}
+          {(() => {
+            const stage = hungStageChrome(holdHall, holdDoor, film);
+            return (
+              <>
+                <h1 className="mt-2 font-display text-2xl leading-tight">{stage.title || film.name}</h1>
+                {stage.play ? (
+                  <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted">{stage.play}</p>
+                ) : null}
+                {stage.biome ? (
+                  <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-white/45">{stage.biome}</p>
+                ) : null}
+              </>
+            );
+          })()}
         </div>
         <div className="text-right font-mono tabular-nums">
           <p className="text-[11px] uppercase tracking-[0.18em] text-muted">Score</p>

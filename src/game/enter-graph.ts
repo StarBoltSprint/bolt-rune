@@ -340,6 +340,34 @@ export function vaultHangCaption(room?: { hall?: number; door?: string | null } 
   return `${chrome.keeper} ${chrome.name}`;
 }
 
+const ROOM_DOOR = /^Room ([1-8]) • Door ([AB])$/;
+
+/**
+ * Play / vault title: Room N • Door A is the headline.
+ * Biome name (Asteroid) is never the big title once a room is hung.
+ */
+export function hungStageChrome(
+  hall?: number | string | null,
+  door?: string | null,
+  film?: { name?: string; keeper?: string; line?: string } | null,
+): { title: string; play: string; biome: string } {
+  const raw = typeof hall === "number" ? hall : Number(hall);
+  const n = Number.isFinite(raw) && raw >= 1 && raw <= 8 ? Math.round(raw) : 0;
+  const fromKeeper = ROOM_DOOR.exec(String(film?.keeper || ""));
+  const chrome = n
+    ? hungPlayChrome(n, door || fromKeeper?.[2] || "A")
+    : fromKeeper
+      ? hungPlayChrome(Number(fromKeeper[1]), fromKeeper[2])
+      : null;
+  if (!chrome) {
+    return { title: film?.name || "", play: film?.keeper || "", biome: "" };
+  }
+  const biome = [film?.line, film?.name].find(
+    (s) => s && s !== chrome.name && s !== chrome.keeper && s !== "Play Sprint",
+  ) || "";
+  return { title: chrome.keeper, play: chrome.name, biome };
+}
+
 export function firstBiomePlate(playlist: Array<string | null | undefined> = []): number {
   const i = playlist.findIndex((u) => u && !isLivingHallLoop(u));
   return i < 0 ? 0 : i;

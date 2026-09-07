@@ -24,6 +24,7 @@ import {
   stayBiomePlay,
   hallPlateAt,
   hungPlayChrome,
+  hungStageChrome,
   stockBiomePlaylist,
   stockTransUrl,
   vaultHangCaption,
@@ -316,7 +317,7 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
   });
 
   it("after last-hung 8, Hang A pick Room 3 / 5 / 1 binds that hall Door A — chrome not biome", () => {
-    for (const n of [3, 5, 1] as const) {
+    for (const n of [3, 4, 5, 1] as const) {
       const id = `art-last8-to-${n}`;
       let hung = hangArtifactOnDoor(id, "A", { hall: 8, citadel: "cit-8" }, [art(id, "asteroid")]);
       hung = hangArtifactOnDoor(id, "A", { hall: n, citadel: "cit-8" }, hung);
@@ -348,6 +349,17 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.equal(vaultHangCaption({ hall: 7, door: "A" }), "Room 7 • Door A Play Sprint");
     assert.equal(vaultHangCaption({ door: "B" }), "not on a door");
     assert.equal(hungPlayChrome(7, undefined).keeper, "Room 7 • Door A");
+    assert.deepEqual(hungStageChrome(3, "A", { name: "Asteroid", keeper: "StarBoltSprint", line: "Asteroid" }), {
+      title: "Room 3 • Door A",
+      play: "Play Sprint",
+      biome: "Asteroid",
+    });
+    assert.notEqual(hungStageChrome(3, "A", { name: "Asteroid" }).title, "Asteroid");
+    assert.deepEqual(hungStageChrome(undefined, undefined, { name: "Play Sprint", keeper: "Room 4 • Door A", line: "Forest" }), {
+      title: "Room 4 • Door A",
+      play: "Play Sprint",
+      biome: "Forest",
+    });
     const here = dirname(fileURLToPath(import.meta.url));
     const cook = readFileSync(join(here, "./cook.ts"), "utf8");
     assert.match(cook, /hungPlayChrome\(n, door \|\| "A"\)/);
@@ -360,7 +372,7 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(vault, /holdHall=\{hangBindHall\(live\.room\?\.hall\)/);
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
     assert.match(stage, /holdHall/);
-    assert.match(stage, /hungPlayChrome\(holdHall, holdDoor\)/);
+    assert.match(stage, /hungStageChrome\(holdHall, holdDoor, film\)/);
   });
 
   it("biome hold is QTE-quiet — leftover door taps stay and never MISS", () => {

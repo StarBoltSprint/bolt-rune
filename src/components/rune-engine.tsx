@@ -2443,10 +2443,14 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     /* Hall N is h.n === N — never hallsHold[n-1] (last-hung 8 at index 2). */
     let slice = hallsHold.current.find((h) => h.n === bind);
     const live = hallsHold.current.find((h) => h.n === hallHold.current);
+    const hintStill =
+      (liveHangRooms.find((r) => r.hall === bind)?.still || "") ||
+      listStoredHallHints().find((h) => h.hall === bind)?.still ||
+      "";
     if (!slice) {
       const first = pathFirst.current || "m1";
       const walks = (live?.bank || []).length ? live!.bank : stockRoomBank(first).map((b) => ({ key: b.key, url: b.url, end: b.end }));
-      const still = live?.still || live?.plate || plateRef.current || startHold.current || HALL_STILL;
+      const still = hintStill || live?.still || live?.plate || plateRef.current || startHold.current || HALL_STILL;
       slice = {
         n: bind,
         still,
@@ -2457,6 +2461,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         pins: live?.pins || pinsRef.current,
         via: live?.via,
       };
+    }
+    if (hintStill && !slice.still) {
+      slice = { ...slice, n: bind, still: hintStill, start: slice.start || hintStill, plate: slice.plate || hintStill };
     }
     if (!(slice.bank || []).length) {
       const first = pathFirst.current || "m1";
