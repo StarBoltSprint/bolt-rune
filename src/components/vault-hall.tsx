@@ -5,7 +5,7 @@ import { bindHungRoom, doorLetterOf, hangThumbStill, hungPlayChrome, vaultHangCa
 import { vaultHangRoom, vaultHangStart } from "@/game/path-entry";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/lib/cook";
-import { cookFrameHint, cookFrameLine } from "@/lib/cook-progress";
+import { CLIP_TOO_LARGE_FROST, clipRetryFrost, cookClipTooLarge, cookFrameHint, cookFrameLine, nextSmallerClipSpec } from "@/lib/cook-progress";
 import { hangHall, listHall } from "@/lib/hall";
 import { bindCitadel, defaultHangRoom, hallN, hangOpensSheet, holdHangRooms, listHangCitadels, listHangRooms, resolveHangRoom, type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import { hydrateSessions, lastPlay, listSessions, listStoredHallHints, LOAD_DROP_EVENT, stampPlay } from "@/game/rune-session";
@@ -318,8 +318,9 @@ export function VaultHall() {
     setFrameHint("");
     setFrost("Imagine is forging");
     sfxForge("cook");
-    const spec = readClipSpec();
+    let spec = readClipSpec();
     const pace = { n: 2, cap: 16 };
+    let outcome: "ok" | "fail" | "abort" = "fail";
     const tick = window.setInterval(() => {
       if (abort.current) return;
       pace.n = Math.min(pace.cap, pace.n + 1);
@@ -354,151 +355,229 @@ export function VaultHall() {
         }
       }
       if (!extendUrl && clip) await grabEnd();
-      if (abort.current) return;
-      bump(
-        12,
-        28,
-        dest
-          ? `Imagine shifts · ${spec.secs}s ${spec.res}p`
-          : extendUrl
-            ? `Imagine continues the film · ${spec.secs === 10 ? 10 : 6}s`
-            : `Imagine continues · ${spec.secs}s ${spec.res}p`,
-      );
-      const prompt = dest
-        ? shiftPrompt(a.prompt || a.name, dest, spec.secs, family.length + 1)
-        : continuePrompt(a.prompt || a.name, spec.secs, family.length + 1);
-      let started: { ok: true; requestId: string } | { ok: false; error: string } | null = null;
-      for (let t = 0; t < 14; t++) {
-        if (abort.current) return;
-        try {
-          started = await Promise.race([
-            extendUrl
-              ? startRuneExtend({
-                  data: {
-                    video: extendUrl,
-                    prompt,
-                    duration: spec.secs,
-                  },
-                })
-              : startRuneFilm({
-                  data: {
-                    still,
-                    prompt,
-                    duration: spec.secs,
-                    res: spec.res,
-                  },
-                }),
-            new Promise<{ ok: false; error: string }>((r) => window.setTimeout(() => r({ ok: false, error: "timeout" }), 55000)),
-          ]);
-        } catch (err) {
-          started = { ok: false, error: err instanceof Error ? err.message : "net" };
-        }
-        if (started.ok) break;
-        if (started.error === "echo-off") {
-          bump(36, 36, "Imagine is dark · Cancel then try again");
-          return;
-        }
-        if (started.error === "busy" || started.error === "cooldown") {
-          bump(Math.max(12, pace.n), 40, "Imagine finishing the last clip · waiting");
-          await sleep(6000 + t * 1500);
-          continue;
-        }
-        if (extendUrl) {
-          extendUrl = "";
-          await grabEnd();
-          if (abort.current) return;
-          bump(12, 28, `Imagine continues · ${spec.secs}s ${spec.res}p`);
-          continue;
-        }
-        bump(Math.max(12, pace.n), pace.n, started.error);
-        await sleep(1600);
-      }
-      if (abort.current) return;
-      if (!started?.ok) {
-        bump(36, 36, "Imagine busy · Cancel, then Continue again");
+      if (abort.current) {
+        outcome = "abort";
         return;
       }
-      const stretching = Boolean(extendUrl);
-      bump(32, 99, stretching ? "Imagine continues the film" : "Imagine is forging clip " + (at + 2));
-      const t0 = Date.now();
-      const expect = spec.secs * (spec.res === "1080" ? 9000 : 4500);
-      for (let p = 0; p < 200; p++) {
-        if (abort.current) return;
-        await sleep(2000);
-        if (abort.current) return;
-        let polled;
-        try {
-          polled = await pollCookPlate({ data: { requestId: started.requestId } });
-        } catch {
-          continue;
+      for (let pass = 0; pass < 4; pass++) {
+        if (abort.current) {
+          outcome = "abort";
+          return;
         }
-        if (!polled.ok) continue;
-        try {
-          const timePct = 32 + Math.min(67, Math.round(((Date.now() - t0) / expect) * 67));
-          const apiPct = typeof polled.pct === "number" && Number.isFinite(polled.pct) ? polled.pct : timePct;
-          const livePct = Math.max(pace.n, apiPct);
-          pace.n = Math.min(99, Number.isFinite(livePct) ? livePct : pace.n);
-          setPct(pace.n);
-          const hint = cookFrameHint(polled.frame);
-          if (hint) setFrameHint(hint);
-          setFrost(
-            cookFrameLine(
-              polled.frame,
-              stretching ? "Imagine continues the film" : `Imagine is forging clip ${at + 2}`,
-            ),
-          );
-        } catch {
-          /* bad status coalesce must not freeze Continue at ~43% */
+        bump(
+          12,
+          28,
+          dest
+            ? `Imagine shifts · ${spec.secs}s ${spec.res}p`
+            : extendUrl
+              ? `Imagine continues the film · ${spec.secs === 10 ? 10 : 6}s`
+              : `Imagine continues · ${spec.secs}s ${spec.res}p`,
+        );
+        const prompt = dest
+          ? shiftPrompt(a.prompt || a.name, dest, spec.secs, family.length + 1)
+          : continuePrompt(a.prompt || a.name, spec.secs, family.length + 1);
+        let started: { ok: true; requestId: string } | { ok: false; error: string } | null = null;
+        let sizeAtStart = false;
+        for (let t = 0; t < 14; t++) {
+          if (abort.current) {
+            outcome = "abort";
+            return;
+          }
+          try {
+            started = await Promise.race([
+              extendUrl
+                ? startRuneExtend({
+                    data: {
+                      video: extendUrl,
+                      prompt,
+                      duration: spec.secs,
+                    },
+                  })
+                : startRuneFilm({
+                    data: {
+                      still,
+                      prompt,
+                      duration: spec.secs,
+                      res: spec.res,
+                    },
+                  }),
+              new Promise<{ ok: false; error: string }>((r) => window.setTimeout(() => r({ ok: false, error: "timeout" }), 55000)),
+            ]);
+          } catch (err) {
+            started = { ok: false, error: err instanceof Error ? err.message : "net" };
+          }
+          if (started.ok) break;
+          if (started.error === "echo-off") {
+            bump(36, 36, "Imagine is dark · Cancel then try again");
+            return;
+          }
+          if (started.error === "busy" || started.error === "cooldown") {
+            bump(Math.max(12, pace.n), 40, "Imagine finishing the last clip · waiting");
+            await sleep(6000 + t * 1500);
+            continue;
+          }
+          if (started.error === "clip-too-large" || cookClipTooLarge(started.error)) {
+            sizeAtStart = true;
+            break;
+          }
+          if (extendUrl) {
+            extendUrl = "";
+            await grabEnd();
+            if (abort.current) {
+              outcome = "abort";
+              return;
+            }
+            bump(12, 28, `Imagine continues · ${spec.secs}s ${spec.res}p`);
+            continue;
+          }
+          bump(Math.max(12, pace.n), pace.n, started.error);
+          await sleep(1600);
         }
-        if (polled.status === "done" && polled.url) {
-          const chain = uniqueClips(stretching ? [...family.slice(0, Math.max(0, family.length - 1)), polled.url] : [...family, polled.url]);
-          const next = setPlaylist(
-            a.id,
-            chain,
-            {
-              still,
-              prompt: dest || a.prompt || a.name,
-            },
-            hungRef.current,
-          );
-          if (next.length) setHung(next);
-          void hangHall({
-            data: {
-              id: a.id,
-              name: a.name,
-              still,
-              playlist: chain,
-              prompt: dest || a.prompt || a.name,
-            },
-          }).catch(() => {});
-          pace.n = 100;
-          setPct(100);
+        if (abort.current) {
+          outcome = "abort";
+          return;
+        }
+        function stepDownSize(): boolean {
           setFrameHint("");
-          setFrost(stretching ? "same film · continued" : `Clip ${at + 2} hung · ${spec.secs}s MP4`);
+          if (extendUrl) {
+            extendUrl = "";
+            bump(12, 28, "clip too large — continuing from last frame");
+            return true;
+          }
+          const next = nextSmallerClipSpec(spec);
+          if (!next) {
+            bump(Math.max(12, pace.n), pace.n, CLIP_TOO_LARGE_FROST);
+            return false;
+          }
+          spec = next;
+          bump(12, 28, clipRetryFrost(next));
+          return true;
+        }
+        if (sizeAtStart) {
+          if (stepDownSize()) {
+            if (!extendUrl && clip) await grabEnd();
+            continue;
+          }
           return;
         }
-        if (polled.status === "failed") {
-          bump(0, 0, "Imagine dropped the plate");
+        if (!started?.ok) {
+          bump(36, 36, "Imagine busy · Cancel, then Continue again");
           return;
         }
+        const stretching = Boolean(extendUrl);
+        bump(32, 99, stretching ? "Imagine continues the film" : "Imagine is forging clip " + (at + 2));
+        const t0 = Date.now();
+        const expect = spec.secs * (spec.res === "1080" ? 9000 : 4500);
+        let sizeHit = false;
+        let dropped = false;
+        for (let p = 0; p < 200; p++) {
+          if (abort.current) {
+            outcome = "abort";
+            return;
+          }
+          await sleep(2000);
+          if (abort.current) {
+            outcome = "abort";
+            return;
+          }
+          let polled;
+          try {
+            polled = await pollCookPlate({ data: { requestId: started.requestId } });
+          } catch {
+            continue;
+          }
+          if (!polled.ok) continue;
+          try {
+            const timePct = 32 + Math.min(67, Math.round(((Date.now() - t0) / expect) * 67));
+            const apiPct = typeof polled.pct === "number" && Number.isFinite(polled.pct) ? polled.pct : timePct;
+            const livePct = Math.max(pace.n, apiPct);
+            pace.n = Math.min(99, Number.isFinite(livePct) ? livePct : pace.n);
+            setPct(pace.n);
+            const hint = cookFrameHint(polled.frame);
+            if (hint) setFrameHint(hint);
+            else setFrameHint("");
+            setFrost(
+              cookClipTooLarge(polled.frame)
+                ? CLIP_TOO_LARGE_FROST
+                : cookFrameLine(
+                    polled.frame,
+                    stretching ? "Imagine continues the film" : `Imagine is forging clip ${at + 2}`,
+                  ),
+            );
+          } catch {
+            /* bad status coalesce must not freeze Continue at ~43% */
+          }
+          if (polled.status === "done" && polled.url) {
+            const chain = uniqueClips(stretching ? [...family.slice(0, Math.max(0, family.length - 1)), polled.url] : [...family, polled.url]);
+            const next = setPlaylist(
+              a.id,
+              chain,
+              {
+                still,
+                prompt: dest || a.prompt || a.name,
+              },
+              hungRef.current,
+            );
+            if (next.length) setHung(next);
+            void hangHall({
+              data: {
+                id: a.id,
+                name: a.name,
+                still,
+                playlist: chain,
+                prompt: dest || a.prompt || a.name,
+              },
+            }).catch(() => {});
+            pace.n = 100;
+            setPct(100);
+            setFrameHint("");
+            setFrost(stretching ? "same film · continued" : `Clip ${at + 2} hung · ${spec.secs}s MP4`);
+            outcome = "ok";
+            return;
+          }
+          if (polled.status === "failed") {
+            if (cookClipTooLarge(polled.frame)) sizeHit = true;
+            else dropped = true;
+            break;
+          }
+        }
+        if (abort.current) {
+          outcome = "abort";
+          return;
+        }
+        if (sizeHit) {
+          if (stepDownSize()) {
+            if (!extendUrl && clip) await grabEnd();
+            continue;
+          }
+          return;
+        }
+        if (dropped) {
+          setFrameHint("");
+          bump(Math.max(12, pace.n), pace.n, "Imagine dropped the plate");
+          return;
+        }
+        bump(99, 99, "Still forging · keep this open");
+        return;
       }
-      bump(99, 99, "Still forging · keep this open");
+      setFrameHint("");
+      bump(Math.max(12, pace.n), pace.n, CLIP_TOO_LARGE_FROST);
     } finally {
       window.clearInterval(tick);
       lock.current = false;
       setBusy(false);
-      if (abort.current) {
+      if (abort.current || outcome === "abort") {
         setForge(false);
         setPct(0);
         setFrameHint("");
         setFrost("");
-      } else if (pace.n >= 100 || pace.n <= 0) {
+      } else {
         window.setTimeout(() => {
           setForge(false);
           setPct(0);
           setFrameHint("");
           setFrost("");
-        }, 2400);
+        }, outcome === "ok" ? 2400 : 3600);
       }
     }
   }

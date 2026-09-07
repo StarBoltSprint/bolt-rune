@@ -289,6 +289,8 @@ describe("hang ask leftover tap", () => {
     assert.match(specBar, /Next continue \/ shift/);
     assert.match(vault, /cookFrameLine/);
     assert.match(vault, /cookFrameHint/);
+    assert.match(vault, /CLIP_TOO_LARGE_FROST/);
+    assert.match(vault, /nextSmallerClipSpec/);
     assert.doesNotMatch(vault, /frame \$\{polled\.frame\}/);
     const hangAVis = vault.indexOf('data-hang={vaultHangStart("A")');
     const vaultActions = vault.indexOf("data-vault-actions");

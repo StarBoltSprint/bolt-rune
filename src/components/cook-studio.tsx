@@ -7,7 +7,7 @@ import { playableClipSrc, stockBiomeLoop } from "@/game/play-clip";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { ENGINE } from "@/game/laws";
 import { startCookPlate, pollCookPlate, cookStatus, startCookStill, freeRuneSlot } from "@/lib/cook";
-import { cookFrameHint, cookFrameLine } from "@/lib/cook-progress";
+import { CLIP_TOO_LARGE_FROST, clipRetryFrost, cookClipTooLarge, cookFrameHint, cookFrameLine, nextSmallerClipSpec } from "@/lib/cook-progress";
 import { readArtifacts, type HungArtifact } from "@/game/artifacts";
 import type { Film } from "@/game/films";
 import { boltBack, locFromHash, pushBolt, readBolt } from "@/lib/bolt-history";
@@ -631,7 +631,7 @@ export function CookStudio({
     const worldLine = customWorld ? seedLine : undefined;
     let stillUrl = customStill;
     const got: string[] = [];
-    const spec = readClipSpec();
+    let spec = readClipSpec();
     const pace = { n: 0, cap: 16 };
     const tick = window.setInterval(() => {
       pace.n = Math.min(pace.cap, pace.n + 1);
@@ -666,47 +666,76 @@ export function CookStudio({
       }
       mark(0, { status: "cook" });
       bump(Math.max(pace.n, 18), 32, "Imagine is forging");
-      let started: { ok: true; requestId: string } | { ok: false; error: string } | null = null;
-      for (let tryN = 0; tryN < 10; tryN++) {
-        try {
-          started = await startCookPlate({
-            data: {
-              biome: cookBiome,
-              prompt: seedLine,
-              act: 0,
-              still: customWorld ? "" : still,
-              prevUrl: got[got.length - 1],
-              world: worldLine,
-              stillUrl: stillUrl && !stillUrl.includes("/films/cook-") ? stillUrl : undefined,
-              duration: spec.secs,
-              res: spec.res,
-            },
-          });
-        } catch (err) {
-          started = { ok: false, error: err instanceof Error ? err.message : "net" };
+      let landed = false;
+      let failLine = "";
+      for (let pass = 0; pass < 4 && !landed; pass++) {
+        let started: { ok: true; requestId: string } | { ok: false; error: string } | null = null;
+        let sizeAtStart = false;
+        for (let tryN = 0; tryN < 10; tryN++) {
+          try {
+            started = await startCookPlate({
+              data: {
+                biome: cookBiome,
+                prompt: seedLine,
+                act: 0,
+                still: customWorld ? "" : still,
+                prevUrl: got[got.length - 1],
+                world: worldLine,
+                stillUrl: stillUrl && !stillUrl.includes("/films/cook-") ? stillUrl : undefined,
+                duration: spec.secs,
+                res: spec.res,
+              },
+            });
+          } catch (err) {
+            started = { ok: false, error: err instanceof Error ? err.message : "net" };
+          }
+          if (started.ok) break;
+          if (started.error === "echo-off") {
+            setPct(0);
+            setFrameHint("");
+            failLine = "Imagine is dark. No MP4. Try again.";
+            setFrost(failLine);
+            mark(0, { status: "fail" });
+            return;
+          }
+          if (started.error === "busy" || started.error === "cooldown") {
+            bump(pace.n, 36, "Imagine is busy · waiting");
+            await new Promise((r) => setTimeout(r, 4000));
+            continue;
+          }
+          if (started.error === "clip-too-large" || cookClipTooLarge(started.error)) {
+            sizeAtStart = true;
+            break;
+          }
+          bump(pace.n, pace.n, "Imagine refused the plate.");
+          break;
         }
-        if (started.ok) break;
-        if (started.error === "echo-off") {
-          setPct(0);
-          setFrost("Imagine is dark. No MP4. Try again.");
+        function stepDownSize(): boolean {
+          setFrameHint("");
+          const next = nextSmallerClipSpec(spec);
+          if (!next) {
+            failLine = CLIP_TOO_LARGE_FROST;
+            setFrost(failLine);
+            return false;
+          }
+          spec = next;
+          bump(Math.max(18, pace.n), 32, clipRetryFrost(next));
+          return true;
+        }
+        if (sizeAtStart) {
+          if (stepDownSize()) continue;
           mark(0, { status: "fail" });
-          return;
+          break;
         }
-        if (started.error === "busy" || started.error === "cooldown") {
-          bump(pace.n, 36, "Imagine is busy · waiting");
-          await new Promise((r) => setTimeout(r, 4000));
-          continue;
+        if (!started?.ok) {
+          failLine = failLine || "Imagine refused the plate.";
+          mark(0, { status: "fail" });
+          break;
         }
-        bump(pace.n, pace.n, "Imagine refused the plate.");
-        break;
-      }
-      if (!started?.ok) {
-        mark(0, { status: "fail" });
-      } else {
         bump(Math.max(pace.n, 32), 92, "Imagine is forging");
         const t0 = Date.now();
         const expect = spec.secs * (spec.res === "1080" ? 7000 : 3800);
-        let landed = false;
+        let sizeHit = false;
         for (let p = 0; p < 120; p++) {
           await new Promise((r) => setTimeout(r, 1800));
           let polled;
@@ -724,7 +753,8 @@ export function CookStudio({
             setPct(pace.n);
             const hint = cookFrameHint(polled.frame);
             if (hint) setFrameHint(hint);
-            setFrost(cookFrameLine(polled.frame, "Imagine is forging"));
+            else setFrameHint("");
+            setFrost(cookClipTooLarge(polled.frame) ? CLIP_TOO_LARGE_FROST : cookFrameLine(polled.frame, "Imagine is forging"));
           } catch {
             /* bad status coalesce must not freeze the overlay */
           }
@@ -737,6 +767,7 @@ export function CookStudio({
             setWatch(playable);
             pace.n = 100;
             setPct(100);
+            setFrameHint("");
             setFrost("MP4 ready · touch the path to enter");
             writeCookReady({
               biome: cookBiome,
@@ -748,12 +779,23 @@ export function CookStudio({
             landed = true;
             break;
           }
-          if (polled.status === "failed") break;
+          if (polled.status === "failed") {
+            if (cookClipTooLarge(polled.frame)) sizeHit = true;
+            break;
+          }
         }
-        if (!landed) {
-          mark(0, { status: "fail" });
-          setFrost("The path stayed dark.");
-        }
+        if (landed) break;
+        if (sizeHit && stepDownSize()) continue;
+        mark(0, { status: "fail" });
+        setFrameHint("");
+        failLine = sizeHit ? CLIP_TOO_LARGE_FROST : failLine || "The path stayed dark.";
+        setFrost(failLine);
+        break;
+      }
+      if (!landed) {
+        mark(0, { status: "fail" });
+        setFrameHint("");
+        setFrost(failLine || CLIP_TOO_LARGE_FROST);
       }
     } finally {
       window.clearInterval(tick);

@@ -1,6 +1,12 @@
 /** Imagine poll bodies nest frame / status / progress. Never String(object). */
 
 export type CookPollStatus = "pending" | "done" | "failed";
+export type ClipSecs = 6 | 10 | 15;
+export type ClipRes = "720" | "1080";
+
+/** Upstream Imagine / xAI video file wall (extend input + stored result). Not a client cap we can raise. */
+export const IMAGINE_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
+export const CLIP_TOO_LARGE_FROST = "clip too large — try 10s or 720";
 
 const JUNK = /\[object\s+object\]/i;
 const DONE = new Set(["done", "succeeded", "complete", "completed", "success", "ready", "finished"]);
@@ -139,14 +145,57 @@ function flattenWhy(raw: unknown, depth = 0): string | undefined {
   return undefined;
 }
 
+function rawText(raw: unknown, depth = 0): string {
+  if (typeof raw === "string") return raw.replace(/\s+/g, " ").trim();
+  if (typeof raw === "number" && Number.isFinite(raw)) return String(raw);
+  if (depth > 2 || !isRecord(raw)) return "";
+  return ["message", "error", "reason", "detail", "code", "label", "stage", "phase", "frame"]
+    .map((k) => rawText(raw[k], depth + 1))
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** Imagine / xAI 50 MiB video wall — input extend or stored cook result. */
+export function cookClipTooLarge(raw: unknown): boolean {
+  const t = rawText(raw).toLowerCase();
+  if (!t) return false;
+  if (t.includes("clip too large") || t.includes("clip-too-large")) return true;
+  if (t.includes("52428800")) return true;
+  if (/exceeds?\s+maximum\s+size/.test(t)) return true;
+  if (/maximum size of \d+\s*bytes/.test(t)) return true;
+  if (/video.{0,40}too large/.test(t)) return true;
+  return false;
+}
+
+export function imagineVideoOverCap(bytes: number | null | undefined): boolean {
+  return typeof bytes === "number" && Number.isFinite(bytes) && bytes > IMAGINE_VIDEO_MAX_BYTES;
+}
+
+/** Drop picture first so 15s can still land, then shorten. */
+export function nextSmallerClipSpec(spec: { secs: ClipSecs; res: ClipRes }): { secs: ClipSecs; res: ClipRes } | null {
+  if (spec.res === "1080") return { secs: spec.secs, res: "720" };
+  if (spec.secs === 15) return { secs: 10, res: spec.res };
+  if (spec.secs === 10) return { secs: 6, res: spec.res };
+  return null;
+}
+
+export function clipRetryFrost(spec: { secs: ClipSecs; res: ClipRes }): string {
+  return `clip too large — retrying ${spec.secs}s ${spec.res}`;
+}
+
 export function readImaginePoll(body: Record<string, unknown>): {
   status: CookPollStatus;
   pct?: number;
   frame?: string;
 } {
   const status = readImagineStatus(body);
-  if (status === "failed") {
-    return { status, pct: 0, frame: readImagineWhy(body) };
+  const why = readImagineWhy(body);
+  if (status === "failed" || cookClipTooLarge(body) || cookClipTooLarge(why)) {
+    return {
+      status: "failed",
+      pct: 0,
+      frame: cookClipTooLarge(body) || cookClipTooLarge(why) ? CLIP_TOO_LARGE_FROST : why,
+    };
   }
   const frame = readFrame(body);
   const pct = status === "done" ? 100 : readPct(body);
@@ -156,6 +205,7 @@ export function readImaginePoll(body: Record<string, unknown>): {
 /** Safe FRAME overlay label. Empty when the poll field is missing or an object-string. */
 export function cookFrameHint(frame: unknown): string {
   if (frame == null || frame === false) return "";
+  if (cookClipTooLarge(frame)) return "";
   if (typeof frame === "number" && Number.isFinite(frame)) return String(Math.round(frame));
   if (typeof frame === "string") {
     const t = frame.trim();

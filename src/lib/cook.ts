@@ -9,7 +9,7 @@ import { playableClipSrc } from "@/game/play-clip";
 import { clipImaginePrompt, runeFilmVariants, runeStillJobs } from "@/game/imagine-payload";
 import { CAM_LOCK, citadelPrompt, dropTaintedBolt } from "@/game/rune";
 import { bindCookSlot, classifyImagineRaw, emptyCookSlot, freeCookSlot, releaseCookSlot, slotStatus, sweepStale, takeCookSlot, type CookSlot } from "@/lib/cook-slot";
-import { readImaginePoll } from "@/lib/cook-progress";
+import { imagineVideoOverCap, readImaginePoll } from "@/lib/cook-progress";
 
 const exec = promisify(execFile);
 const API = "https://api.x.ai/v1";
@@ -337,6 +337,21 @@ export const startRuneFilm = createServerFn({ method: "POST" })
     }
   });
 
+async function probeVideoBytes(url: string, authz: string): Promise<number | null> {
+  try {
+    const res = await fetch(url, {
+      method: "HEAD",
+      headers: { Authorization: authz },
+      redirect: "follow",
+      signal: AbortSignal.timeout(8000),
+    });
+    const len = Number(res.headers.get("content-length") || 0);
+    return Number.isFinite(len) && len > 0 ? len : null;
+  } catch {
+    return null;
+  }
+}
+
 export const startRuneExtend = createServerFn({ method: "POST" })
   .validator((input: { video: string; prompt: string; duration: 6 | 10 | 15 }) => input)
   .handler(async ({ data }): Promise<StartOk | StartErr> => {
@@ -345,6 +360,8 @@ export const startRuneExtend = createServerFn({ method: "POST" })
     const video = String(data.video || "").slice(0, 2000);
     if (!/^https:\/\//i.test(video)) return { ok: false, error: "no-extend" };
     if (/\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(video)) return { ok: false, error: "no-extend" };
+    const bytes = await probeVideoBytes(video, headers.Authorization);
+    if (imagineVideoOverCap(bytes)) return { ok: false, error: "clip-too-large" };
     const blocked = takeOrBlock();
     if (blocked) return blocked;
     const duration = data.duration === 10 ? 10 : 6;

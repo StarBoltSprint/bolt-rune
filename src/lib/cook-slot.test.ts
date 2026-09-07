@@ -33,6 +33,7 @@ describe("cook slot — zombie busy vs xAI capacity", () => {
     assert.ok((b.ageMs ?? 0) >= 50);
     assert.equal(classifyImagineRaw("429 rate limit capacity"), "capacity");
     assert.equal(classifyImagineRaw("model overloaded"), "capacity");
+    assert.equal(classifyImagineRaw("VIDEO EXCEEDS MAXIMUM SIZE OF 52428800 BYTES"), "clip-too-large");
     assert.equal(classifyImagineRaw("ok request_id"), null);
     assert.notEqual(b.error, "capacity");
   });
