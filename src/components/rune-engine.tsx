@@ -50,10 +50,10 @@ import {
 } from "@/game/rune";
 import {
   biomeBotStart,
-  claimLookForgeAuto,
   lookForgeStart,
   lookForgeWalkStyle,
   lookHallLocked,
+  parseLookForge,
   shouldAutoStartBotForge,
   type BoltForgeHook,
 } from "@/game/path-entry";
@@ -653,6 +653,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const worldHold = useRef("");
   const [forgePack, setForgePack] = useState<"live" | "sealed" | "hall">("live");
   const [forgeWish, setForgeWish] = useState("");
+  const [forgeAutoOn, setForgeAutoOn] = useState(false);
   const hallStyleOnly = useRef(false);
   const [lookRes, setLookRes] = useState<"720" | "1080">("720");
   const lookResRef = useRef<"720" | "1080">("720");
@@ -706,7 +707,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const dead = useRef(false);
   const cooking = useRef(false);
   const botKick = useRef(false);
+  const botForgeAuto = useRef(false);
   const startBotForgeRef = useRef<() => boolean>(() => false);
+  const kickAutoBotForgeRef = useRef<() => boolean>(() => false);
   const [hub, setHub] = useState<RuneSessionMeta[]>(() =>
     typeof window === "undefined" ? [] : listSessions(),
   );
@@ -801,6 +804,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       } else {
         setPhase("look");
         phaseRef.current = "look";
+        window.setTimeout(() => kickAutoBotForgeRef.current(), 0);
       }
     }
     return () => {
@@ -5125,6 +5129,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       } else {
         setPhase("look");
         phaseRef.current = "look";
+        window.setTimeout(() => kickAutoBotForgeRef.current(), 0);
       }
     }
   };
@@ -5357,14 +5362,21 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
   startBotForgeRef.current = startBotForge;
 
+  function kickAutoBotForge() {
+    if (botForgeAuto.current) return false;
+    const stills = boot?.kind === "path" ? boot.stills : undefined;
+    const forge = (boot?.kind === "path" ? boot.forge : undefined) || parseLookForge(typeof window !== "undefined" ? window.location.search : undefined);
+    if (!shouldAutoStartBotForge({ phase: "look", forge, stills })) return false;
+    botForgeAuto.current = true;
+    setForgeAutoOn(true);
+    return startBotForge();
+  }
+  kickAutoBotForgeRef.current = kickAutoBotForge;
+
   useEffect(() => {
     if (phase !== "look") return;
     botKick.current = false;
-    const forge = boot?.kind === "path" ? boot.forge : undefined;
-    const stills = boot?.kind === "path" ? boot.stills : undefined;
-    if (!shouldAutoStartBotForge({ phase: "look", forge, stills })) return;
-    if (!claimLookForgeAuto()) return;
-    startBotForge();
+    kickAutoBotForge();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
@@ -6013,6 +6025,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       data-rune="engine"
       data-forge-pack={forgePack}
       data-forge-wish={forgeWish}
+      data-forge-auto={forgeAutoOn ? "1" : undefined}
       data-camera="lock"
       data-living={phase === "play" && (filmOn || Boolean(idleFor(here))) ? "1" : "0"}
       data-phase={phase}

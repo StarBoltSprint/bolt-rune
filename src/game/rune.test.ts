@@ -317,7 +317,8 @@ describe("Imagine prompt rails", () => {
     assert.match(route, /forge: parseLookForge\(s\)/);
     assert.match(route, /stills, forge/);
     assert.match(src, /shouldAutoStartBotForge/);
-    assert.match(src, /claimLookForgeAuto\(\)/);
+    assert.match(src, /kickAutoBotForge/);
+    assert.match(src, /parseLookForge/);
     assert.match(src, /window\.__boltForge/);
     assert.match(src, /startBot:\s*\(\)\s*=>\s*startBotForgeRef\.current\(\)/);
     const botFn = src.slice(src.indexOf("function startBotForge"), src.indexOf("startBotForgeRef.current", src.indexOf("function startBotForge")));

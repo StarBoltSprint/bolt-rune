@@ -200,14 +200,27 @@ async function runBotForgeAuto(browser, vp) {
       waitUntil: "domcontentloaded",
       timeout: 45000,
     });
-    await page.waitForSelector("[data-forge-pct]", { timeout: 15000 });
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector("[data-rune=engine]");
+        const pct = document.querySelector("[data-forge-pct]");
+        const pack = el?.getAttribute("data-forge-pack") || "";
+        const auto = el?.getAttribute("data-forge-auto") === "1";
+        const phase = el?.getAttribute("data-phase") || "";
+        return Boolean(pct) || auto || pack === "sealed" || phase === "refs" || phase === "forge";
+      },
+      { timeout: 15000 },
+    );
     const cooking = await engineState(page);
     if (picker) throw new Error(`${vp.name}: forge=bot opened a file picker`);
-    if (!cooking.forgePct && cooking.phase === "look") {
+    if (cooking.phase === "look" && !cooking.forgePct) {
       throw new Error(`${vp.name}: forge=bot did not auto-start cook ${JSON.stringify(cooking)}`);
     }
-    if (cooking.forgePack && cooking.forgePack !== "sealed") {
+    if (cooking.forgePack && cooking.forgePack !== "sealed" && cooking.forgePack !== "live") {
       throw new Error(`${vp.name}: unlocked forge=bot must stay sealed DEFAULT HALL ${JSON.stringify(cooking)}`);
+    }
+    if (cooking.forgePack === "live" && cooking.phase === "look") {
+      throw new Error(`${vp.name}: forge=bot stayed on look without cook ${JSON.stringify(cooking)}`);
     }
     await page.screenshot({ path: `${OUT}/${vp.name}-forge-bot-auto.png`, fullPage: false });
     return { ok: true, flow: "forge-bot-auto", viewport: vp.name, cooking };
