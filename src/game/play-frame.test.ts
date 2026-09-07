@@ -53,6 +53,66 @@ describe("play frame after cook", () => {
     assert.equal(warmedClip(WALK), null);
   });
 
+  it("warmClip keeps one hidden preload=auto video and HTTP-caches /api/clip", async () => {
+    const made: Array<{ preload: string; src: string; loadCalls: number; getAttribute: (k: string) => string | null }> = [];
+    const fetches: Array<{ url: string; cache?: RequestCache }> = [];
+    const fakeDoc = {
+      createElement(tag: string) {
+        if (tag !== "video") return { tagName: tag };
+        const attrs: Record<string, string> = {};
+        const el = {
+          muted: false,
+          defaultMuted: false,
+          playsInline: false,
+          preload: "",
+          src: "",
+          currentSrc: "",
+          readyState: 0,
+          style: { cssText: "" },
+          loadCalls: 0,
+          setAttribute(k: string, v: string) {
+            attrs[k] = v;
+          },
+          getAttribute(k: string) {
+            return k === "src" ? el.src || null : attrs[k] ?? null;
+          },
+          load() {
+            el.loadCalls += 1;
+            el.readyState = 2;
+          },
+        };
+        made.push(el);
+        return el;
+      },
+      body: { appendChild() {} },
+      documentElement: {},
+    };
+    const prevDoc = globalThis.document;
+    const prevFetch = globalThis.fetch;
+    Object.defineProperty(globalThis, "document", { value: fakeDoc, configurable: true, writable: true });
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetches.push({ url: String(input), cache: init?.cache });
+      return new Response(null, { status: 200 });
+    }) as typeof fetch;
+    try {
+      const src = playableClipSrc("https://imgen.x.ai/vid/bolt-stride.mp4?sig=1");
+      const a = warmClip(src);
+      const b = warmClip(src);
+      assert.equal(made.length, 1, "one persistent hidden video");
+      assert.equal(a, b);
+      assert.equal(a?.preload, "auto");
+      assert.equal(a?.getAttribute("data-warm-clip"), "1");
+      assert.equal(a?.src, src);
+      assert.equal((a as { loadCalls?: number } | null)?.loadCalls, 1);
+      assert.equal(warmedClip(src), a);
+      assert.equal(warmedClip("/ui/other.mp4"), null);
+      assert.ok(fetches.some((f) => f.url === src && f.cache === "force-cache"));
+    } finally {
+      Object.defineProperty(globalThis, "document", { value: prevDoc, configurable: true, writable: true });
+      globalThis.fetch = prevFetch;
+    }
+  });
+
   it("treats sealed identity refs as Bolt silhouettes, not hall plates", () => {
     assert.equal(isBoltSilhouette(BOLT_BODY), true);
     assert.equal(isBoltSilhouette(BOLT_FACE), true);
