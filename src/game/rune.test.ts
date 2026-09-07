@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HALL_LOOP, HALL_STILL, doorAtPoint, isHallFilm, stockDoorHits, stockRoomBank, stockStand } from "./stock-room.ts";
+import { HALL_LOOP, HALL_STILL, doorAtPoint, isHallFilm, isLivingHallLoop, stockDoorHits, stockRoomBank, stockStand } from "./stock-room.ts";
 import {
   biomeBotStart,
   claimLookForgeAuto,
@@ -58,6 +58,10 @@ describe("stock living room", () => {
     assert.equal(isHallFilm("/ui/citadel.jpg?v=aaa"), false);
     assert.equal(isHallFilm("/refs/hall-doors.jpg"), false);
     assert.equal(isHallFilm(""), false);
+    assert.equal(isLivingHallLoop(HALL_LOOP), true);
+    assert.equal(isLivingHallLoop("/ui/forge.mp4"), true);
+    assert.equal(isLivingHallLoop("/films/forge-forest.mp4"), false);
+    assert.equal(isLivingHallLoop("/films/cook-forest.jpg"), false);
   });
 
   it("stockRoomBank seeds breath plus both doors from spawn", () => {
@@ -372,6 +376,23 @@ describe("Imagine prompt rails", () => {
     assert.match(engine, /HangAskSheet/);
     assert.match(engine, /askLiveHang/);
     assert.doesNotMatch(engine, /onPointerUp=\{\(\) => beginRift\("m1"/);
+    assert.match(engine, /stayBiomePlay/);
+    assert.match(engine, /resolveHungEnter/);
+    assert.match(engine, /hungDoorReady/);
+    assert.match(engine, /goHungHall/);
+    assert.match(engine, /resolveDoorEnter/);
+    assert.match(engine, /sprintHold/);
+    assert.match(engine, /data-biome-stay/);
+    assert.match(engine, /holdDoor=/);
+    assert.match(engine, /if \(!sprintHold\.current\) playing\.current = false/);
+    assert.match(engine, /riftFilm\(stay\.name, stay\.still, stay\.clips\)/);
+    assert.doesNotMatch(engine, /stockTransUrl\(door\)\]/);
+    assert.match(stage, /hallDoorTap/);
+    assert.match(stage, /shouldHoldBiome/);
+    assert.match(stage, /holdBiomePlate/);
+    assert.match(stage, /stockBiomeLoop/);
+    assert.match(stage, /holdDoor/);
+    assert.match(stage, /isLivingHallLoop/);
   });
 
   it("Grok Bot Forge uses a LOCKed hall still/style, else sealed DEFAULT HALL", () => {

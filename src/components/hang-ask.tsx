@@ -71,11 +71,12 @@ export function HangAskSheet({
   rooms: HangRoomPick[];
   hall: number;
   onHall: (n: number) => void;
-  onConfirm: () => void;
+  onConfirm: (hall: number) => void;
   onClose: () => void;
 }) {
   const [armed, setArmed] = useState(false);
   const [held, setHeld] = useState(rooms);
+  const [picked, setPicked] = useState(hall);
   useEffect(() => {
     const release = swallowOpeningTap(HANG_LEFTOVER_SWALLOW_MS);
     const t = window.setTimeout(() => setArmed(true), HANG_CONFIRM_ARM_MS);
@@ -87,6 +88,9 @@ export function HangAskSheet({
   useEffect(() => {
     if (rooms.length >= held.length) setHeld(rooms);
   }, [rooms, held.length]);
+  useEffect(() => {
+    if (hall >= 1 && hall <= 8) setPicked(hall);
+  }, [hall]);
   const picks = held.length >= rooms.length ? held : rooms;
   return (
     <div
@@ -115,17 +119,24 @@ export function HangAskSheet({
       <p className="mt-5 mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[#9ef0e4]">
         {picks.length > 1 ? `${picks.length} rooms · tap one` : "one room · confirm to hang"}
       </p>
-      <HangRoomStrip rooms={picks} hall={hall} onHall={onHall} />
+      <HangRoomStrip
+        rooms={picks}
+        hall={picked}
+        onHall={(n) => {
+          setPicked(n);
+          onHall(n);
+        }}
+      />
       {armed ? (
         <button
           type="button"
           data-hang-confirm={door}
-          {...vaultHangRoom(hall)}
+          {...vaultHangRoom(picked)}
           className="mt-6 rounded-2xl border border-[#9ef0e4]/50 px-4 py-3 font-display text-2xl text-[#9ef0e4]"
           style={{ touchAction: "manipulation" }}
-          {...press(onConfirm)}
+          {...press(() => onConfirm(picked))}
         >
-          Hang {door} · room {hall}
+          Hang {door} · room {picked}
         </button>
       ) : (
         <p

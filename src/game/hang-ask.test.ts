@@ -1,5 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, swallowOpeningTap } from "./hang-ask.ts";
 
 function clickOn(target: { closest?: (sel: string) => unknown; getAttribute: (k: string) => string | null }) {
@@ -55,5 +58,28 @@ describe("hang ask leftover tap", () => {
     release();
     root.dispatch(clickOn(confirm));
     assert.deepEqual(hits, ["room", "confirm"]);
+  });
+
+  it("confirm passes the picked hall so Hang A room 2 does not bind room 1", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
+    assert.match(src, /onConfirm: \(hall: number\) => void/);
+    assert.match(src, /onConfirm\(picked\)/);
+    assert.match(src, /const \[picked, setPicked\]/);
+    const vault = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
+    assert.match(vault, /onConfirm=\{\(hall\) => \{/);
+    assert.match(vault, /hangDoor\(hangAsk\.a, hangAsk\.door, undefined, hall\)/);
+    const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    assert.match(engine, /onConfirm=\{\(hall\) => \{/);
+    assert.match(engine, /beginRift\(door, gateFromHung\(hangAsk\.a\), livingHangHall\(rooms, hall\)\)/);
+    assert.match(engine, /pickHangHall/);
+    assert.match(engine, /livingHangHall/);
+    assert.match(engine, /listHangRooms\(/);
+    assert.match(engine, /liveHangRooms/);
+    assert.match(engine, /const \[liveHall, setLiveHall\]/);
+    assert.doesNotMatch(engine, /const \[hallN,/);
+    assert.match(engine, /goHungHall/);
+    assert.match(engine, /hungDoorReady/);
+    assert.match(engine, /resolveHungEnter/);
   });
 });
