@@ -85,7 +85,8 @@ import {
   type RiftGate,
 } from "@/game/rune-session";
 import { BootScreen } from "@/components/citadel-hub";
-import { HangAskSheet, HangRoomStrip, swallowOpeningTap } from "@/components/hang-ask";
+import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
+import { swallowOpeningTap } from "@/game/hang-ask";
 import { defaultHangRoom, hallN, listHangRooms, liveSlice, putSlice, seedHalls, type HangRoomPick } from "@/game/rooms";
 import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
