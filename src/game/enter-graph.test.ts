@@ -18,6 +18,7 @@ import {
   hungBiomePlaylist,
   hungHallForDoor,
   hydrateRift,
+  latestHungOnDoor,
   inferBiome,
   latestHungHall,
   resolveDoorEnter,
@@ -53,7 +54,9 @@ import {
   cueFillShown,
   cueFillSide,
   cuePictureSpot,
+  holdStayBeats,
   paceAfterMiss,
+  scaleBeats,
   turnBeatsForRun,
 } from "./films.ts";
 
@@ -556,8 +559,55 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     assert.match(engine, /hungEnterBindHall\(\s*liveArt\?\.room\?\.hall,\s*hangRoomRef\.current/);
+    const playRift = engine.slice(engine.indexOf("async function playRift"), engine.indexOf("function refreshHung"));
+    assert.match(playRift, /stayArt \|\| \(gate\.art/);
     const stageSrc = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
     assert.match(stageSrc, /hungStageChrome\(holdHall, holdDoor, film\)/);
+  });
+
+  it("Hang Room 2 enter beats leftover hall-1 Asteroid rift — chrome is Room 2", () => {
+    const ast = hangArtifactOnDoor("art-ast-hold", "A", { hall: 1, citadel: "cit-2" }, [art("art-ast-hold", "asteroid")]);
+    const raw = hangArtifactOnDoor("art-h2-forest", "A", { hall: 2, citadel: "cit-2" }, [...ast, art("art-h2-forest", "forest")]);
+    const hung = raw.map((a) => (a.id === "art-h2-forest" ? { ...a, hungAt: 99 } : a.id === "art-ast-hold" ? { ...a, hungAt: 1 } : a));
+    assert.equal(latestHungOnDoor("A", hung)?.id, "art-h2-forest");
+    assert.equal(latestHungOnDoor("A", hung)?.room?.hall, 2);
+    const stale = {
+      m1: {
+        biome: "asteroid" as const,
+        name: "Asteroid",
+        still: biomeStill("asteroid"),
+        loop: "/films/forge-asteroid.mp4",
+        art: "art-ast-hold",
+      },
+    };
+    const leaked = resolveDoorEnter("A", 1, "cit-2", hung, stale);
+    assert.equal(leaked.kind, "biome");
+    if (leaked.kind === "biome") {
+      assert.equal(leaked.hall, 1);
+      assert.equal(leaked.biome, "asteroid");
+    }
+    const enter = resolveHungEnter("A", 1, "cit-2", hung, stale);
+    assert.equal(enter.kind, "biome");
+    if (enter.kind !== "biome") return;
+    assert.equal(enter.hall, 2);
+    assert.equal(enter.art, "art-h2-forest");
+    assert.equal(enter.biome, "forest");
+    assert.notEqual(enter.biome, "asteroid");
+    const chrome = hungPlayChrome(enter.hall, enter.door);
+    assert.equal(chrome.keeper, "Room 2 • Door A");
+    assert.notEqual(chrome.keeper, "Room 1 • Door A");
+    const stage = hungStageChrome(enter.hall, "A", { name: chrome.name, keeper: chrome.keeper, line: enter.name });
+    assert.equal(stage.title, "Room 2 • Door A");
+    assert.notEqual(stage.title, "Asteroid");
+    assert.notEqual(stage.title, "Room 1 • Door A");
+    const graph = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "./enter-graph.ts"), "utf8");
+    assert.match(graph, /latestHall >= 2 && hereHall <= 1/);
+    const holdAst = hangArtifactOnDoor("art-only-ast", "A", { hall: 1 }, [art("art-only-ast", "asteroid")]);
+    const onlyAst = resolveHungEnter("A", 1, "cit-2", holdAst, stale);
+    assert.equal(onlyAst.kind, "biome");
+    if (onlyAst.kind !== "biome") return;
+    assert.equal(onlyAst.hall, 1);
+    assert.equal(onlyAst.biome, "asteroid");
   });
 
   it("biome enter plays hung artefact MP4s continuously — no still thrash", () => {
@@ -626,7 +676,18 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(stage, /if \(holdDoorLoops\(holdDoorRef\.current\)\) \{\s*\n\s*restartHoldChart\(\)/);
     assert.match(stage, /if \(hold && t \+ 0\.45 < loopT\.current\) restartHoldChart\(\)/);
     assert.match(stage, /v\.currentTime = 0/);
+    assert.match(stage, /beats: holdStayBeats\(plate\)/);
+    assert.match(stage, /g\.streakMiss = 0/);
+    assert.match(stage, /Hung stay native-loops/);
+    assert.match(stage, /t >= v\.duration - 0\.45/);
     assert.doesNotMatch(stage, /if \(biomeQteQuiet\(holdDoorRef\.current\)\) return \[\]/);
+    const six = holdStayBeats(6).filter((b) => b.kind === "left" || b.kind === "right");
+    assert.equal(six.length, 2);
+    assert.ok(six.every((b) => b.at < 5.5));
+    const packed = scaleBeats({ chart: 15, beats: turnBeatsForRun([15]) } as Parameters<typeof scaleBeats>[0], 6).filter(
+      (b) => b.kind === "left" || b.kind === "right",
+    );
+    assert.ok(packed.length > six.length);
   });
 
   it("hung Door A/B first tap walks in the hall — second tap same door enters", () => {

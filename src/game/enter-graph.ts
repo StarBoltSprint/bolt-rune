@@ -250,6 +250,22 @@ export function latestHungHall(arts: HungArtifact[]): number {
   return n >= 1 && n <= 8 ? n : 0;
 }
 
+/** Latest hang on this letter with a real Room N — overlay / enter chrome source. */
+export function latestHungOnDoor(door: DoorLetter, arts: HungArtifact[]): HungArtifact | undefined {
+  return [...arts]
+    .filter((a) => a.room?.door === door && hungHallN(a.room?.hall))
+    .sort((p, q) => {
+      const dt = (q.hungAt || 0) - (p.hungAt || 0);
+      if (dt) return dt;
+      const qN = hungHallN(q.room?.hall);
+      const pN = hungHallN(p.room?.hall);
+      /* Same-tick Hang Room 2 must beat leftover Room 1 asteroid. */
+      if (pN >= 2 && qN <= 1) return -1;
+      if (qN >= 2 && pN <= 1) return 1;
+      return qN - pN;
+    })[0];
+}
+
 /** Enter the hung biome even if the living overlay is still on another hall. */
 export function resolveHungEnter(
   door: DoorLetter,
@@ -258,9 +274,16 @@ export function resolveHungEnter(
   arts: HungArtifact[],
   rift?: { m1?: RiftGate; m2?: RiftGate },
 ): DoorEnter {
+  const latestHall = hungHallN(latestHungOnDoor(door, arts)?.room?.hall);
   const here = stayBiomePlay(resolveDoorEnter(door, hall, citadel, arts, rift));
+  const hereHall = here.kind === "biome" ? hungHallN(here.hall) : 0;
+  /* Stale hall-1 asteroid rift / default must not beat Hang Room 2–8. */
+  if (latestHall >= 2 && hereHall <= 1) {
+    const hung = stayBiomePlay(resolveDoorEnter(door, latestHall, citadel, arts, {}));
+    if (hung.kind === "biome") return hung;
+  }
   if (here.kind === "biome") return here;
-  const want = hungHallForDoor(door, hall, arts);
+  const want = hungHallForDoor(door, hall, arts) || latestHall;
   if (want && want !== hall) return stayBiomePlay(resolveDoorEnter(door, want, citadel, arts, {}));
   return here;
 }

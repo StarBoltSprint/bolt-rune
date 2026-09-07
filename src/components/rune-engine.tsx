@@ -4654,14 +4654,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     riftCookTok.current += 1;
     swallowOpeningTap();
     const arts = readArtifacts();
-    const liveArt = gate.art ? arts.find((x) => x.id === gate.art) : null;
+    const enter = stayBiomePlay(
+      resolveHungEnter(doorLetterOf(door), hallHold.current, sid.current, arts, riftRef.current),
+    );
+    const stayArt = enter.kind === "biome" && enter.art ? arts.find((x) => x.id === enter.art) : null;
+    const liveArt = stayArt || (gate.art ? arts.find((x) => x.id === gate.art) : null);
     const liveGate = liveArt ? { ...gate, ...gateFromHung(liveArt), trans: gate.trans || liveArt.room?.trans } : gate;
     const restored = { ...riftRef.current, [door]: liveGate };
     riftRef.current = restored;
     setRift(restored);
-    const enter = stayBiomePlay(
-      resolveHungEnter(doorLetterOf(door), hallHold.current, sid.current, arts, restored),
-    );
     const stay =
       enter.kind === "biome"
         ? enter

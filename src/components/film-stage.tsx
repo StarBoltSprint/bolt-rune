@@ -8,6 +8,7 @@ import {
   PACE_MAX,
   PACE_MIN,
   paceAfterMiss,
+  holdStayBeats,
   prepareBeats,
   shardsOf,
   spotOf,
@@ -301,7 +302,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   function chartFor(duration: number, seed: number) {
     if (holdDoorRef.current) {
       const plate = duration > 1 ? duration : 15;
-      const one = { ...film, playlist: (film.playlist || []).slice(0, 1), chart: film.chart || plate };
+      const one = { ...film, playlist: (film.playlist || []).slice(0, 1), chart: plate, beats: holdStayBeats(plate) };
       return prepareBeats(one, plate, seed, original);
     }
     return prepareBeats(film, duration, seed, original);
@@ -314,6 +315,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.hits = 0;
     g.hold = 0;
     g.holding = false;
+    g.streakMiss = 0;
+    g.crashed = false;
   }
 
   /** Native-loop the hung plate. Seek 0 at the seam — never finish / Film fracture. */
@@ -612,7 +615,12 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         if (beat.kind === "hold" && g.hold >= beat.holdMs && Math.abs(t - beat.at) < beat.win) {
           judge(g, beat, Math.abs(t - beat.at));
         } else if (late && !advancing.current) {
-          if (hold && v && holdLoopSeam(v.ended, v.currentTime, v.duration)) {
+          if (
+            hold &&
+            v &&
+            (holdLoopSeam(v.ended, v.currentTime, v.duration) ||
+              (Number.isFinite(v.duration) && v.duration > 1 && t >= v.duration - 0.45))
+          ) {
             keepHoldLoop(v);
           } else if (biomeQteQuiet(holdDoorRef.current, hallQuiet) || hallQuiet) {
             g.resolved = true;
@@ -870,8 +878,12 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     window.setTimeout(() => setFlash(0), 120);
     if (g.streakMiss >= (film.lives ?? 3)) {
       const v = videoRef.current;
-      if (holdDoorLoops(holdDoorRef.current) && v && holdLoopSeam(v.ended, v.currentTime, v.duration)) {
+      if (holdDoorLoops(holdDoorRef.current)) {
+        /* Hung stay native-loops — FILM FRACTURE must not dump the biome. */
         keepHoldLoop(v);
+        g.streakMiss = 0;
+        g.crashed = false;
+        restartHoldChart();
         return;
       }
       g.crashed = true;

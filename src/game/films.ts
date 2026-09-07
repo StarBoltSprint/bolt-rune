@@ -426,6 +426,15 @@ export function scaleBeats(film: Film, duration: number): Beat[] {
   }));
 }
 
+/**
+ * Hung Door A/B stay chart: one native-loop plate.
+ * Never scale a 15s film chart into a ~6s clip (that MISS-storms FILM FRACTURE).
+ */
+export function holdStayBeats(duration: number): Beat[] {
+  const plate = duration > 1 ? duration : 15;
+  return turnBeatsForRun([plate]);
+}
+
 export function prepareBeats(film: Film, duration: number, seed: number, original = false): Beat[] {
   if (film.hazards && !original) {
     return buildCanyonChart(duration > 12 ? duration : film.chart, seed);
