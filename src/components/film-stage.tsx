@@ -19,7 +19,7 @@ import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
 import { playableClipSrc, stockBiomeLoop } from "@/game/play-clip";
 import { HazardLayer } from "@/components/hazard-layer";
-import { doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
+import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
 import { doorAtPoint, isHallFilm, isLivingHallLoop } from "@/game/stock-room";
 
 export type RunResult = {
@@ -278,6 +278,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     return laneRef.current === 0 ? bRef.current : aRef.current;
   }
 
+  function chartFor(duration: number, seed: number) {
+    if (biomeQteQuiet(holdDoorRef.current)) return [];
+    return prepareBeats(film, duration, seed, original);
+  }
+
   useEffect(() => {
     return () => stopScore();
   }, []);
@@ -301,7 +306,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   useEffect(() => {
     unlockAudio();
     const seed = (Math.random() * 0x7fffffff) | 0;
-    gRef.current = fresh(prepareBeats(film, film.chart, seed, original), seed, film.lives === 1 ? 0 : film.hazards ? 4 : 3, ramp);
+    gRef.current = fresh(chartFor(film.chart, seed), seed, film.lives === 1 ? 0 : film.hazards ? 4 : 3, ramp);
     gRef.current.charted = false;
     doneSent.current = false;
     offsetRef.current = 0;
@@ -356,7 +361,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       a.addEventListener("loadedmetadata", () => {
         if (a.duration > 1) {
           const g = gRef.current;
-          g.beats = prepareBeats(film, a.duration, g.seed, original);
+          g.beats = chartFor(a.duration, g.seed);
           g.charted = true;
           g.i = 0;
         }
@@ -467,7 +472,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       } else if (v) {
         t = clock();
         if (v.duration && !g.charted && v.duration > 1) {
-          g.beats = prepareBeats(film, v.duration, g.seed, original);
+          g.beats = chartFor(v.duration, g.seed);
           g.charted = true;
         }
         const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
@@ -537,7 +542,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         if (beat.kind === "hold" && g.hold >= beat.holdMs && Math.abs(t - beat.at) < beat.win) {
           judge(g, beat, Math.abs(t - beat.at));
         } else if (late && !advancing.current) {
-          if (hallPlateNow()) {
+          if (biomeQteQuiet(holdDoorRef.current) || hallPlateNow()) {
             g.resolved = true;
             advance(g);
           } else if (t - beat.at > 1.35) {
@@ -744,6 +749,12 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   }
 
   function miss(g: G, beat: Beat) {
+    if (biomeQteQuiet(holdDoorRef.current) || hallPlateNow()) {
+      if (g.resolved) return;
+      g.resolved = true;
+      advance(g);
+      return;
+    }
     if (g.resolved) return;
     g.resolved = true;
     g.miss += 1;
@@ -826,6 +837,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   }
 
   function tryHallDoor(clientX: number, clientY: number) {
+    if (biomeQteQuiet(holdDoorRef.current)) return true;
     if (!hallPlateNow()) return false;
     const box = wrapRef.current?.getBoundingClientRect();
     if (!box) return true;
@@ -880,7 +892,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
 
   function tryHit(nx?: number, ny?: number, swipe?: Lane) {
     const g = gRef.current;
-    if (hallPlateNow()) return;
+    if (biomeQteQuiet(holdDoorRef.current) || hallPlateNow()) return;
     if (phaseRef.current !== "run" || g.crashed) return;
     const v = videoRef.current;
     const t = clock();
@@ -919,7 +931,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
 
   function hitArrow(lane: Lane) {
     const g = gRef.current;
-    if (hallPlateNow()) return;
+    if (biomeQteQuiet(holdDoorRef.current) || hallPlateNow()) return;
     if (phaseRef.current !== "run" || g.crashed) return;
     const v = videoRef.current;
     const t = clock();
@@ -965,6 +977,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       onExit();
       return;
     }
+    if (biomeQteQuiet(holdDoorRef.current)) return;
     if (e.code === "KeyR") {
       e.preventDefault();
       rewind();
@@ -1060,6 +1073,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       className="relative h-dvh w-full overflow-hidden bg-bg text-fg select-none"
       data-sprint={ramp ? "1" : undefined}
       data-ramp={ramp ? "1" : undefined}
+      data-qte={biomeQteQuiet(holdDoor) ? "off" : undefined}
+      data-biome-quiet={biomeQteQuiet(holdDoor) ? "1" : undefined}
       data-biome-plate={holdDoor ? (usingStill || !live ? "still" : "clip") : undefined}
       style={{ touchAction: film.pad === "arrows" ? "none" : "manipulation" }}
       onPointerDown={pointerDown}
@@ -1240,8 +1255,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         </div>
       ))}
 
-      {phase === "run" && film.hazards && !original && (
-        <HazardLayer
+      {phase === "run" && film.hazards && !original && !holdDoor && (
+        <HazardLayer>
           beats={gRef.current.beats}
           getClock={() => {
             const g = gRef.current;
@@ -1264,14 +1279,14 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           }}
         />
       )}
-      {phase === "run" && film.pad === "arrows" && <CutWash beat={nowBeat ?? undefined} t={hud.t} />}
-      {phase === "run" && (
+      {phase === "run" && film.pad === "arrows" && !holdDoor && <CutWash beat={nowBeat ?? undefined} t={hud.t} />}
+      {phase === "run" && !holdDoor && (
         <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-40 pb-[max(0.55rem,env(safe-area-inset-bottom))]">
           <Resonance value={hud.resonance} />
         </div>
       )}
-      {phase === "run" && !(film.hazards && !original) && film.pad !== "arrows" && (
-        <Marks
+      {phase === "run" && !(film.hazards && !original) && film.pad !== "arrows" && !holdDoor && (
+        <Marks>
           beats={gRef.current.beats}
           index={hud.i}
           t={hud.t}
@@ -1346,7 +1361,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
             g.i = 0;
             g.resolved = false;
             if (!g.charted) {
-              g.beats = prepareBeats(film, v?.duration || film.chart, g.seed, original);
+              g.beats = chartFor(v?.duration || film.chart, g.seed);
               g.charted = true;
             }
             if (v) {
@@ -1422,7 +1437,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
                 e.stopPropagation();
                 const seed = (Math.random() * 0x7fffffff) | 0;
                 const v = videoRef.current;
-                gRef.current = fresh(prepareBeats(film, v?.duration || film.chart, seed, original), seed, 0, ramp);
+                gRef.current = fresh(chartFor(v?.duration || film.chart, seed), seed, 0, ramp);
                 gRef.current.charted = true;
                 doneSent.current = false;
                 setUsingStill(false);

@@ -1,5 +1,7 @@
 import type { Film, Grade } from "./films";
-import { biomeSprintFilm, cookFilm } from "./cook";
+import { hungPlayChrome } from "./enter-graph";
+import { biomeSprintFilm, cookFilm, quietBiomeFilm } from "./cook";
+import { isHallFilm, isLivingHallLoop } from "./stock-room";
 
 const KEY = "bolt-artifacts-v1";
 const MEM = "bolt-artifacts-mem-v1";
@@ -88,12 +90,21 @@ export function packRoom(room?: HungRoom | null): HungRoom | null | undefined {
 export function filmOf(a: HungArtifact, all?: HungArtifact[]): Film {
   const other = (all || []).find((x) => x.id === a.id);
   const room = a.room || other?.room;
-  const clips = uniqueClips([room?.trans, ...(a.playlist || []), ...(other?.playlist || [])].filter(Boolean) as string[]);
-  const still = a.still || other?.still || clips[0] || "";
+  const raw = uniqueClips([room?.trans, ...(a.playlist || []), ...(other?.playlist || [])].filter(Boolean) as string[]);
+  const clips = raw.filter((u) => u && !isLivingHallLoop(u) && !isHallFilm(u));
+  const stillRaw = a.still || other?.still || "";
+  const still = stillRaw && !isHallFilm(stillRaw) && !isLivingHallLoop(stillRaw) ? stillRaw : "";
   const name = a.name || other?.name || "Artifact";
   const prompt = a.prompt || other?.prompt;
-  if (room?.door) return biomeSprintFilm(name, still, clips, prompt);
-  return cookFilm(name, still, clips, prompt);
+  if (room?.door) {
+    const chrome = hungPlayChrome(room.hall || 1, room.door);
+    return quietBiomeFilm({
+      ...biomeSprintFilm(chrome.name, still || clips[0] || "", clips, prompt || name),
+      name: chrome.name,
+      keeper: chrome.keeper,
+    });
+  }
+  return cookFilm(name, still, clips.length ? clips : raw, prompt);
 }
 
 const CLIP_MAP: Record<string, string> = {

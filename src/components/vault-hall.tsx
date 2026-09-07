@@ -433,15 +433,13 @@ export function VaultHall() {
         id="sprint"
         original={false}
         custom={film}
-        onHallDoor={(letter) => {
-          const hall = live.room?.hall || hangHallRef.current || 1;
-          const first = letter === "B" ? "m2" : "m1";
-          setPlay(null);
-          window.location.href = `/rune?first=${first}&drive=engine&rooms=${Math.max(2, hall)}&hall=${hall}&stills=0`;
+        holdDoor={live.room?.door === "B" ? "B" : live.room?.door === "A" ? "A" : undefined}
+        onHallDoor={() => {
+          /* hung biome stay — Leave exits */
         }}
         onExit={() => setPlay(null)}
         onDone={() => {
-          /* keep the grade on screen — Leave goes back to the vault */
+          /* stay on biome — Leave calls onExit */
         }}
       />
     );
@@ -566,7 +564,7 @@ export function VaultHall() {
                   >
                     <p className="font-display text-xl text-ice">{f.name}</p>
                     <p className={`mt-1 font-mono text-[9px] uppercase tracking-[0.16em] ${hungOn ? "text-[#9ef0e4]" : "text-white/35"}`}>
-                      {hungOn ? `room ${roomN} · door ${hungOn}` : "not on a door"}
+                      {hungOn ? `Room ${roomN} • Door ${hungOn} Play Sprint` : "not on a door"}
                     </p>
                     <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/40">
                       {n > 1 ? `play all · ${n} clips` : n === 1 ? "play sprint" : "still only · no video yet"}

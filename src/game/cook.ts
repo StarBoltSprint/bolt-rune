@@ -1,3 +1,4 @@
+import { hungPlayChrome } from "./enter-graph";
 import { b, turnBeatsForRun, turnCue, type Beat, type Film } from "./films";
 import { ENGINE } from "./laws";
 
@@ -392,6 +393,16 @@ export function riftBeats(): Beat[] {
   ];
 }
 
+/** Hung biome stay: no QTE chart, so leftover door taps cannot MISS. */
+export function quietBiomeFilm(film: Film): Film {
+  return {
+    ...film,
+    beats: [],
+    pad: undefined,
+    lives: 1,
+  };
+}
+
 function filmFromPlates(name: string, still: string, plates: string[], prompt?: string): Film {
   const src = plates[0] ?? "";
   const each = 15;
@@ -435,8 +446,17 @@ export function stockBiomeFilm(id: BiomeId): Film {
   return biomeSprintFilm(hit.name, hit.still, biomePlaylist(hit.id), hit.world);
 }
 
-export function riftFilm(name: string, still: string, urls: string[]): Film {
-  return biomeSprintFilm(name, still, urls, name);
+export function riftFilm(
+  name: string,
+  still: string,
+  urls: string[],
+  hall?: number,
+  door?: "A" | "B" | "m1" | "m2",
+): Film {
+  const film = biomeSprintFilm(name, still, urls, name);
+  if (!hall) return film;
+  const chrome = hungPlayChrome(hall, door);
+  return quietBiomeFilm({ ...film, name: chrome.name, keeper: chrome.keeper, line: name || chrome.name });
 }
 
 export function cookFilm(name: string, still: string, urls: string[], prompt?: string): Film {
