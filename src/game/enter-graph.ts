@@ -223,7 +223,11 @@ export function hydrateRift(
       next[door] = { ...next[door], ...gateFromHung(a), trans: next[door]?.trans || room.trans };
       continue;
     }
-    if (next[door]) continue;
+    if (next[door]) {
+      const prev = arts.find((x) => x.id === next[door]?.art);
+      if (prev?.room && hallMatches(prev.room, hall)) continue;
+      /* Stale last-hung / other-hall gate — Hang Room N on this hall wins. */
+    }
     next[door] = gateFromHung(a);
   }
   return next;
@@ -282,7 +286,7 @@ export function resolveDoorEnter(
   return {
     kind: "biome",
     door,
-    hall: hungEnterBindHall(bound, hall, 0) || hungHallN(hall) || hall,
+    hall: bound || hungHallN(hall) || hall,
     citadel: citadel || undefined,
     art: gate.art || "",
     biome,
@@ -335,7 +339,8 @@ export function hungHallN(v?: number | string | null): number {
 
 /**
  * Biome enter / FilmStage chrome hall.
- * Hung bind Room N wins. Living default / hallHold 1 never overrides Room 2+.
+ * Hang Room N / enter hall 2–8 win over last-hung art.room.hall (Room 3/8 leak).
+ * Living default / hallHold 1 never overrides a Room 2+ hang or artefact bind.
  */
 export function hungEnterBindHall(
   artHall?: number | string | null,
@@ -345,8 +350,10 @@ export function hungEnterBindHall(
   const art = hungHallN(artHall);
   const enter = hungHallN(enterHall);
   const hang = hungHallN(hangRoom);
-  const bound = [art, enter, hang].find((n) => n >= 2);
-  return bound || art || enter || hang || 0;
+  const now = [hang, enter].find((n) => n >= 2);
+  if (now) return now;
+  if (art >= 2) return art;
+  return hang || enter || art || 0;
 }
 
 /** Living-hall / FilmStage overlay after Hang Room N — never stuck on Room 1. Door letter is never blank. */
@@ -425,7 +432,9 @@ export function hungStageChrome(
   film?: { name?: string; keeper?: string; line?: string } | null,
 ): { title: string; play: string; biome: string } {
   const fromKeeper = ROOM_DOOR.exec(String(film?.keeper || ""));
-  const n = hungEnterBindHall(fromKeeper ? Number(fromKeeper[1]) : 0, hall, 0) || hungHallN(hall);
+  const hold = hungHallN(hall);
+  const keepN = fromKeeper ? Number(fromKeeper[1]) : 0;
+  const n = (hold >= 2 ? hold : 0) || hungEnterBindHall(keepN, hall, 0) || hold || keepN;
   const chrome = n
     ? hungPlayChrome(n, door || fromKeeper?.[2] || "A")
     : fromKeeper
