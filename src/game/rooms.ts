@@ -301,27 +301,60 @@ export function unbindDroppedHalls<T extends { room?: { citadel?: string; hall?:
   });
 }
 
+function citadelId(v?: string | null): string {
+  return String(v || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+}
+
+function loadPacks(rows: RuneSessionMeta[] = []): CitadelPack[] {
+  /* Load drop must see every Load card — not only Hang’s living (non-biome) set. */
+  return packCitadels(rows);
+}
+
+function purgeCitadelRows(rows: RuneSessionMeta[], id: string): RuneSessionMeta[] {
+  if (!id) return rows;
+  return rows.filter((s) => s.id !== id && s.from !== id && rootOf(s.id, rows) !== id);
+}
+
+/** Erase every hall of a Load citadel. Hang picker loses the card; hung doors unbind. */
+export function dropCitadelAll(
+  rows: RuneSessionMeta[] = [],
+  citadel?: string | null,
+): { rows: RuneSessionMeta[]; drop: LoadRoomDrop } {
+  const id = citadelId(citadel);
+  const empty = { citadel: id, hall: 0, gone: false, remaining: 0, remap: [] as Array<[number, number]> };
+  if (!id) return { rows, drop: empty };
+  const pack = packForId(loadPacks(rows), id);
+  const goneId = pack?.root.id || id;
+  return {
+    rows: purgeCitadelRows(rows, goneId),
+    drop: { citadel: goneId, hall: 0, gone: true, remaining: 0, remap: [] },
+  };
+}
+
 /** Drop hall N from a Load citadel. Compacts remaining halls 1..k. Last room removes the citadel. */
 export function dropCitadelHall(
   rows: RuneSessionMeta[] = [],
   citadel?: string | null,
   hall?: number | string | null,
 ): { rows: RuneSessionMeta[]; drop: LoadRoomDrop } {
-  const id = String(citadel || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+  const id = citadelId(citadel);
+  const all = hall === "all" || hall === "*" || hall === "citadel";
+  if (all || !hallN(hall)) return dropCitadelAll(rows, id);
   const n = hallN(hall);
   const empty = { citadel: id, hall: n, gone: false, remaining: 0, remap: [] as Array<[number, number]> };
   if (!id || !n) return { rows, drop: empty };
-  const packs = livingLoadPacks(rows);
-  const pack = packForId(packs, id);
-  if (!pack) return { rows, drop: empty };
+  const pack = packForId(loadPacks(rows), id);
+  if (!pack) {
+    /* Unknown / catalog-only id — still purge so drop? cannot no-op. */
+    return dropCitadelAll(rows, id);
+  }
   const halls = packHalls(pack);
   const count = Math.max(1, Math.min(8, pack.rooms.length || halls.length || 1));
   const hit = halls.includes(n) || n <= count;
   if (!hit) return { rows, drop: { ...empty, citadel: pack.root.id, remaining: count } };
   if (count <= 1) {
     const goneId = pack.root.id;
-    const next = rows.filter((s) => s.id !== goneId && s.from !== goneId && rootOf(s.id, rows) !== goneId);
-    return { rows: next, drop: { citadel: goneId, hall: n, gone: true, remaining: 0, remap: [] } };
+    return { rows: purgeCitadelRows(rows, goneId), drop: { citadel: goneId, hall: n, gone: true, remaining: 0, remap: [] } };
   }
   const remaining = count - 1;
   const remap: Array<[number, number]> = [];

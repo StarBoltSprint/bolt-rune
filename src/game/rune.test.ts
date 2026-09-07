@@ -371,11 +371,17 @@ describe("Imagine prompt rails", () => {
     assert.match(hub, /dropLoadRoom/);
     assert.match(hub, /onDrop/);
     assert.match(hub, /dropArm/);
+    assert.match(hub, /dropKind="citadel"/);
+    assert.match(hub, /dropShown\(pack, "all"\)/);
     assert.match(ask, /data-load-drop/);
     assert.match(ask, /drop\?/);
+    assert.match(ask, /erase all\?/);
+    assert.match(ask, /drop citadel/);
     assert.match(readFileSync(join(here, "./rooms.ts"), "utf8"), /export function dropCitadelHall/);
+    assert.match(readFileSync(join(here, "./rooms.ts"), "utf8"), /export function dropCitadelAll/);
     assert.match(readFileSync(join(here, "./artifacts.ts"), "utf8"), /export function unbindDroppedHalls/);
     assert.match(readFileSync(join(here, "./rune-session.ts"), "utf8"), /export async function dropLoadRoom/);
+    assert.match(readFileSync(join(here, "./rune-session.ts"), "utf8"), /export async function dropLoadCitadel/);
     assert.match(readFileSync(join(here, "./hang-ask.ts"), "utf8"), /writeHangFloor/);
     assert.doesNotMatch(src, /stockBiomeFilm\("asteroid"\)[\s\S]{0,80}hangDoor\(/);
     assert.match(readFileSync(join(here, "./rooms.ts"), "utf8"), /livingLoadPacks/);
