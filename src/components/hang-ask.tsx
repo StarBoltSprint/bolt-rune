@@ -97,6 +97,8 @@ function StillStage({
   onPrev,
   onLock,
   onBack,
+  onDrop,
+  dropArmed,
   disabled,
   kind,
   lockAttr,
@@ -110,6 +112,8 @@ function StillStage({
   onPrev: () => void;
   onLock: () => void;
   onBack: () => void;
+  onDrop?: () => void;
+  dropArmed?: boolean;
   disabled?: boolean;
   kind: "citadel" | "room" | "load" | "vault";
   lockAttr?: Record<string, string | number | undefined>;
@@ -181,6 +185,25 @@ function StillStage({
       >
         ×
       </button>
+      {onDrop ? (
+        <button
+          type="button"
+          aria-label={dropArmed ? "confirm drop" : "drop room"}
+          data-load-drop=""
+          data-load-drop-arm={dropArmed ? "1" : "0"}
+          className={`absolute right-5 top-[max(1.2rem,env(safe-area-inset-top))] z-10 font-mono text-[11px] uppercase tracking-[0.22em] ${
+            dropArmed ? "text-danger" : "text-white/55"
+          }`}
+          style={{ touchAction: "manipulation" }}
+          onPointerDown={(e) => e.stopPropagation()}
+          {...press(() => {
+            if (disabled) return;
+            onDrop();
+          })}
+        >
+          {dropArmed ? "drop?" : "drop"}
+        </button>
+      ) : null}
       {title || actions || n > 1 ? (
         <StillActions title={title} count={n} index={i}>
           {actions}
@@ -368,6 +391,8 @@ export function StillCarousel({
   onPrev,
   onLock,
   onBack,
+  onDrop,
+  dropArmed,
   disabled,
   kind,
   title,
@@ -380,6 +405,8 @@ export function StillCarousel({
   onPrev: () => void;
   onLock: () => void;
   onBack: () => void;
+  onDrop?: () => void;
+  dropArmed?: boolean;
   disabled?: boolean;
   kind: "load" | "vault";
   title?: string;
@@ -394,6 +421,8 @@ export function StillCarousel({
       onPrev={onPrev}
       onLock={onLock}
       onBack={onBack}
+      onDrop={onDrop}
+      dropArmed={dropArmed}
       disabled={disabled}
       kind={kind}
       title={title}
@@ -458,6 +487,16 @@ export function HangAskSheet({
     const same = rooms[0]?.citadel && held[0]?.citadel && rooms[0].citadel === held[0].citadel;
     if (!same && rooms.length) {
       setHeld(rooms);
+      return;
+    }
+    /* Load drop shrinks the same citadel — do not keep orphan Room N. */
+    if (same && rooms.length < held.length) {
+      setHeld(rooms);
+      if (!rooms.some((r) => r.hall === pickedRef.current)) {
+        const next = hangCardHall(hall) || rooms[0]?.hall || 1;
+        pickedRef.current = next;
+        setPicked(next);
+      }
       return;
     }
     if (rooms.length >= held.length) setHeld(rooms);

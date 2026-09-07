@@ -239,6 +239,20 @@ describe("enter graph · hang any artefact on any door", () => {
     assert.deepEqual(enter, { kind: "hall", door: "A", hall: 1 });
   });
 
+  it("dropping a Load room clears the hang bind — door is a hall again", () => {
+    const id = "art-drop-3";
+    const hung = hangArtifactOnDoor(id, "A", { hall: 3, citadel: "cit-1" }, [art(id)]);
+    assert.equal(resolveDoorEnter("A", 3, "cit-1", hung).kind, "biome");
+    const cleared = hung.map((a) => (a.id === id ? { ...a, room: null } : a));
+    const enter = resolveDoorEnter("A", 3, "cit-1", cleared);
+    assert.equal(enter.kind, "hall");
+    assert.equal(enter.hall, 3);
+    assert.equal(latestHungHall(cleared), 0);
+    assert.equal(hungHallForDoor("A", 3, cleared), 0);
+    const jump = resolveHungEnter("A", 3, "cit-1", cleared);
+    assert.equal(jump.kind, "hall");
+  });
+
   it("stock biome playlist keeps forge loops", () => {
     assert.ok(stockBiomePlaylist("asteroid").includes("/films/forge-asteroid.mp4"));
     assert.equal(biomeStill("asteroid"), "/films/cook-asteroid.jpg");

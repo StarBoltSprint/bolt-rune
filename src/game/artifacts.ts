@@ -2,6 +2,7 @@ import type { Film, Grade } from "./films";
 import { hungPlayChrome } from "./enter-graph.ts";
 import { biomeSprintFilm, cookFilm, quietBiomeFilm } from "./cook";
 import { isHallFilm, isLivingHallLoop } from "./stock-room";
+import { unbindDroppedHalls as applyUnbind } from "./rooms.ts";
 
 const KEY = "bolt-artifacts-v1";
 const MEM = "bolt-artifacts-mem-v1";
@@ -276,6 +277,20 @@ export function dropRoom(id: string, from?: HungArtifact[]): HungArtifact[] {
   const src = from?.length ? from : RAM.length ? RAM : readArtifacts();
   if (!src.some((a) => a.id === id)) return src;
   return write(src.map((a) => (a.id === id ? { ...a, room: null, hungAt: Date.now() } : a)));
+}
+
+/** Persist hang unbinds after a Load room drop. */
+export function unbindDroppedHalls(
+  arts: HungArtifact[] = [],
+  citadel: string,
+  hall: number | "all",
+  remap: Array<[number, number]> = [],
+): HungArtifact[] {
+  const src = arts.length ? arts : RAM.length ? RAM : readArtifacts();
+  if (!src.length) return src;
+  const now = Date.now();
+  const next = applyUnbind(src, citadel, hall, remap);
+  return write(next.map((a, i) => (a.room === src[i]?.room ? a : { ...a, hungAt: now })));
 }
 
 export function setPlaylist(id: string, urls: string[], extra?: Partial<Pick<HungArtifact, "still" | "prompt" | "name">>, from?: HungArtifact[]): HungArtifact[] {

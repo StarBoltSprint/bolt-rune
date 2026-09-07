@@ -1,5 +1,7 @@
 import type { RuneNode, WalkSecs } from "@/game/rune";
-import { livingLoadPacks, loadHangHallCount } from "@/game/rooms.ts";
+import { dropCitadelHall, hallN, livingLoadPacks, loadHangHallCount, type LoadRoomDrop } from "@/game/rooms.ts";
+import { unbindDroppedHalls } from "@/game/artifacts.ts";
+import { dropHangPending, writeHangFloor } from "@/game/hang-ask.ts";
 import { dropCitadel, getCitadel, getGuestCitadel, listCitadels, listGuestCitadels, putCitadel, putGuestCitadel } from "@/lib/citadel-cloud";
 
 const DB = "bolt-rune-sessions";
@@ -477,8 +479,9 @@ export function listSessions(): RuneSessionMeta[] {
     for (const s of readMem()) put(s);
     for (const s of readStore()) put(s);
     const last = lastPlay();
-    if (last?.id) {
+    if (last?.id && !loadCitadelGone(last.id)) {
       const cur = byId.get(last.id);
+      const rooms = loadRoomCap(last.id);
       if (!cur) {
         put({
           id: last.id,
@@ -489,25 +492,129 @@ export function listSessions(): RuneSessionMeta[] {
           want: 2,
           walks: 0,
           thumb: "/refs/hall-doors.jpg",
-          rooms: last.rooms,
+          rooms: rooms ?? last.rooms,
           hall: last.hall,
         });
       } else {
         byId.set(last.id, {
           ...cur,
-          rooms: keepRooms(cur.rooms, last.rooms),
+          rooms: rooms ?? keepRooms(cur.rooms, last.rooms),
           hall: cur.hall || last.hall,
           title: cur.title || last.title,
         });
       }
     }
-    return [...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 48);
+    return [...byId.values()]
+      .map((s) => clampDroppedMeta(s))
+      .filter((s): s is RuneSessionMeta => Boolean(s))
+      .sort((a, b) => (b.updated || 0) - (a.updated || 0))
+      .slice(0, 48);
   } catch {
     return [];
   }
 }
 
 const LAST = "bolt-last-play";
+const DROP = "bolt-load-drop-v1";
+export const LOAD_DROP_EVENT = "bolt-load-drop";
+
+type LoadDropMark = {
+  id: string;
+  rooms: number;
+  at: number;
+  gone?: boolean;
+};
+
+function readDrops(): LoadDropMark[] {
+  try {
+    const raw =
+      (typeof localStorage !== "undefined" ? localStorage.getItem(DROP) : null) ||
+      (typeof sessionStorage !== "undefined" ? sessionStorage.getItem(DROP) : null);
+    if (!raw) return [];
+    const rows = JSON.parse(raw) as LoadDropMark[];
+    return Array.isArray(rows) ? rows.filter((d) => d?.id) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeDrops(rows: LoadDropMark[]) {
+  const raw = JSON.stringify(rows.slice(0, 48));
+  try {
+    localStorage.setItem(DROP, raw);
+  } catch {
+    /* */
+  }
+  try {
+    sessionStorage.setItem(DROP, raw);
+  } catch {
+    /* */
+  }
+}
+
+function dropMarkOf(id?: string): LoadDropMark | undefined {
+  if (!id) return undefined;
+  return readDrops().find((d) => d.id === id);
+}
+
+function writeDropMark(mark: LoadDropMark) {
+  writeDrops([mark, ...readDrops().filter((d) => d.id !== mark.id)]);
+}
+
+function clearDropMark(id: string) {
+  writeDrops(readDrops().filter((d) => d.id !== id));
+}
+
+function clampHints(hints: RuneSessionMeta["hallHints"], rooms: number): RuneSessionMeta["hallHints"] {
+  const n = Math.max(1, Math.min(8, rooms));
+  const rows = (hints || [])
+    .map((h, i) => ({ n: Math.max(1, Math.min(8, Number(h.n) || Number(h.hall) || i + 1)), still: h.still || "" }))
+    .filter((h) => h.n <= n);
+  if (rows.length) return rows.slice(0, n);
+  return Array.from({ length: n }, (_, i) => ({ n: i + 1, still: "" }));
+}
+
+function clampDroppedMeta(s: RuneSessionMeta): RuneSessionMeta | null {
+  const d = dropMarkOf(s.id) || (s.from ? dropMarkOf(s.from) : undefined);
+  if (!d) return s;
+  if (d.gone) {
+    if ((s.updated || 0) > d.at) {
+      clearDropMark(d.id);
+      return s;
+    }
+    return null;
+  }
+  const cap = roomCap(s) || s.rooms || 0;
+  if ((s.updated || 0) > d.at && cap > d.rooms) {
+    clearDropMark(d.id);
+    return s;
+  }
+  if (cap <= d.rooms && (s.hallHints?.length || 0) <= d.rooms) return s;
+  return {
+    ...s,
+    rooms: d.rooms,
+    hall: Math.min(s.hall || 1, Math.max(1, d.rooms)),
+    hallHints: clampHints(s.hallHints, d.rooms),
+  };
+}
+
+export function loadRoomCap(id?: string): number | undefined {
+  const d = dropMarkOf(id);
+  if (!d || d.gone) return d?.gone ? 0 : undefined;
+  return d.rooms;
+}
+
+export function loadCitadelGone(id?: string): boolean {
+  return Boolean(dropMarkOf(id)?.gone);
+}
+
+export function notifyLoadDrop() {
+  try {
+    if (typeof window !== "undefined") window.dispatchEvent(new Event(LOAD_DROP_EVENT));
+  } catch {
+    /* */
+  }
+}
 
 /** Halls persisted on one citadel — Vault hang picker reads these, not only catalog rooms=1. */
 export function listStoredHallHints(citadel?: string): { hall: number; still: string; name: string }[] {
@@ -526,18 +633,21 @@ export function listStoredHallHints(citadel?: string): { hall: number; still: st
       for (const h of slices) put(Math.max(1, h.n || 1), h.still || s.thumb || "", `Room ${h.n || 1}`);
     }
     // rooms / halls[] are the saved set — current hall number must not invent Room 3–8.
-    const cap = Math.max(s.rooms || 0, slices.length);
+    const dropCap = loadRoomCap(want) ?? loadRoomCap((s as { id?: string }).id);
+    const cap = Math.min(dropCap ?? 8, Math.max(s.rooms || 0, slices.length));
     for (let i = 1; i <= cap && i <= 8; i++) {
       put(i, i === (s.hall || 1) ? s.thumb || s.plate || "" : "", `Room ${i}`);
     }
   };
-  for (const s of readMem()) if (match(s)) fill(s);
-  for (const s of readStore()) if (match(s)) fill(s);
-  for (const s of readCatalog()) if (match(s)) fill(s);
+  if (want && loadCitadelGone(want)) return [];
+  for (const s of readMem()) if (match(s) && !loadCitadelGone(s.id)) fill(s);
+  for (const s of readStore()) if (match(s) && !loadCitadelGone(s.id)) fill(s);
+  for (const s of readCatalog()) if (match(s) && !loadCitadelGone(s.id)) fill(s);
   const last = lastPlay();
-  if (!want || last?.id === want) {
-    if (last?.rooms) fill({ rooms: last.rooms });
-    else if (last?.hall) put(last.hall, "", `Room ${last.hall}`);
+  if (last?.id && !loadCitadelGone(last.id) && (!want || last.id === want)) {
+    const rooms = loadRoomCap(last.id) ?? last.rooms;
+    if (rooms) fill({ rooms });
+    else if (last.hall && (!loadRoomCap(last.id) || last.hall <= (loadRoomCap(last.id) || 8))) put(last.hall, "", `Room ${last.hall}`);
   }
   return out.sort((a, b) => a.hall - b.hall);
 }
@@ -549,9 +659,27 @@ export function lastPlay(): { id: string; title?: string; hall?: number; rooms?:
       (typeof sessionStorage !== "undefined" ? sessionStorage.getItem(LAST) : null);
     if (!raw) return null;
     const v = JSON.parse(raw) as { id?: string; title?: string; hall?: number; rooms?: number };
-    return v?.id ? { id: v.id, title: v.title, hall: v.hall, rooms: v.rooms } : null;
+    if (!v?.id) return null;
+    if (loadCitadelGone(v.id)) return null;
+    const cap = loadRoomCap(v.id);
+    const rooms = cap != null ? Math.min(cap, v.rooms || cap) : v.rooms;
+    const hall = v.hall && cap != null ? Math.min(v.hall, cap) : v.hall;
+    return { id: v.id, title: v.title, hall, rooms };
   } catch {
     return null;
+  }
+}
+
+export function clearLastPlay() {
+  try {
+    localStorage.removeItem(LAST);
+  } catch {
+    /* */
+  }
+  try {
+    sessionStorage.removeItem(LAST);
+  } catch {
+    /* */
   }
 }
 
@@ -750,14 +878,29 @@ export function saveSessionSync(session: RuneSession): RuneSessionMeta {
     next: packed.next || kept.next,
     from: packed.from || kept.from,
     via: packed.via || kept.via,
-    rooms: roomCap({ rooms: keepRooms(packed.rooms, kept.rooms), hall: packed.hall || kept.hall, halls: (packed.halls?.length || 0) >= (kept.halls?.length || 0) ? packed.halls : kept.halls }),
+    rooms: roomCap({
+      rooms: keepRooms(packed.rooms, kept.rooms),
+      hall: packed.hall || kept.hall,
+      halls: (packed.halls?.length || 0) >= (kept.halls?.length || 0) ? packed.halls : kept.halls,
+    }),
     hall: packed.hall || kept.hall,
     title: packed.title || kept.title,
     halls: (packed.halls?.length || 0) >= (kept.halls?.length || 0) ? packed.halls : kept.halls,
     updated: Math.max(packed.updated || 0, kept.updated || 0, Date.now()),
   };
   merged.rooms = roomCap(merged);
-  const meta = metaOf(merged);
+  const clamped = clampDroppedMeta(metaOf(merged));
+  if (clamped) {
+    merged.rooms = clamped.rooms;
+    merged.hall = clamped.hall;
+    if (merged.halls?.length) {
+      merged.halls = merged.halls.filter((h) => h.n <= (clamped.rooms || 8)).slice(0, clamped.rooms || 8);
+    }
+  } else if (clamped === null) {
+    /* citadel was dropped — do not resurrect via richer merge */
+    return metaOf(merged);
+  }
+  const meta = metaOf(clamped || merged);
   writeMem([merged, ...readMem().filter((s) => s.id !== session.id)]);
   const index = listSessions().filter((s) => s.id !== session.id);
   index.unshift(meta);
@@ -865,18 +1008,26 @@ function mergeMeta(list: RuneSessionMeta[]) {
     }
     const newer = (s.updated || 0) >= (prev.updated || 0) ? s : prev;
     const older = newer === s ? prev : s;
+    const cap = loadRoomCap(newer.id);
+    const rooms = cap != null ? Math.min(cap, keepRooms(roomCap(older), roomCap(newer)) || cap) : keepRooms(roomCap(older), roomCap(newer));
+    const hints = keepHallMeta(older.hallHints, newer.hallHints);
     byId.set(s.id, {
       ...older,
       ...newer,
       from: newer.from || older.from,
       via: newer.via || older.via,
       title: newer.title || older.title,
-      rooms: keepRooms(roomCap(older), roomCap(newer)),
+      rooms,
       hall: newer.hall || older.hall,
-      hallHints: keepHallMeta(older.hallHints, newer.hallHints),
+      hallHints: cap != null ? clampHints(hints, cap) : hints,
     });
   }
-  const rows = relinkMetas([...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0)));
+  const rows = relinkMetas(
+    [...byId.values()]
+      .map((s) => clampDroppedMeta(s))
+      .filter((s): s is RuneSessionMeta => Boolean(s))
+      .sort((a, b) => (b.updated || 0) - (a.updated || 0)),
+  );
   writeCatalog(rows);
   return listSessions();
 }
@@ -992,7 +1143,7 @@ export async function hydrateSessions(onList?: (rows: RuneSessionMeta[]) => void
     /* */
   }
   const last = lastPlay();
-  if (last?.id && !listSessions().some((s) => s.id === last.id)) {
+  if (last?.id && !loadCitadelGone(last.id) && !listSessions().some((s) => s.id === last.id)) {
     emit(
       mergeMeta([
         {
@@ -1094,4 +1245,149 @@ export async function dropSession(id: string): Promise<void> {
   } catch {
     /* */
   }
+}
+
+function remapDest(v: string | number | undefined, hall: number): string | undefined {
+  const n = hallN(v);
+  if (!n) return v == null ? undefined : String(v);
+  if (n === hall) return undefined;
+  return n > hall ? String(n - 1) : String(n);
+}
+
+function dropHallFromSession(s: RuneSession, hall: number, remaining: number): RuneSession {
+  const halls = (s.halls || [])
+    .filter((h) => h.n !== hall)
+    .map((h) => ({ ...h, n: h.n > hall ? h.n - 1 : h.n }));
+  const hn = hallN(s.hall);
+  const hallNow = hn === hall ? Math.min(hall, remaining) : hn > hall ? hn - 1 : hn;
+  const m1 = remapDest(s.next?.m1, hall);
+  const m2 = remapDest(s.next?.m2, hall);
+  return {
+    ...s,
+    rooms: remaining,
+    hall: hallNow || remaining,
+    halls,
+    hallHints: clampHints(
+      (s.hallHints || halls).map((h, i) => ({ n: hallN(h.n) || i + 1, still: "still" in h ? h.still || "" : "" })),
+      remaining,
+    ),
+    next: m1 || m2 ? { ...(m1 ? { m1 } : {}), ...(m2 ? { m2 } : {}) } : undefined,
+    updated: Date.now(),
+  };
+}
+
+async function replaceSessionFull(session: RuneSession): Promise<void> {
+  const packed = packOf({ ...session, updated: Date.now() });
+  const light = lightOf(packed);
+  const meta = metaOf(light);
+  writeMem([light, ...readMem().filter((s) => s.id !== session.id)]);
+  writeStore([light, ...readStore().filter((s) => s.id !== session.id)]);
+  writeCatalog([meta, ...listSessions().filter((s) => s.id !== session.id)]);
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(TABLE, "readwrite");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.objectStore(TABLE).put(packed);
+    });
+    db.close();
+  } catch {
+    /* */
+  }
+  try {
+    await putCitadel({ data: { session: packed } });
+  } catch {
+    /* */
+  }
+  try {
+    const guest = guestId();
+    if (guest) await putGuestCitadel({ data: { guest, session: packed } });
+  } catch {
+    /* */
+  }
+}
+
+/** Purge a Load room. Hang re-reads listSessions() — no separate Hang cleanup. */
+export async function dropLoadRoom(citadel: string, hall?: number | string | null): Promise<{ rows: RuneSessionMeta[]; drop: LoadRoomDrop }> {
+  const rows = listSessions();
+  const packs = livingLoadPacks(rows);
+  const pack = packs.find((p) => p.root.id === citadel || p.rooms.some((r) => r.id === citadel));
+  const want = hallN(hall) || (pack && pack.rooms.length <= 1 ? hallN(pack.rooms[0]?.hall) || 1 : 0);
+  const planned = dropCitadelHall(rows, pack?.root.id || citadel, want);
+  const { drop } = planned;
+  if (!drop.citadel || (!drop.gone && !drop.remaining && !want)) {
+    return { rows, drop };
+  }
+
+  const root = drop.gone ? null : await loadSession(drop.citadel).catch(() => null);
+  const kin: RuneSession[] = [];
+  if (!drop.gone) {
+    for (const s of planned.rows.filter((r) => r.id !== drop.citadel && r.from === drop.citadel)) {
+      const full = await loadSession(s.id).catch(() => null);
+      if (full?.id) kin.push(full);
+    }
+  }
+
+  writeDropMark({
+    id: drop.citadel,
+    rooms: drop.remaining,
+    at: Date.now(),
+    gone: drop.gone || undefined,
+  });
+
+  if (drop.gone) {
+    const gone = rows.filter((s) => !planned.rows.some((n) => n.id === s.id));
+    for (const s of gone) await dropSession(s.id);
+    const last = lastPlay();
+    if (!last || last.id === drop.citadel) {
+      const other = planned.rows[0];
+      if (other) stampPlay(other.id, other.title || other.name, other.hall, other.rooms);
+      else clearLastPlay();
+    }
+  } else {
+    if (root?.id) await replaceSessionFull(dropHallFromSession(root, drop.hall, drop.remaining));
+    else {
+      const meta = planned.rows.find((r) => r.id === drop.citadel);
+      if (meta) {
+        const light = {
+          ...meta,
+          walkSecs: 6 as const,
+          pins: [],
+          plate: meta.thumb || "/refs/hall-doors.jpg",
+          here: "spawn",
+          cameFrom: "spawn",
+          forged: 0,
+          refs: [],
+          bank: [],
+          rooms: drop.remaining,
+          hall: Math.min(meta.hall || 1, drop.remaining),
+          halls: Array.from({ length: drop.remaining }, (_, i) => ({
+            n: i + 1,
+            still: meta.hallHints?.find((h) => (h.n || h.hall) === i + 1)?.still || (i === 0 ? meta.thumb || "" : ""),
+            bank: [] as { key: string; url: string; end: string }[],
+            refs: [] as { id: string; name: string; src: string }[],
+            pins: [],
+          })),
+          updated: Date.now(),
+        };
+        await replaceSessionFull(light);
+      }
+    }
+    for (const full of kin) await replaceSessionFull(dropHallFromSession(full, drop.hall, drop.remaining));
+    for (const s of rows.filter((r) => !planned.rows.some((n) => n.id === r.id))) {
+      await dropSession(s.id);
+    }
+    const last = lastPlay();
+    if (!last || last.id === drop.citadel) {
+      const title = pack?.title || root?.title || root?.name;
+      stampPlay(drop.citadel, title, Math.min(last?.hall || drop.hall, drop.remaining), drop.remaining);
+    }
+  }
+
+  unbindDroppedHalls([], drop.citadel, drop.gone ? "all" : drop.hall, drop.remap);
+  dropHangPending(drop.citadel, drop.gone ? "all" : drop.hall, drop.remap);
+  writeHangFloor(Math.max(1, drop.remaining || 1), "set");
+  notifyLoadDrop();
+  return { rows: listSessions(), drop };
 }

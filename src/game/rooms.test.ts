@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bindCitadel, citadelRoomCount, confirmHangHall, defaultHangRoom, hangOpensSheet, holdHangRooms, isBiomeArtefactMeta, listHangCitadels, listHangRooms, livingHangHall, livingLoadPacks, loadHangHallCount, packCitadels, resolveHangRoom } from "./rooms.ts";
+import { bindCitadel, citadelRoomCount, confirmHangHall, defaultHangRoom, dropCitadelHall, hangOpensSheet, holdHangRooms, isBiomeArtefactMeta, listHangCitadels, listHangRooms, livingHangHall, livingLoadPacks, loadHangHallCount, packCitadels, resolveHangRoom, unbindDroppedHalls } from "./rooms.ts";
 import type { RuneSessionMeta } from "./rune-session.ts";
 
 function cit(rooms: number, hall = 1, id = "cit-1"): RuneSessionMeta {
@@ -469,5 +469,90 @@ describe("hang room pick", () => {
     const held = holdHangRooms(rooms, west);
     assert.equal(held.every((r) => r.citadel === "cit-west"), true);
     assert.equal(held.length, 8);
+  });
+
+  it("dropping a Load room shrinks Hang to the same halls and frees a slot", () => {
+    const rows = [cit(3, 2)];
+    const { rows: next, drop } = dropCitadelHall(rows, "cit-1", 3);
+    assert.equal(drop.gone, false);
+    assert.equal(drop.remaining, 2);
+    assert.equal(next[0]?.rooms, 2);
+    const hang = listHangRooms(next, { id: "cit-1", hall: 2, rooms: 2 });
+    assert.deepEqual(
+      hang.map((r) => r.hall),
+      [1, 2],
+    );
+    assert.equal(hang.some((r) => r.hall === 3), false);
+    const again = dropCitadelHall(next, "cit-1", 2);
+    assert.equal(again.drop.remaining, 1);
+    const one = listHangRooms(again.rows, { id: "cit-1", hall: 1, rooms: 1 });
+    assert.deepEqual(
+      one.map((r) => r.hall),
+      [1],
+    );
+  });
+
+  it("dropping the last room of a Load citadel removes it from the Hang picker", () => {
+    const a = cit(1, 1, "cit-a");
+    const b = { ...cit(2, 1, "cit-b"), updated: 9, title: "Keep", name: "Keep" };
+    const { rows, drop } = dropCitadelHall([a, b], "cit-a", 1);
+    assert.equal(drop.gone, true);
+    assert.equal(
+      rows.some((s) => s.id === "cit-a"),
+      false,
+    );
+    const picks = listHangCitadels(rows, { id: "cit-b", hall: 1, rooms: 2 });
+    assert.equal(
+      picks.some((p) => p.id === "cit-a"),
+      false,
+    );
+    assert.equal(
+      picks.some((p) => p.id === "cit-b"),
+      true,
+    );
+    const hang = listHangRooms(rows, { id: "cit-b", hall: 1, rooms: 2 }, [], [], [], "cit-b");
+    assert.deepEqual(
+      hang.map((r) => r.hall),
+      [1, 2],
+    );
+  });
+
+  it("holdHangRooms release re-reads Load — no orphan Hang halls", () => {
+    const full = listHangRooms([cit(8, 2)], { id: "cit-1", hall: 2 });
+    const { rows } = dropCitadelHall([cit(8, 2)], "cit-1", 8);
+    const next = listHangRooms(rows, { id: "cit-1", hall: 2, rooms: 7 }, [], [], []);
+    assert.deepEqual(
+      next.map((r) => r.hall),
+      [1, 2, 3, 4, 5, 6, 7],
+    );
+    const held = holdHangRooms(full, next, true);
+    assert.deepEqual(
+      held.map((r) => r.hall),
+      [1, 2, 3, 4, 5, 6, 7],
+    );
+    assert.equal(
+      held.some((r) => r.hall === 8),
+      false,
+    );
+    const hydrate = holdHangRooms(full, next, false);
+    assert.deepEqual(
+      hydrate.map((r) => r.hall),
+      [1, 2, 3, 4, 5, 6, 7, 8],
+    );
+  });
+
+  it("dropping a hung hall unbinds the door — no ghost Room N", () => {
+    const art = (hall: number) => ({
+      id: `art-${hall}`,
+      room: { door: "A" as const, still: "/films/cook-forest.jpg", citadel: "cit-1", hall },
+    });
+    const gone = unbindDroppedHalls([art(3)], "cit-1", 3);
+    assert.equal(gone[0]?.room, null);
+    const moved = unbindDroppedHalls([art(5)], "cit-1", 3, [[5, 4]]);
+    assert.equal(moved[0]?.room?.hall, 4);
+    const other = unbindDroppedHalls([art(2)], "cit-west", 2);
+    assert.equal(other[0]?.room?.hall, 2);
+    const all = unbindDroppedHalls([art(1), art(2)], "cit-1", "all");
+    assert.equal(all.every((a) => a.room == null), true);
   });
 });

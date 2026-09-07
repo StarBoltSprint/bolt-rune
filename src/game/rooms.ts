@@ -265,9 +265,99 @@ function exclusiveCitadel(rooms: HangRoomPick[]): string {
   return ids.length === 1 ? ids[0]! : "";
 }
 
-export function holdHangRooms(prev: HangRoomPick[] = [], next: HangRoomPick[] = []): HangRoomPick[] {
+export type LoadRoomDrop = {
+  citadel: string;
+  hall: number;
+  gone: boolean;
+  remaining: number;
+  remap: Array<[number, number]>;
+};
+
+function packHalls(pack?: CitadelPack): number[] {
+  if (!pack) return [];
+  return pack.rooms.map((r, i) => hallN(r.hall) || i + 1).filter((n) => n >= 1 && n <= 8);
+}
+
+/** Clear or remap hang bindings when a Load room is dropped. Never leaves a ghost Room N. */
+export function unbindDroppedHalls<T extends { room?: { citadel?: string; hall?: number } | null }>(
+  arts: T[] = [],
+  citadel: string,
+  hall: number | "all",
+  remap: Array<[number, number]> = [],
+): T[] {
+  if (!arts.length) return arts;
+  const want = String(citadel || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+  const map = new Map(remap.filter(([from, to]) => from >= 1 && from <= 8 && to >= 1 && to <= 8));
+  return arts.map((a) => {
+    const room = a.room;
+    if (!room) return a;
+    if (room.citadel && want && room.citadel !== want) return a;
+    if (hall === "all") return { ...a, room: null };
+    const n = Number(room.hall);
+    if (n === hall) return { ...a, room: null };
+    const moved = n >= 1 && n <= 8 ? map.get(n) : undefined;
+    if (moved && moved !== n) return { ...a, room: { ...room, hall: moved } };
+    return a;
+  });
+}
+
+/** Drop hall N from a Load citadel. Compacts remaining halls 1..k. Last room removes the citadel. */
+export function dropCitadelHall(
+  rows: RuneSessionMeta[] = [],
+  citadel?: string | null,
+  hall?: number | string | null,
+): { rows: RuneSessionMeta[]; drop: LoadRoomDrop } {
+  const id = String(citadel || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+  const n = hallN(hall);
+  const empty = { citadel: id, hall: n, gone: false, remaining: 0, remap: [] as Array<[number, number]> };
+  if (!id || !n) return { rows, drop: empty };
+  const packs = livingLoadPacks(rows);
+  const pack = packForId(packs, id);
+  if (!pack) return { rows, drop: empty };
+  const halls = packHalls(pack);
+  const count = Math.max(1, Math.min(8, pack.rooms.length || halls.length || 1));
+  const hit = halls.includes(n) || n <= count;
+  if (!hit) return { rows, drop: { ...empty, citadel: pack.root.id, remaining: count } };
+  if (count <= 1) {
+    const goneId = pack.root.id;
+    const next = rows.filter((s) => s.id !== goneId && s.from !== goneId && rootOf(s.id, rows) !== goneId);
+    return { rows: next, drop: { citadel: goneId, hall: n, gone: true, remaining: 0, remap: [] } };
+  }
+  const remaining = count - 1;
+  const remap: Array<[number, number]> = [];
+  for (let h = n + 1; h <= 8; h++) {
+    if (halls.includes(h) || h <= count) remap.push([h, h - 1]);
+  }
+  const next = rows
+    .map((s) => {
+      const kin = s.id === pack.root.id || s.from === pack.root.id || rootOf(s.id, rows) === pack.root.id;
+      if (!kin) return s;
+      const hn = hallN(s.hall);
+      if (s.id !== pack.root.id && hn === n) return null;
+      const hallNext = hn === n ? Math.min(n, remaining) : hn > n ? hn - 1 : hn || undefined;
+      const hints = (s.hallHints || [])
+        .map((h, i) => ({ n: hallN(h.n) || hallN(h.hall) || i + 1, still: h.still || "" }))
+        .filter((h) => h.n && h.n !== n)
+        .map((h) => ({ n: h.n > n ? h.n - 1 : h.n, still: h.still }));
+      const hallHints = hints.length
+        ? hints
+        : Array.from({ length: remaining }, (_, i) => ({ n: i + 1, still: i === 0 ? s.thumb || "" : "" }));
+      return {
+        ...s,
+        rooms: remaining,
+        hall: hallNext || Math.min(s.hall || 1, remaining),
+        hallHints,
+      };
+    })
+    .filter((s): s is RuneSessionMeta => Boolean(s));
+  return { rows: next, drop: { citadel: pack.root.id, hall: n, gone: false, remaining, remap } };
+}
+
+export function holdHangRooms(prev: HangRoomPick[] = [], next: HangRoomPick[] = [], release = false): HangRoomPick[] {
   const older = prev.filter((r) => hallN(r.hall));
   const newer = next.filter((r) => hallN(r.hall));
+  /* Authoritative Load re-read after a drop — do not keep orphan halls. */
+  if (release) return newer.length ? newer : next;
   if (!older.length) return newer.length ? newer : next;
   if (!newer.length) return older;
   const nextCit = exclusiveCitadel(newer);
