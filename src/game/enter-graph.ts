@@ -331,6 +331,30 @@ export function biomeHoldPlays(holdDoor?: string | null, hallPlate = false): boo
   return Boolean(holdDoor) && !biomeQteQuiet(holdDoor, hallPlate);
 }
 
+/**
+ * Hung Door A/B stay native-loops the biome MP4.
+ * Ending a plate must wrap — never finish, pause, or Film-fracture out of stay.
+ */
+export function holdDoorLoops(hold?: string | null): boolean {
+  return Boolean(hold);
+}
+
+/** Clip is at the loop seam — restart the chart, do not MISS / finish / fracture. */
+export function holdLoopSeam(
+  ended: boolean,
+  currentTime: number,
+  duration: number,
+  epsilon = 0.12,
+): boolean {
+  const slop = Math.max(0.02, epsilon);
+  /* After a wrap seek, currentTime is ~0 — that is the new loop, not the seam. */
+  if (Number.isFinite(currentTime) && currentTime >= 0 && currentTime <= slop) return false;
+  if (ended) return true;
+  if (!Number.isFinite(duration) || duration <= 1) return false;
+  if (!Number.isFinite(currentTime)) return false;
+  return currentTime >= duration - slop;
+}
+
 /** Hall N in 1–8, else 0. Living default 1 is a real hall — callers must not treat 0 as Room 1. */
 export function hungHallN(v?: number | string | null): number {
   const raw = typeof v === "number" ? v : Number(v);

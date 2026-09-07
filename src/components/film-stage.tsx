@@ -25,7 +25,7 @@ import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
 import { playableClipSrc, stockBiomeLoop } from "@/game/play-clip";
 import { HazardLayer } from "@/components/hazard-layer";
-import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, hungBiomePlaylist, hungStageChrome, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
+import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, holdDoorLoops, holdLoopSeam, hungBiomePlaylist, hungStageChrome, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
 import { doorAtPoint, isHallFilm, isLivingHallLoop } from "@/game/stock-room";
 
 export type RunResult = {
@@ -253,6 +253,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
 
   function armPlate(el: HTMLVideoElement | null, url: string | undefined) {
     if (!el || !url) return;
+    el.loop = holdDoorLoops(holdDoorRef.current);
     if (el.getAttribute("data-url") === url && el.readyState >= 2) return;
     el.setAttribute("data-url", url);
     el.setAttribute("playsinline", "true");
@@ -313,6 +314,28 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.hits = 0;
     g.hold = 0;
     g.holding = false;
+  }
+
+  /** Native-loop the hung plate. Seek 0 at the seam — never finish / Film fracture. */
+  function keepHoldLoop(el?: HTMLVideoElement | null) {
+    if (!holdDoorLoops(holdDoorRef.current)) return;
+    const v = el || videoRef.current;
+    if (!v) return;
+    v.loop = true;
+    if (holdLoopSeam(v.ended, v.currentTime, v.duration)) {
+      try {
+        v.currentTime = 0;
+      } catch {
+        /* */
+      }
+      restartHoldChart();
+      offsetRef.current = 0;
+      loopT.current = 0;
+    }
+    void v.play().then(() => {
+      setLive(true);
+      setUsingStill(false);
+    }).catch(() => holdBiomePlate(v));
   }
 
   useEffect(() => {
@@ -456,11 +479,16 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     v.muted = true;
     v.playsInline = true;
     v.defaultMuted = true;
+    v.loop = holdDoorLoops(holdDoorRef.current);
     if (rampRef.current) v.playbackRate = gRef.current.pace || 0.7;
     else v.playbackRate = gRef.current.pace || 1;
     const kick = () => {
       advancing.current = false;
       if (!v.getAttribute("data-url") && film.playlist?.[0]) armPlate(v, film.playlist[0]);
+      if (holdDoorLoops(holdDoorRef.current) && holdLoopSeam(v.ended, v.currentTime, v.duration)) {
+        keepHoldLoop(v);
+        return;
+      }
       void v.play().then(() => {
         setLive(true);
         setUsingStill(false);
@@ -497,7 +525,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       const hold = Boolean(holdDoorRef.current);
       const hallQuiet = hallPlateNow();
       if (v && v.paused && live && phaseRef.current === "run" && !g.crashed && !g.done) {
-        void v.play().catch(() => {});
+        if (hold && holdLoopSeam(v.ended, v.currentTime, v.duration)) keepHoldLoop(v);
+        else void v.play().catch(() => {});
       }
 
       let t = 0;
@@ -518,6 +547,10 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           const left = v.duration - v.currentTime;
           if (left <= 0.18 && v.currentTime > 0.5) goNextPlate();
         }
+      }
+      if (hold && v && holdLoopSeam(v.ended, v.currentTime, v.duration)) {
+        keepHoldLoop(v);
+        t = clock();
       }
       if (hold && t + 0.45 < loopT.current) restartHoldChart();
       loopT.current = t;
@@ -579,7 +612,9 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         if (beat.kind === "hold" && g.hold >= beat.holdMs && Math.abs(t - beat.at) < beat.win) {
           judge(g, beat, Math.abs(t - beat.at));
         } else if (late && !advancing.current) {
-          if (biomeQteQuiet(holdDoorRef.current, hallQuiet) || hallQuiet) {
+          if (hold && v && holdLoopSeam(v.ended, v.currentTime, v.duration)) {
+            keepHoldLoop(v);
+          } else if (biomeQteQuiet(holdDoorRef.current, hallQuiet) || hallQuiet) {
             g.resolved = true;
             advance(g);
           } else if (holdDoorRef.current && !cueFillShown(beat)) {
@@ -598,8 +633,15 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       const listLen = Math.max(1, (platesRef.current.length ? platesRef.current : film.playlist || []).length);
       if (usingStill && phaseRef.current === "run" && t >= film.chart) {
         const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
-        if (custom && (holdDoorRef.current || shouldHoldBiome(list, plateRef.current))) holdBiomePlate(v);
+        if (holdDoorLoops(holdDoorRef.current) || (custom && shouldHoldBiome(list, plateRef.current))) holdBiomePlate(v);
         else finish(g);
+      } else if (
+        holdDoorLoops(holdDoorRef.current) &&
+        phaseRef.current === "run" &&
+        v &&
+        (v.ended || holdLoopSeam(v.ended, v.currentTime, v.duration))
+      ) {
+        keepHoldLoop(v);
       } else if (
         !hold &&
         phaseRef.current === "run" &&
@@ -611,7 +653,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         v.duration > 1
       ) {
         const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
-        if (custom && (holdDoorRef.current || shouldHoldBiome(list, plateRef.current))) holdBiomePlate(v);
+        if (custom && shouldHoldBiome(list, plateRef.current)) holdBiomePlate(v);
         else finish(g);
       }
 
@@ -764,6 +806,10 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   }
 
   function finish(g: G) {
+    if (holdDoorLoops(holdDoorRef.current)) {
+      keepHoldLoop(videoRef.current);
+      return;
+    }
     if (g.done) return;
     g.done = true;
     const total = g.perfect + g.great + g.good + g.miss;
@@ -792,6 +838,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   }
 
   function miss(g: G, beat: Beat) {
+    const holdVid = videoRef.current;
+    if (holdDoorLoops(holdDoorRef.current) && holdVid && holdLoopSeam(holdVid.ended, holdVid.currentTime, holdVid.duration)) {
+      keepHoldLoop(holdVid);
+      return;
+    }
     /* Hall leftover / door taps on a hung enter never MISS and never tank pace. */
     if (biomeQteQuiet(holdDoorRef.current, hallPlateNow()) || hallPlateNow()) {
       if (g.resolved) return;
@@ -818,6 +869,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     setFlash(1);
     window.setTimeout(() => setFlash(0), 120);
     if (g.streakMiss >= (film.lives ?? 3)) {
+      const v = videoRef.current;
+      if (holdDoorLoops(holdDoorRef.current) && v && holdLoopSeam(v.ended, v.currentTime, v.duration)) {
+        keepHoldLoop(v);
+        return;
+      }
       g.crashed = true;
       setPhase("crash");
       videoRef.current?.pause();
@@ -869,6 +925,10 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.hold = 0;
     g.holding = false;
     if (g.i >= g.beats.length) {
+      if (holdDoorLoops(holdDoorRef.current)) {
+        restartHoldChart();
+        return;
+      }
       if (!film.playlist?.length) window.setTimeout(() => finish(g), 380);
     }
   }
@@ -920,7 +980,15 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       setUsingStill(true);
       return;
     }
-    v.loop = Boolean(holdDoorRef.current);
+    v.loop = holdDoorLoops(holdDoorRef.current);
+    if (holdDoorLoops(holdDoorRef.current) && holdLoopSeam(v.ended, v.currentTime, v.duration)) {
+      try {
+        v.currentTime = 0;
+      } catch {
+        /* */
+      }
+      restartHoldChart();
+    }
     armPlate(v, next);
     void v.play().then(() => {
       setLive(true);
@@ -1166,6 +1234,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
               el.muted = true;
               el.defaultMuted = true;
               el.playsInline = true;
+              el.loop = holdDoorLoops(holdDoorRef.current);
               el.setAttribute("playsinline", "true");
               el.setAttribute("webkit-playsinline", "true");
             }
@@ -1175,6 +1244,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           poster={poster || undefined}
           playsInline
           muted
+          loop={Boolean(holdDoor)}
           autoPlay={!(film.still || "").includes("citadel-tour")}
           preload="auto"
           style={{ opacity: lane === 0 && live ? 1 : 0, zIndex: lane === 0 ? 2 : 0, transform: "translateZ(0)", backfaceVisibility: "hidden" }}
@@ -1189,13 +1259,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           }}
           onEnded={() => {
             if (laneRef.current !== 0) return;
-            if (holdDoorRef.current) {
-              const el = aRef.current;
-              if (el) {
-                el.loop = true;
-                restartHoldChart();
-                void el.play().catch(() => holdBiomePlate(el));
-              }
+            if (holdDoorLoops(holdDoorRef.current)) {
+              keepHoldLoop(aRef.current);
               return;
             }
             const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
@@ -1212,8 +1277,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           }}
           onError={() => {
             const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
-            if (custom && (holdDoorRef.current || shouldHoldBiome(list, plateRef.current))) {
-              holdBiomePlate(aRef.current);
+            if (holdDoorLoops(holdDoorRef.current) || (custom && shouldHoldBiome(list, plateRef.current))) {
+              keepHoldLoop(aRef.current);
               return;
             }
             const at = list[plateRef.current] || "";
@@ -1233,10 +1298,12 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           ref={(el) => {
             bRef.current = el;
             if (laneRef.current === 1) videoRef.current = el;
+            if (el) el.loop = holdDoorLoops(holdDoorRef.current);
           }}
           className="pointer-events-none absolute inset-0 h-full w-full object-cover"
           playsInline
           muted
+          loop={Boolean(holdDoor)}
           preload="auto"
           style={{ opacity: lane === 1 && live ? 1 : 0, zIndex: lane === 1 ? 2 : 0, transform: "translateZ(0)", backfaceVisibility: "hidden" }}
           onPlaying={() => {
@@ -1245,13 +1312,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           }}
           onEnded={() => {
             if (laneRef.current !== 1) return;
-            if (holdDoorRef.current) {
-              const el = bRef.current;
-              if (el) {
-                el.loop = true;
-                restartHoldChart();
-                void el.play().catch(() => holdBiomePlate(el));
-              }
+            if (holdDoorLoops(holdDoorRef.current)) {
+              keepHoldLoop(bRef.current);
               return;
             }
             const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
@@ -1268,8 +1330,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           }}
           onError={() => {
             const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
-            if (custom && (holdDoorRef.current || shouldHoldBiome(list, plateRef.current))) {
-              holdBiomePlate(bRef.current);
+            if (holdDoorLoops(holdDoorRef.current) || (custom && shouldHoldBiome(list, plateRef.current))) {
+              keepHoldLoop(bRef.current);
               return;
             }
             const at = list[plateRef.current] || "";

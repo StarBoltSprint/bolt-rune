@@ -27,6 +27,8 @@ import {
   stayBiomePlay,
   hallPlateAt,
   hangThumbStill,
+  holdDoorLoops,
+  holdLoopSeam,
   hungFilmHold,
   hungPlayChrome,
   hungStageChrome,
@@ -569,6 +571,33 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     const cook = readFileSync(join(here, "./cook.ts"), "utf8");
     assert.match(cook, /hungBiomePlaylist\(urls\)/);
     assert.doesNotMatch(cook, /score: undefined/);
+  });
+
+  it("hung Door A native-loops the MP4 — plate end never Film-fractures stay", () => {
+    assert.equal(holdDoorLoops("A"), true);
+    assert.equal(holdDoorLoops("B"), true);
+    assert.equal(holdDoorLoops(null), false);
+    assert.equal(holdDoorLoops(undefined), false);
+    assert.equal(holdLoopSeam(true, 6, 6), true);
+    assert.equal(holdLoopSeam(false, 5.95, 6), true);
+    assert.equal(holdLoopSeam(false, 3, 6), false);
+    assert.equal(holdLoopSeam(true, 0, 6), false);
+    assert.equal(holdLoopSeam(false, 0.04, 6), false);
+    assert.equal(holdLoopSeam(false, 0, 0), false);
+    const here = dirname(fileURLToPath(import.meta.url));
+    const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    assert.match(stage, /loop=\{Boolean\(holdDoor\)\}/);
+    assert.match(stage, /function keepHoldLoop/);
+    assert.match(stage, /holdDoorLoops\(holdDoorRef\.current\)/);
+    assert.match(stage, /holdLoopSeam\(/);
+    assert.match(stage, /a\.loop = Boolean\(holdDoor\)/);
+    assert.match(stage, /if \(holdDoorLoops\(holdDoorRef\.current\)\) \{\s*\n\s*keepHoldLoop\(videoRef\.current\);\s*\n\s*return/);
+    assert.match(stage, /if \(holdDoorLoops\(holdDoorRef\.current\)\) \{\s*\n\s*keepHoldLoop\(aRef\.current\)/);
+    assert.match(stage, /if \(holdDoorLoops\(holdDoorRef\.current\)\) \{\s*\n\s*keepHoldLoop\(bRef\.current\)/);
+    assert.match(stage, /if \(holdDoorLoops\(holdDoorRef\.current\)\) \{\s*\n\s*restartHoldChart\(\)/);
+    assert.match(stage, /if \(hold && t \+ 0\.45 < loopT\.current\) restartHoldChart\(\)/);
+    assert.match(stage, /v\.currentTime = 0/);
+    assert.doesNotMatch(stage, /if \(biomeQteQuiet\(holdDoorRef\.current\)\) return \[\]/);
   });
 
   it("hall leftover stays and never MISS — hung biome sprint is still a QTE game", () => {
