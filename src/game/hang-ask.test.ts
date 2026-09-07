@@ -233,6 +233,11 @@ describe("hang ask leftover tap", () => {
     assert.match(engine, /if \(now < hangGuard\.current\) return/);
     assert.match(engine, /hangGuard\.current/);
     assert.match(engine, /Leftover Hang A \/ Door A after confirm must stay on hall N/);
+    const goEnterFn = engine.slice(engine.indexOf("async function goEnter"), engine.indexOf("function enterNext"));
+    assert.match(goEnterFn, /if \(now < hangGuard\.current\) return/);
+    assert.match(engine, /setSprint\(null\)/);
+    assert.match(engine, /data-hall-wired=/);
+    assert.doesNotMatch(engine, /if \(hereHall && hereRef\.current === door\) setEnterAsk\(door\)/);
     const vaultWalk = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
     assert.match(vaultWalk, /walkHungHref\(live\.room/);
     assert.match(vaultWalk, /window\.location\.assign\(href\)/);

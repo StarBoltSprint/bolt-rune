@@ -382,6 +382,8 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     assert.match(engine, /holdHall=\{sprint\.hall\}/);
     assert.match(engine, /hangBindHall\(boundArt\?\.room\?\.hall\)/);
+    assert.match(engine, /data-hall-wired=/);
+    assert.match(engine, /if \(now < hangGuard\.current\) return/);
     const vault = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
     assert.match(vault, /vaultHangCaption\(head\.room\)/);
     assert.match(vault, /holdHall=\{hangBindHall\(live\.room\?\.hall\)/);

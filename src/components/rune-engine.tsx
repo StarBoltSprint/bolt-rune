@@ -4481,6 +4481,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   async function goEnter(door?: "m1" | "m2") {
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    /* After Hang Room N, leftover Door A must not open FilmStage. */
+    if (now < hangGuard.current) return;
     const pick: "m1" | "m2" = door === "m1" || door === "m2" ? door : enterAsk === "m2" ? "m2" : "m1";
     viaHold.current = pick;
     setEnterAsk(null);
@@ -4697,7 +4700,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setRiftDraft(null);
     setPhase("play");
     phaseRef.current = "play";
-    if (hereHall && hereRef.current === door) setEnterAsk(door);
+    /* Stay on the hall after hang — leftover must not pop enter → FilmStage. */
     const letter = door === "m2" ? "B" : "A";
     const chrome = hungPlayChrome(bindHall, letter);
     setFrost(
@@ -4781,6 +4784,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setHangAsk(null);
     riftCookTok.current += 1;
     /* Write the artefact bind first so applyHall / hydrateRift see hall N. */
+    sprintHold.current = false;
+    setSprint(null);
+    setEnterAsk(null);
     attachRift(door, gate, bindHall);
     hangGuard.current = (typeof performance !== "undefined" ? performance.now() : Date.now()) + HANG_LEFTOVER_SWALLOW_MS;
     swallowOpeningTap();
@@ -6557,6 +6563,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       data-stock-walk={phase === "play" && (beat === "playvid" || beat === "walk") ? "1" : "0"}
       data-marks={pins.length}
       data-rift={rift.m1 || rift.m2 ? "1" : "0"}
+      data-hall-wired={phase === "play" && (rift.m1 || rift.m2) ? "1" : undefined}
       data-pick={pick ? "1" : "0"}
       data-cook={cook ? "1" : "0"}
       data-slot-reason={slotReason || undefined}
