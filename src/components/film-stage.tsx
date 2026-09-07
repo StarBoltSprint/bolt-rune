@@ -21,7 +21,7 @@ import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
 import { playableClipSrc, stockBiomeLoop } from "@/game/play-clip";
 import { HazardLayer } from "@/components/hazard-layer";
-import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, hungBiomePlaylist, hungStageChrome, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
+import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, hungBiomePlaylist, hungStageChrome, missPace, PACE_FLOOR, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
 import { doorAtPoint, isHallFilm, isLivingHallLoop } from "@/game/stock-room";
 
 export type RunResult = {
@@ -45,7 +45,7 @@ type Phase = "arm" | "run" | "crash" | "done";
 
 const APPROACH = 1.55;
 const HOLD_NEED_DEFAULT = 520;
-const PACE_MIN = 0.5;
+const PACE_MIN = PACE_FLOOR;
 const PACE_MAX = 8;
 
 type Props = {
@@ -801,7 +801,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.resonance = Math.max(0.04, g.resonance * 0.32);
     sfxHit("miss");
     pop("MISS", "bad", liveSpot(beat, clock()).x * 100, liveSpot(beat, clock()).y * 100);
-    g.pace = Math.max(PACE_MIN, g.pace - 0.32);
+    g.pace = missPace(g.pace, Boolean(holdDoorRef.current));
     setFlash(1);
     window.setTimeout(() => setFlash(0), 120);
     if (g.streakMiss >= (film.lives ?? 3)) {

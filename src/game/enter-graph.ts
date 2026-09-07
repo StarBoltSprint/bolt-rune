@@ -331,6 +331,33 @@ export function biomeHoldPlays(holdDoor?: string | null, hallPlate = false): boo
   return Boolean(holdDoor) && !biomeQteQuiet(holdDoor, hallPlate);
 }
 
+/** Playback-rate floor — same as FilmStage PACE_MIN. A miss never goes below this. */
+export const PACE_FLOOR = 0.5;
+/** Hung Door A sprint QTE: each scored MISS drops hud.pace by this. */
+export const HUNG_MISS_PACE = 0.1;
+/** Asteroid / other sprint cook MISS drop. Asteroid HOLD — do not change. */
+export const SPRINT_MISS_PACE = 0.32;
+
+/**
+ * Apply a scored QTE miss to pace.
+ * Hung biome (Door A sprint): −0.1, clamped to PACE_FLOOR (0.5).
+ * Other films keep the 0.32 drop. Hall leftover never reaches this
+ * (biomeQteQuiet / hallPlate short-circuit in FilmStage.miss).
+ */
+export function missPace(pace: number, hung = false): number {
+  return Math.max(PACE_FLOOR, pace - (hung ? HUNG_MISS_PACE : SPRINT_MISS_PACE));
+}
+
+/**
+ * Next hud.pace after a late beat.
+ * Leftover hall-door plate: unchanged (not a MISS, does not tank pace).
+ * Hung Door A sprint: −0.1. Asteroid / other cook: −0.32.
+ */
+export function paceAfterMiss(pace: number, holdDoor?: string | null, hallPlate = false): number {
+  if (biomeQteQuiet(holdDoor, hallPlate) || hallPlate) return pace;
+  return missPace(pace, Boolean(holdDoor));
+}
+
 /** Hall N in 1–8, else 0. Living default 1 is a real hall — callers must not treat 0 as Room 1. */
 export function hungHallN(v?: number | string | null): number {
   const raw = typeof v === "number" ? v : Number(v);

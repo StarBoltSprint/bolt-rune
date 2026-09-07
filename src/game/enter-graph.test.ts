@@ -6,6 +6,11 @@ import { fileURLToPath } from "node:url";
 import {
   biomeHoldPlays,
   biomeQteQuiet,
+  HUNG_MISS_PACE,
+  missPace,
+  PACE_FLOOR,
+  paceAfterMiss,
+  SPRINT_MISS_PACE,
   biomeStill,
   bindHungRoom,
   doorIdOf,
@@ -581,6 +586,44 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(stage, /if \(!hallPlateNow\(\)\) return false/);
     assert.match(stage, /if \(holdDoorRef\.current\) return true/);
     assert.doesNotMatch(stage, /g\.beats = prepareBeats\(film, a\.duration/);
+    assert.match(stage, /if \(biomeQteQuiet\(holdDoorRef\.current, hallPlateNow\(\)\) \|\| hallPlateNow\(\)\)/);
+    assert.match(stage, /g\.pace = missPace\(g\.pace, Boolean\(holdDoorRef\.current\)\)/);
+    assert.ok(stage.indexOf("if (biomeQteQuiet(holdDoorRef.current, hallPlateNow()) || hallPlateNow())") < stage.indexOf("g.pace = missPace(g.pace, Boolean(holdDoorRef.current))"));
+  });
+
+  it("hung Door A MISS drops pace by 0.1 and clamps at PACE_FLOOR 0.5 — leftover never tanks", () => {
+    assert.equal(PACE_FLOOR, 0.5);
+    assert.equal(HUNG_MISS_PACE, 0.1);
+    assert.equal(SPRINT_MISS_PACE, 0.32);
+    assert.equal(missPace(1, true), 0.9);
+    assert.equal(missPace(0.7, true), 0.6);
+    assert.equal(missPace(0.55, true), 0.5);
+    assert.equal(missPace(0.5, true), 0.5);
+    assert.equal(missPace(0.4, true), 0.5);
+    assert.equal(paceAfterMiss(1, "A", false), 0.9);
+    assert.equal(paceAfterMiss(0.55, "A", false), 0.5);
+    assert.equal(paceAfterMiss(1, "B", false), 0.9);
+    assert.equal(paceAfterMiss(1, "A", true), 1, "hall leftover must not tank pace");
+    assert.equal(paceAfterMiss(0.8, "A", true), 0.8);
+    assert.equal(paceAfterMiss(1, "B", true), 1);
+    assert.equal(paceAfterMiss(1, null, true), 1);
+    assert.equal(paceAfterMiss(1, null, false), 0.68, "Asteroid / other cook keeps 0.32 drop");
+    assert.equal(missPace(1, false), 0.68);
+    assert.equal(missPace(0.7, false), 0.5);
+
+    const here = dirname(fileURLToPath(import.meta.url));
+    const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    assert.match(stage, /const PACE_MIN = PACE_FLOOR/);
+    assert.match(stage, /g\.pace = missPace\(g\.pace, Boolean\(holdDoorRef\.current\)\)/);
+    assert.doesNotMatch(stage, /g\.pace = Math\.max\(PACE_MIN, g\.pace - 0\.32\)/);
+    assert.match(stage, /g\.pace = Math\.min\(PACE_MAX, g\.pace \+ \(word === "perfect" \? 0\.28 : word === "great" \? 0\.2 : 0\.14\)\)/);
+    assert.match(stage, /<Resonance value=\{hud\.resonance\} score=\{hud\.score\} pace=\{hud\.pace\} \/>/);
+    assert.match(stage, /data-cue-axis="y"/);
+    assert.match(stage, /hungStageChrome\(holdHall, holdDoor, film\)/);
+    assert.match(stage, /hungBiomePlaylist/);
+    const cook = readFileSync(join(here, "./cook.ts"), "utf8");
+    assert.doesNotMatch(cook, /missPace/);
+    assert.doesNotMatch(cook, /HUNG_MISS_PACE/);
   });
 
   it("hung biome play keeps beats, pad arrows, score/speed HUD — not empty quiet film", () => {
