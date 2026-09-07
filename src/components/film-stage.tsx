@@ -28,7 +28,7 @@ import { sfxHit, unlockAudio, startScore, stopScore, syncScore } from "@/game/au
 import { press } from "@/lib/press";
 import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
-import { playableClipSrc, stockBiomeLoop } from "@/game/play-clip";
+import { playableClipSrc, stockBiomeLoop, warmClip, warmedClip } from "@/game/play-clip";
 import { HazardLayer } from "@/components/hazard-layer";
 import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, holdDoorLoops, holdLoopSeam, hungBiomePlaylist, hungStageChrome, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
 import { doorAtPoint, isHallFilm, isLivingHallLoop } from "@/game/stock-room";
@@ -268,8 +268,14 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     el.playsInline = true;
     el.preload = "auto";
     const src = playableClipSrc(url) || url;
+    const warmed = holdDoorRef.current ? warmedClip(src) : null;
     if (el.getAttribute("src") !== src) {
       el.src = src;
+      /* Hall already warmed this plate — skip cold load() from zero. */
+      if (!(warmed && warmed.readyState >= 2 && (warmed.getAttribute("src") === src || warmed.currentSrc === src))) {
+        el.load();
+      }
+    } else if (el.readyState < 2 && !(warmed && warmed.readyState >= 2)) {
       el.load();
     }
     el.onerror = () => {
@@ -395,6 +401,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     const startI = holdDoor ? firstBiomePlate(list) : 0;
     plateRef.current = startI;
     const first = list[startI] || list[0] || (original ? film.origin : portrait ? film.portrait : film.local);
+    if (holdDoor && first) warmClip(first);
     if (isClip(first) || playableClipSrc(first)) setSrc(playableClipSrc(first) || first);
     const pic = [film.portraitStill, film.still].find((u) => u && (/\.(jpe?g|png|webp)(\?|$)/i.test(u) || u.startsWith("data:image")));
     setPoster(pic || "");
@@ -446,6 +453,12 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       });
     };
     kick();
+    /* holdDoor: first plate is warmed during hall breath — skip late post-mount preload. */
+    if (holdDoor) {
+      return () => {
+        gone = true;
+      };
+    }
     const links: HTMLLinkElement[] = [];
     for (const u of list) {
       if (!u) continue;

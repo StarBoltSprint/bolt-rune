@@ -669,6 +669,12 @@ export function hungBiomePlaylist(urls?: Array<string | null | undefined> | null
   return [stockBiomeLoop(biome)];
 }
 
+/** First hung biome MP4 to warm during hall breath / hang bind. */
+export function hungBiomeFirstUrl(urls?: Array<string | null | undefined> | null, biome?: string | null): string {
+  const list = hungBiomePlaylist(urls, biome);
+  return list[firstBiomePlate(list)] || list[0] || "";
+}
+
 /**
  * Hung / stock rift handoff: cooked room→biome trans (if any) then biome loops.
  * Stock hall loop / citadel still are not a trans — playing them is the
