@@ -299,10 +299,11 @@ describe("Imagine prompt rails", () => {
     const ask = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     assert.match(src, /HangRoomStrip/);
-    assert.match(src, /data-hang-room/);
+    assert.match(src, /vaultHangRoom/);
     assert.match(src, /HangAskSheet/);
     assert.match(ask, /data-hang-pick=/);
     assert.match(ask, /data-hang-rooms=/);
+    assert.match(ask, /data-hang-room/);
     assert.match(src, /askHang\(/);
     assert.match(src, /hangOpensSheet/);
     assert.match(src, /listHangRooms/);

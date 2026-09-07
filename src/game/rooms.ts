@@ -147,13 +147,14 @@ export type RoomCountHint = {
 
 /** Union every hall the citadel actually has — never shrink to 1 when more exist. */
 export function citadelRoomCount(hint: RoomCountHint = {}): number {
-  const hallNs = (hint.halls || []).map((h) => (typeof h === "number" ? hallN(h) : hallN(h.n) || hallN(h.hall)));
+  const hallNs = (hint.halls || []).map((h, i) =>
+    typeof h === "number" ? hallN(h) : hallN(h.n) || hallN(h.hall) || (h.n == null && h.hall == null ? i + 1 : 0),
+  );
   const n = Math.max(
     hint.rooms || 0,
     hint.hall || 0,
     hint.lastRooms || 0,
     hint.lastHall || 0,
-    hint.halls?.length || 0,
     ...hallNs,
     ...(hint.hungHalls || []).map((h) => hallN(h) || 0),
   );
