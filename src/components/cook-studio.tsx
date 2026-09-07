@@ -7,6 +7,7 @@ import { playableClipSrc, stockBiomeLoop } from "@/game/play-clip";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { ENGINE } from "@/game/laws";
 import { startCookPlate, pollCookPlate, cookStatus, startCookStill, freeRuneSlot } from "@/lib/cook";
+import { cookFrameHint, cookFrameLine } from "@/lib/cook-progress";
 import { readArtifacts, type HungArtifact } from "@/game/artifacts";
 import type { Film } from "@/game/films";
 import { boltBack, locFromHash, pushBolt, readBolt } from "@/lib/bolt-history";
@@ -715,12 +716,18 @@ export function CookStudio({
             continue;
           }
           if (!polled.ok) continue;
-          const timePct = 32 + Math.min(60, Math.round(((Date.now() - t0) / expect) * 60));
-          const live = Math.max(pace.n, polled.pct ?? timePct);
-          pace.n = Math.min(92, live);
-          setPct(pace.n);
-          if (polled.frame) setFrameHint(polled.frame);
-          setFrost(polled.frame ? `frame ${polled.frame}` : "Imagine is forging");
+          try {
+            const timePct = 32 + Math.min(60, Math.round(((Date.now() - t0) / expect) * 60));
+            const apiPct = typeof polled.pct === "number" && Number.isFinite(polled.pct) ? polled.pct : timePct;
+            const live = Math.max(pace.n, apiPct);
+            pace.n = Math.min(92, Number.isFinite(live) ? live : pace.n);
+            setPct(pace.n);
+            const hint = cookFrameHint(polled.frame);
+            if (hint) setFrameHint(hint);
+            setFrost(cookFrameLine(polled.frame, "Imagine is forging"));
+          } catch {
+            /* bad status coalesce must not freeze the overlay */
+          }
           if (polled.status === "done" && polled.url) {
             const playable = biomeReadySrc([polled.url, ...got], cookBiome);
             got.push(playable);
@@ -1175,7 +1182,7 @@ export function CookStudio({
             {pct}%
           </p>
           <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.28em] text-ice/80">
-            {frameHint ? `frame ${frameHint}` : frost || "Imagine is forging"}
+            {cookFrameLine(frameHint, frost || "Imagine is forging")}
           </p>
           <div className="mt-6 h-[2px] w-40 overflow-hidden bg-white/15">
             <div className="h-full bg-ice" style={{ width: `${Math.max(2, pct)}%` }} />

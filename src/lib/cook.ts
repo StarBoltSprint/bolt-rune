@@ -9,6 +9,7 @@ import { playableClipSrc } from "@/game/play-clip";
 import { clipImaginePrompt, runeFilmVariants, runeStillJobs } from "@/game/imagine-payload";
 import { CAM_LOCK, citadelPrompt, dropTaintedBolt } from "@/game/rune";
 import { bindCookSlot, classifyImagineRaw, emptyCookSlot, freeCookSlot, releaseCookSlot, slotStatus, sweepStale, takeCookSlot, type CookSlot } from "@/lib/cook-slot";
+import { readImaginePoll } from "@/lib/cook-progress";
 
 const exec = promisify(execFile);
 const API = "https://api.x.ai/v1";
@@ -34,35 +35,6 @@ function dropSlot() {
 }
 type PollOk = { ok: true; status: "pending" | "done" | "failed"; url?: string; pct?: number; frame?: string };
 type PollErr = { ok: false; error: string };
-
-function readPct(body: Record<string, unknown>): number | undefined {
-  const nested = body.progress;
-  const bag = nested && typeof nested === "object" ? (nested as Record<string, unknown>) : body;
-  for (const k of ["progress", "progress_pct", "percent", "percentage", "progress_percent", "completion", "ratio"]) {
-    const v = bag[k] ?? body[k];
-    if (typeof v === "number" && Number.isFinite(v)) {
-      const n = v <= 1 ? v * 100 : v;
-      return Math.max(0, Math.min(99, Math.round(n)));
-    }
-    if (typeof v === "string" && /^\d+(\.\d+)?%?$/.test(v.trim())) {
-      return Math.max(0, Math.min(99, Math.round(parseFloat(v))));
-    }
-  }
-  const cur = Number(body.current_frame ?? body.frame ?? body.frames_done);
-  const tot = Number(body.total_frames ?? body.frames);
-  if (Number.isFinite(cur) && Number.isFinite(tot) && tot > 0) {
-    return Math.max(0, Math.min(99, Math.round((cur / tot) * 100)));
-  }
-  return undefined;
-}
-
-function readFrame(body: Record<string, unknown>): string | undefined {
-  const cur = body.current_frame ?? body.frame ?? body.frames_done;
-  const tot = body.total_frames ?? body.frames;
-  if (cur != null && tot != null) return `${cur} / ${tot}`;
-  if (cur != null) return String(cur);
-  return undefined;
-}
 
 function keepStore(name: string) {
   return { filename: name, public_url: true as const };
@@ -495,28 +467,19 @@ export const pollCookPlate = createServerFn({ method: "POST" })
         if (/404|410/.test(lastErr)) dropSlot();
         return { ok: false, error: lastErr || "poll" };
       }
-      const status = String(body.status || body.state || "pending").toLowerCase();
+      const poll = readImaginePoll(body);
       const url = lastingUrl(body);
-      const done =
-        status === "done" ||
-        status === "succeeded" ||
-        status === "complete" ||
-        status === "completed" ||
-        status === "success" ||
-        status === "ready" ||
-        status === "finished";
-      if (done || url) {
+      if (poll.status === "done" || url) {
         dropSlot();
         if (!url) return { ok: false, error: "no-url" };
         const local = await stashClip(url);
         return { ok: true, status: "done", url: local, pct: 100 };
       }
-      if (status === "failed" || status === "expired" || status === "error" || status === "cancelled") {
+      if (poll.status === "failed") {
         dropSlot();
-        const why = String(body.error || body.message || body.reason || status).slice(0, 80);
-        return { ok: true, status: "failed", url: undefined, pct: 0, frame: why };
+        return { ok: true, status: "failed", url: undefined, pct: 0, frame: poll.frame };
       }
-      return { ok: true, status: "pending", pct: readPct(body), frame: readFrame(body) };
+      return { ok: true, status: "pending", pct: poll.pct, frame: poll.frame };
     } catch {
       return { ok: false, error: "net" };
     }

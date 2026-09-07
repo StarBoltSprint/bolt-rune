@@ -5,6 +5,7 @@ import { bindHungRoom, doorLetterOf, hangThumbStill, hungPlayChrome, vaultHangCa
 import { vaultHangRoom, vaultHangStart } from "@/game/path-entry";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/lib/cook";
+import { cookFrameHint, cookFrameLine } from "@/lib/cook-progress";
 import { hangHall, listHall } from "@/lib/hall";
 import { bindCitadel, defaultHangRoom, hallN, hangOpensSheet, holdHangRooms, listHangCitadels, listHangRooms, resolveHangRoom, type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import { hydrateSessions, lastPlay, listSessions, listStoredHallHints, LOAD_DROP_EVENT, stampPlay } from "@/game/rune-session";
@@ -432,12 +433,23 @@ export function VaultHall() {
           continue;
         }
         if (!polled.ok) continue;
-        const timePct = 32 + Math.min(67, Math.round(((Date.now() - t0) / expect) * 67));
-        const livePct = Math.max(pace.n, polled.pct ?? timePct);
-        pace.n = Math.min(99, livePct);
-        setPct(pace.n);
-        if (polled.frame) setFrameHint(polled.frame);
-        setFrost(polled.frame ? `frame ${polled.frame}` : stretching ? "Imagine continues the film" : `Imagine is forging clip ${at + 2}`);
+        try {
+          const timePct = 32 + Math.min(67, Math.round(((Date.now() - t0) / expect) * 67));
+          const apiPct = typeof polled.pct === "number" && Number.isFinite(polled.pct) ? polled.pct : timePct;
+          const livePct = Math.max(pace.n, apiPct);
+          pace.n = Math.min(99, Number.isFinite(livePct) ? livePct : pace.n);
+          setPct(pace.n);
+          const hint = cookFrameHint(polled.frame);
+          if (hint) setFrameHint(hint);
+          setFrost(
+            cookFrameLine(
+              polled.frame,
+              stretching ? "Imagine continues the film" : `Imagine is forging clip ${at + 2}`,
+            ),
+          );
+        } catch {
+          /* bad status coalesce must not freeze Continue at ~43% */
+        }
         if (polled.status === "done" && polled.url) {
           const chain = uniqueClips(stretching ? [...family.slice(0, Math.max(0, family.length - 1)), polled.url] : [...family, polled.url]);
           const next = setPlaylist(
@@ -822,7 +834,7 @@ export function VaultHall() {
             {Math.max(1, pct)}%
           </p>
           <p className="mt-3 px-6 text-center font-mono text-[11px] uppercase tracking-[0.28em] text-ice">
-            {frameHint ? `frame ${frameHint}` : frost || "Imagine is forging"}
+            {cookFrameLine(frameHint, frost || "Imagine is forging")}
           </p>
           <div className="mt-6 h-[2px] w-40 overflow-hidden bg-white/15">
             <div className="h-full bg-ice" style={{ width: `${Math.max(2, pct)}%` }} />

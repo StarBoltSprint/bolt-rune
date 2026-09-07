@@ -287,6 +287,9 @@ describe("hang ask leftover tap", () => {
     assert.match(specBar, /6, 10, 15/);
     assert.match(specBar, /"720", "1080"/);
     assert.match(specBar, /Next continue \/ shift/);
+    assert.match(vault, /cookFrameLine/);
+    assert.match(vault, /cookFrameHint/);
+    assert.doesNotMatch(vault, /frame \$\{polled\.frame\}/);
     const hangAVis = vault.indexOf('data-hang={vaultHangStart("A")');
     const vaultActions = vault.indexOf("data-vault-actions");
     const botOnly = vault.indexOf("sr-only sticky");

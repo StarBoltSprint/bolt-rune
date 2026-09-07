@@ -62,6 +62,7 @@ import {
 } from "@/game/path-entry";
 import { lookForgeAlreadyDone, markLookForgeDone, shouldResumeForgePlay } from "@/game/cook-ready";
 import { freeRuneSlot, grabRuneFrame, pollCookPlate, startCookStill, startRuneExtend, startRuneFilm, startRuneStill, cacheClip, cacheStill } from "@/lib/cook";
+import { cookFrameHint } from "@/lib/cook-progress";
 import { COOK_BUSY_WAIT_MS, COOK_START_ACCEPTED_PCT, cookBusyGiveUpFrost, cookBusyNext, cookBusyWaitFrost, isCookSlotBlock, isLocalSlotHold } from "@/lib/cook-busy";
 import { BIOMES, biomePlaylist, riftFilm, riftPrompt, type BiomeId } from "@/game/cook";
 import { FilmStage } from "@/components/film-stage";
@@ -4273,7 +4274,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         break;
       }
       if (polled.status === "failed") {
-        setFrost(polled.frame ? `seed dropped · ${polled.frame}` : "seed film dropped · hall kept");
+        const why = cookFrameHint(polled.frame);
+        setFrost(why ? `seed dropped · ${why}` : "seed film dropped · hall kept");
         break;
       }
       setFrost(`seed video · ${p + 1}`);
