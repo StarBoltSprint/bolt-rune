@@ -115,7 +115,7 @@ export function packCitadels(list: RuneSessionMeta[] = []): CitadelPack[] {
     .map((root) => {
       const tree = walkRooms(root.id, kids, byId, new Set());
       const packed = citadelRoomCount({
-        rooms: root.rooms,
+        rooms: Math.max(root.rooms || 0, ...tree.map((r) => Number(r.rooms) || 0)),
         hall: root.hall,
         halls: root.hallHints?.length ? root.hallHints : tree.map((r) => r.hall || 0),
         hungHalls: tree.map((r) => r.hall),
@@ -240,13 +240,59 @@ function richestHangPack(packs: CitadelPack[]): CitadelPack | undefined {
   return [...packs].sort((a, b) => b.rooms.length - a.rooms.length || b.updated - a.updated)[0];
 }
 
+/** Load cards Hang may pick — biome artefacts stripped. Same packer as the Load sheet. */
+export function livingLoadPacks(rows: RuneSessionMeta[] = []): CitadelPack[] {
+  return packCitadels(livingHangRows(rows));
+}
+
+/** How many Hang picks Load’s living cards imply — never lastPlay.hall alone. */
+export function loadHangHallCount(packs: CitadelPack[]): number {
+  if (!packs.length) return 0;
+  const multi = packs.filter((p) => p.rooms.length > 1);
+  if (!multi.length) return Math.min(8, packs.length);
+  const richest = richestHangPack(multi);
+  if (!richest) return Math.min(8, packs.length);
+  const others = packs.filter((p) => p.root.id !== richest.root.id);
+  return Math.min(8, richest.rooms.length + others.reduce((n, p) => n + Math.max(1, p.rooms.length), 0));
+}
+
+function nextFreeHall(seen: Set<number>): number {
+  for (let i = 1; i <= 8; i++) if (!seen.has(i)) return i;
+  return 0;
+}
+
+/**
+ * Hang list is monotonic for a Vault visit: a later 2-room hydrate/lastPlay
+ * pass must not replace an already-shown full Load hall set.
+ */
+export function holdHangRooms(prev: HangRoomPick[] = [], next: HangRoomPick[] = []): HangRoomPick[] {
+  const older = prev.filter((r) => hallN(r.hall));
+  const newer = next.filter((r) => hallN(r.hall));
+  if (!older.length) return newer.length ? newer : next;
+  if (newer.length > older.length) return newer;
+  const byHall = new Map<number, HangRoomPick>();
+  for (const r of older) byHall.set(r.hall, r);
+  for (const r of newer) {
+    const cur = byHall.get(r.hall);
+    byHall.set(r.hall, {
+      hall: r.hall,
+      name: r.name || cur?.name || `Room ${r.hall}`,
+      still: r.still || cur?.still || "",
+      living: Boolean(r.living || cur?.living),
+      citadel: r.citadel || cur?.citadel,
+      bindHall: r.bindHall ?? cur?.bindHall,
+    });
+  }
+  return [...byHall.values()].sort((a, b) => a.hall - b.hall);
+}
+
 /** Hang A/B and Grok Bot Hang always confirm a room before binding a door. */
 export function hangOpensSheet(kind: "A" | "B" | "bot", roomCount: number): boolean {
   void kind;
   return roomCount >= 1;
 }
 
-/** The citadel and hall Hang A/B should bind — Load’s saved hall, never a biome artefact. */
+/** The citadel and hall Hang A/B should bind — Load’s richest saved halls, never a poorer lastPlay pack. */
 export function bindCitadel(
   rows: RuneSessionMeta[] = [],
   last: LastPlayHint = null,
@@ -256,10 +302,17 @@ export function bindCitadel(
   const hint = hangLastHint(rows, last);
   const packs = packCitadels(living);
   const richest = richestHangPack(packs);
-  const hit = (hint?.id ? living.find((s) => s.id === hint.id) : undefined) || richest?.root || living[0];
+  const hinted = hint?.id
+    ? packs.find((p) => p.root.id === hint.id || p.rooms.some((r) => r.id === hint.id))
+    : undefined;
   const pack =
-    packs.find((p) => p.root.id === hit.id || p.rooms.some((r) => r.id === hit.id)) || richest;
-  const hall = hallN(hint?.hall) || Math.max(1, Math.min(8, pack?.root.hall || hit.hall || 1));
+    hinted && richest && hinted.rooms.length >= richest.rooms.length
+      ? hinted
+      : richest || hinted || packs[0];
+  const hit = pack?.root || living[0];
+  const hintedHall = hallN(hint?.hall);
+  const onPack = hintedHall && pack?.rooms.some((r) => (hallN(r.hall) || 0) === hintedHall);
+  const hall = onPack ? hintedHall : Math.max(1, Math.min(8, pack?.root.hall || hit.hall || 1));
   return {
     citadel: pack?.root.id || rootOf(hit.id, living),
     hall,
@@ -282,17 +335,14 @@ export function listHangRooms(
   last: LastPlayHint = null,
   arts?: Array<{ room?: { hall?: number; still?: string } | null; still?: string }>,
   extra?: HangRoomPick[],
+  held?: HangRoomPick[],
 ): HangRoomPick[] {
   const living = livingHangRows(rows);
   const hint = hangLastHint(rows, last);
   const cit = bindCitadel(rows, last);
-  const packs = packCitadels(living);
+  const packs = livingLoadPacks(rows);
   const multi = packs.filter((p) => p.rooms.length > 1);
-  const pack =
-    multi.find((p) => p.root.id === cit.citadel) ||
-    richestHangPack(multi) ||
-    packs.find((p) => p.root.id === cit.citadel) ||
-    richestHangPack(packs);
+  const richest = richestHangPack(multi) || richestHangPack(packs);
   const kin = livingCitadelRows(living, cit.citadel);
   const here = cit.hall || 1;
   const seen = new Set<number>();
@@ -309,28 +359,53 @@ export function listHangRooms(
       bindHall,
     });
   };
-  const fillCount = (count: number, meta?: Pick<RuneSessionMeta, "thumb" | "name" | "hall">) => {
+  const fillCount = (count: number, meta?: Pick<RuneSessionMeta, "thumb" | "name" | "hall">, citadel?: string) => {
     const n = Math.max(0, Math.min(8, count || 0));
-    for (let i = 1; i <= n; i++) put(i, roomStill(i, meta?.hall === i ? meta : undefined, arts), cit.citadel);
+    for (let i = 1; i <= n; i++) put(i, roomStill(i, meta?.hall === i ? meta : undefined, arts), citadel || cit.citadel);
   };
-  // Load’s saved halls: expanded Room N under a multi-room citadel, else one pick per Load card.
-  if (multi.length && pack) {
-    pack.rooms.forEach((r, i) => {
-      const hall = hallN(r.hall) || i + 1;
-      put(hall, roomStill(hall, r, arts), pack.root.id);
-      fillCount(citadelRoomCount({ rooms: r.rooms, hall: r.hall, halls: r.hallHints }), r);
-    });
-  } else if (packs.length > 1) {
-    packs.forEach((p, i) => {
-      const actual = hallN(p.root.hall) || hallN(p.rooms[0]?.hall) || 1;
-      put(i + 1, p.root.thumb || roomStill(actual, p.root, arts), p.root.id, actual);
-    });
-  } else if (pack?.rooms.length) {
-    pack.rooms.forEach((r, i) => {
-      const hall = hallN(r.hall) || i + 1;
-      put(hall, roomStill(hall, r, arts), pack.root.id);
-      fillCount(citadelRoomCount({ rooms: r.rooms, hall: r.hall, halls: r.hallHints }), r);
-    });
+  const putPackRooms = (p: CitadelPack, remap: boolean) => {
+    if (p.rooms.length > 1) {
+      const collide = p.rooms.some((r, i) => seen.has(hallN(r.hall) || i + 1));
+      p.rooms.forEach((r, i) => {
+        const hall = hallN(r.hall) || i + 1;
+        const still = roomStill(hall, r, arts);
+        if (!collide) put(hall, still, p.root.id);
+        else {
+          const slot = nextFreeHall(seen);
+          if (slot) put(slot, still, p.root.id, hall);
+        }
+      });
+      if (!collide) {
+        fillCount(
+          Math.max(
+            p.rooms.length,
+            citadelRoomCount({ rooms: p.root.rooms, halls: p.root.hallHints }),
+          ),
+          p.root,
+          p.root.id,
+        );
+      }
+      return;
+    }
+    const actual = hallN(p.root.hall) || hallN(p.rooms[0]?.hall) || 1;
+    const still = p.root.thumb || roomStill(actual, p.root, arts);
+    if (remap) {
+      const slot = nextFreeHall(seen);
+      if (slot) put(slot, still, p.root.id, actual);
+      return;
+    }
+    if (!seen.has(actual)) put(actual, still, p.root.id);
+    else {
+      const slot = nextFreeHall(seen);
+      if (slot) put(slot, still, p.root.id, actual);
+    }
+  };
+  // Same halls Load lists: every living card, not only lastPlay’s 2-room pack.
+  if (!multi.length && packs.length > 1) {
+    packs.forEach((p) => putPackRooms(p, true));
+  } else {
+    const ordered = richest ? [richest, ...packs.filter((p) => p.root.id !== richest.root.id)] : packs;
+    for (const p of ordered) putPackRooms(p, Boolean(multi.length) && p.rooms.length <= 1);
   }
   for (const s of kin) {
     fillCount(citadelRoomCount({ rooms: s.rooms, hall: s.hall, halls: s.hallHints }), s);
@@ -351,24 +426,23 @@ export function listHangRooms(
     for (let i = 1; i <= lastRooms; i++) put(i, roomStill(i, undefined, arts));
   }
   const lastN = hallN(hint?.hall);
-  if (lastN) put(lastN, roomStill(lastN, undefined, arts));
+  const known = Math.max(loadHangHallCount(packs), richest?.rooms.length || 0, hint?.rooms || 0, rooms.length);
+  if (lastN && lastN <= known) put(lastN, roomStill(lastN, undefined, arts));
   const cap = Math.max(
+    loadHangHallCount(packs),
     citadelRoomCount({
-      rooms: pack?.root.rooms,
-      hall: cit.hall,
-      halls: pack?.root.hallHints,
+      rooms: richest?.root.rooms,
+      halls: richest?.root.hallHints,
       lastRooms: hint?.rooms,
-      lastHall: hint?.hall,
       hungHalls: (arts || []).map((a) => a.room?.hall),
     }),
-    pack?.rooms?.length || 0,
-    ...packs.map((p) => p.rooms.length),
-    citadelRoomCount({ halls: extra || [] }),
+    richest?.rooms?.length || 0,
+    extra?.length || 0,
     ...kin.map((s) => citadelRoomCount({ rooms: s.rooms, hall: s.hall, halls: s.hallHints })),
   );
   for (let i = 1; i <= cap; i++) put(i, roomStill(i, undefined, arts));
   if (!rooms.length) rooms.push({ hall: 1, name: "Room 1", still: "", living: true });
-  return rooms.sort((a, b) => a.hall - b.hall);
+  return holdHangRooms(held, rooms.sort((a, b) => a.hall - b.hall));
 }
 
 export function defaultHangRoom(rooms: HangRoomPick[]): number {

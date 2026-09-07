@@ -1,4 +1,5 @@
 import type { RuneNode, WalkSecs } from "@/game/rune";
+import { livingLoadPacks, loadHangHallCount } from "@/game/rooms.ts";
 import { dropCitadel, getCitadel, getGuestCitadel, listCitadels, listGuestCitadels, putCitadel, putGuestCitadel } from "@/lib/citadel-cloud";
 
 const DB = "bolt-rune-sessions";
@@ -476,19 +477,29 @@ export function listSessions(): RuneSessionMeta[] {
     for (const s of readMem()) put(s);
     for (const s of readStore()) put(s);
     const last = lastPlay();
-    if (last?.id && !byId.has(last.id)) {
-      put({
-        id: last.id,
-        name: last.title || "Citadel",
-        title: last.title,
-        updated: Date.now(),
-        phase: "play",
-        want: 2,
-        walks: 0,
-        thumb: "/refs/hall-doors.jpg",
-        rooms: last.rooms,
-        hall: last.hall,
-      });
+    if (last?.id) {
+      const cur = byId.get(last.id);
+      if (!cur) {
+        put({
+          id: last.id,
+          name: last.title || "Citadel",
+          title: last.title,
+          updated: Date.now(),
+          phase: "play",
+          want: 2,
+          walks: 0,
+          thumb: "/refs/hall-doors.jpg",
+          rooms: last.rooms,
+          hall: last.hall,
+        });
+      } else {
+        byId.set(last.id, {
+          ...cur,
+          rooms: keepRooms(cur.rooms, last.rooms),
+          hall: cur.hall || last.hall,
+          title: cur.title || last.title,
+        });
+      }
     }
     return [...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 48);
   } catch {
@@ -512,7 +523,8 @@ export function listStoredHallHints(): { hall: number; still: string; name: stri
     if (slices.length) {
       for (const h of slices) put(Math.max(1, h.n || 1), h.still || s.thumb || "", `Room ${h.n || 1}`);
     }
-    const cap = Math.max(s.rooms || 0, s.hall || 0, slices.length);
+    // rooms / halls[] are the saved set — current hall number must not invent Room 3–8.
+    const cap = Math.max(s.rooms || 0, slices.length);
     for (let i = 1; i <= cap && i <= 8; i++) {
       put(i, i === (s.hall || 1) ? s.thumb || s.plate || "" : "", `Room ${i}`);
     }
@@ -521,7 +533,7 @@ export function listStoredHallHints(): { hall: number; still: string; name: stri
   for (const s of readStore()) fill(s);
   for (const s of readCatalog()) fill(s);
   const last = lastPlay();
-  if (last?.rooms) fill({ rooms: last.rooms, hall: last.hall });
+  if (last?.rooms) fill({ rooms: last.rooms });
   else if (last?.hall) put(last.hall, "", `Room ${last.hall}`);
   return out.sort((a, b) => a.hall - b.hall);
 }
@@ -855,7 +867,7 @@ function mergeMeta(list: RuneSessionMeta[]) {
       from: newer.from || older.from,
       via: newer.via || older.via,
       title: newer.title || older.title,
-      rooms: keepRooms(older.rooms, roomCap(newer)),
+      rooms: keepRooms(roomCap(older), roomCap(newer)),
       hall: newer.hall || older.hall,
       hallHints: keepHallMeta(older.hallHints, newer.hallHints),
     });
@@ -902,40 +914,82 @@ async function scanIdbMeta(): Promise<RuneSessionMeta[]> {
 
 export async function hydrateSessions(onList?: (rows: RuneSessionMeta[]) => void): Promise<RuneSessionMeta[]> {
   askPersist();
-  const before = listSessions();
-  onList?.(before);
-  const wait = <T,>(p: Promise<T>, ms: number, fallback: T) =>
-    Promise.race([p, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
+  let floor = loadHangHallCount(livingLoadPacks(listSessions()));
+  const emit = (rows: RuneSessionMeta[]) => {
+    if (!rows.length) return;
+    const n = loadHangHallCount(livingLoadPacks(rows));
+    if (n < floor) {
+      // Cloud / lastPlay rooms=2 must not replace the full Load hall set.
+      onList?.(listSessions());
+      return;
+    }
+    floor = Math.max(floor, n);
+    onList?.(rows);
+  };
   try {
-    const idb = await wait(scanIdbMeta(), 1200, [] as RuneSessionMeta[]);
-    if (idb.length) onList?.(mergeMeta(idb));
+    const stored = readStore().map((s) => metaOf(s));
+    if (stored.length) emit(mergeMeta(stored));
+    else emit(listSessions());
+  } catch {
+    emit(listSessions());
+  }
+  const take = async (p: Promise<RuneSessionMeta[]>, ms: number, hold = false) => {
+    let settled = false;
+    const pending = p
+      .then((rows) => {
+        settled = true;
+        return rows;
+      })
+      .catch(() => {
+        settled = true;
+        return [] as RuneSessionMeta[];
+      });
+    const raced = await Promise.race([
+      pending,
+      new Promise<RuneSessionMeta[]>((resolve) => setTimeout(() => resolve([]), ms)),
+    ]);
+    if (raced.length) emit(mergeMeta(raced));
+    if (!settled) {
+      if (hold) {
+        const late = await Promise.race([
+          pending,
+          new Promise<RuneSessionMeta[]>((resolve) => setTimeout(() => resolve([]), 2000)),
+        ]);
+        if (late.length) emit(mergeMeta(late));
+      }
+      if (!settled) {
+        void pending.then((rows) => {
+          if (rows.length) emit(mergeMeta(rows));
+        });
+      }
+    }
+  };
+  try {
+    // Vault Hang awaits this — do not return on an IDB timeout as if the store were empty.
+    await take(scanIdbMeta(), 4000, true);
   } catch {
     /* */
   }
   try {
     const dumped = scanStorageSessions().map((s) => metaOf(s));
-    if (dumped.length) onList?.(mergeMeta(dumped));
+    if (dumped.length) emit(mergeMeta(dumped));
   } catch {
     /* */
   }
   try {
-    const cloud = await wait(listCitadels(), 2500, [] as RuneSessionMeta[]);
-    if (cloud.length) onList?.(mergeMeta(cloud));
+    await take(listCitadels(), 2500);
   } catch {
     /* */
   }
   try {
     const guest = guestId();
-    if (guest) {
-      const cloud = await wait(listGuestCitadels({ data: { guest } }), 2500, [] as RuneSessionMeta[]);
-      if (cloud.length) onList?.(mergeMeta(cloud));
-    }
+    if (guest) await take(listGuestCitadels({ data: { guest } }), 2500);
   } catch {
     /* */
   }
   const last = lastPlay();
   if (last?.id && !listSessions().some((s) => s.id === last.id)) {
-    onList?.(
+    emit(
       mergeMeta([
         {
           id: last.id,
