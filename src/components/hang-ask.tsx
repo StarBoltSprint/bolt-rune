@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { vaultHangRoom } from "@/game/path-entry";
 import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, swallowOpeningTap } from "@/game/hang-ask";
 import { type HangRoomPick } from "@/game/rooms";
@@ -76,7 +76,10 @@ export function HangAskSheet({
 }) {
   const [armed, setArmed] = useState(false);
   const [held, setHeld] = useState(rooms);
-  const [picked, setPicked] = useState(hall);
+  const [picked, setPicked] = useState(() => (hall >= 1 && hall <= 8 ? hall : 1));
+  const pickedRef = useRef(picked);
+  const choseRef = useRef(false);
+  pickedRef.current = picked;
   useEffect(() => {
     const release = swallowOpeningTap(HANG_LEFTOVER_SWALLOW_MS);
     const t = window.setTimeout(() => setArmed(true), HANG_CONFIRM_ARM_MS);
@@ -89,15 +92,25 @@ export function HangAskSheet({
     if (rooms.length >= held.length) setHeld(rooms);
   }, [rooms, held.length]);
   useEffect(() => {
+    /* Parent hall is the column default — do not overwrite a tapped Room N. */
+    if (choseRef.current) return;
     if (hall >= 1 && hall <= 8) setPicked(hall);
   }, [hall]);
   const picks = held.length >= rooms.length ? held : rooms;
+  function pickHall(n: number) {
+    const next = Math.max(1, Math.min(8, n || 1));
+    choseRef.current = true;
+    pickedRef.current = next;
+    setPicked(next);
+    onHall(next);
+  }
   return (
     <div
       className="fixed inset-0 z-[90] flex flex-col bg-black/92 px-5 pt-[max(1.6rem,env(safe-area-inset-top))] pb-[max(1.6rem,env(safe-area-inset-bottom))]"
       data-hang-ask={door}
       data-hang-sheet="1"
       data-hang-load-halls={picks.length}
+      data-hang-picked={picked}
       data-hang-armed={armed ? "1" : "0"}
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
@@ -122,10 +135,7 @@ export function HangAskSheet({
       <HangRoomStrip
         rooms={picks}
         hall={picked}
-        onHall={(n) => {
-          setPicked(n);
-          onHall(n);
-        }}
+        onHall={pickHall}
       />
       {armed ? (
         <button
@@ -134,7 +144,7 @@ export function HangAskSheet({
           {...vaultHangRoom(picked)}
           className="mt-6 rounded-2xl border border-[#9ef0e4]/50 px-4 py-3 font-display text-2xl text-[#9ef0e4]"
           style={{ touchAction: "manipulation" }}
-          {...press(() => onConfirm(picked))}
+          {...press(() => onConfirm(pickedRef.current))}
         >
           Hang {door} · room {picked}
         </button>

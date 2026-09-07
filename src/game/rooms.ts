@@ -452,18 +452,25 @@ export function defaultHangRoom(rooms: HangRoomPick[]): number {
 /**
  * Bot: one room → that hall. Many rooms → explicit `data-hang-room` / hall number,
  * else the living hall (or hall 1).
+ * An explicit pick N (Room 8) must not fall back to defaultHangRoom / living 2
+ * just because a late hydrate list is shorter than the sheet.
  */
 export function resolveHangRoom(rooms: HangRoomPick[], want?: number | string | null): number {
   const list = rooms.length ? rooms : [{ hall: 1, name: "Room 1", still: "", living: true }];
   if (list.length === 1) return list[0]!.hall;
   const n = hallN(typeof want === "number" ? want : want == null || want === "" ? 0 : want);
-  if (n && list.some((r) => r.hall === n)) return n;
+  if (n) return n;
   return defaultHangRoom(list);
 }
 
-/** Living Hang Room N is hall N. A picked 2 must not collapse to Room 1. */
+/** Living Hang Room N is hall N. A picked 8 must not collapse to the column default. */
 export function livingHangHall(rooms: HangRoomPick[], want?: number | string | null): number {
   const n = hallN(typeof want === "number" ? want : want == null || want === "" ? 0 : want);
   if (n) return n;
   return resolveHangRoom(rooms, want);
+}
+
+/** Hang confirm: tapped hall N wins — never defaultHangRoom / stale hangHallN. */
+export function confirmHangHall(rooms: HangRoomPick[], want?: number | string | null): number {
+  return livingHangHall(rooms, want);
 }

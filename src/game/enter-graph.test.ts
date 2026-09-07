@@ -240,6 +240,8 @@ describe("enter graph · hang any artefact on any door", () => {
 describe("hung biome play · Room N chrome and quiet QTE", () => {
   it("Hang Room 2 titles Room 2 • Door A Play Sprint, not Room 1", () => {
     assert.deepEqual(hungPlayChrome(2, "A"), { keeper: "Room 2 • Door A", name: "Play Sprint" });
+    assert.deepEqual(hungPlayChrome(8, "A"), { keeper: "Room 8 • Door A", name: "Play Sprint" });
+    assert.notDeepEqual(hungPlayChrome(8, "A"), hungPlayChrome(2, "A"));
     assert.deepEqual(hungPlayChrome(1, "B"), { keeper: "Room 1 • Door B", name: "Play Sprint" });
     assert.notDeepEqual(hungPlayChrome(2, "A"), hungPlayChrome(1, "A"));
     const here = dirname(fileURLToPath(import.meta.url));
@@ -248,6 +250,25 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(cook, /quietBiomeFilm/);
     assert.match(cook, /name: chrome\.name/);
     assert.match(cook, /keeper: chrome\.keeper/);
+  });
+
+  it("Hang Room 8 door A enter resolves hall 8, not living Room 2", () => {
+    const id = "art-h8-a";
+    const hung = hangArtifactOnDoor(id, "A", { hall: 8, citadel: "cit-8" }, [art(id, "forest")]);
+    const enter8 = resolveDoorEnter("A", 8, "cit-8", hung);
+    assert.equal(enter8.kind, "biome");
+    if (enter8.kind !== "biome") return;
+    assert.equal(enter8.hall, 8);
+    assert.equal(enter8.door, "A");
+    assert.equal(enter8.art, id);
+    assert.deepEqual(hungPlayChrome(enter8.hall, enter8.door), { keeper: "Room 8 • Door A", name: "Play Sprint" });
+    const miss2 = resolveDoorEnter("A", 2, "cit-8", hung);
+    assert.deepEqual(miss2, { kind: "hall", door: "A", hall: 2 });
+    const fromRoom2 = resolveHungEnter("A", 2, "cit-8", hung);
+    assert.equal(fromRoom2.kind, "biome");
+    if (fromRoom2.kind !== "biome") return;
+    assert.equal(fromRoom2.hall, 8);
+    assert.equal(fromRoom2.art, id);
   });
 
   it("stay play on hall 2 drops hall loops and keeps Room 2 chrome", () => {
