@@ -28,8 +28,8 @@ export function HangRoomStrip({
             {...vaultHangRoom(r.hall)}
             aria-pressed={on}
             disabled={disabled}
-            className={`min-w-[5.6rem] overflow-hidden rounded-2xl border bg-black/50 text-left disabled:opacity-40 ${
-              on ? "border-[#9ef0e4]/70 ring-1 ring-[#9ef0e4]/35" : "border-white/20"
+            className={`min-w-[6.4rem] overflow-hidden rounded-2xl border bg-black/50 text-left disabled:opacity-40 ${
+              on ? "border-[#9ef0e4]/70 ring-1 ring-[#9ef0e4]/35" : "border-white/25"
             }`}
             style={{ touchAction: "manipulation" }}
             {...press(() => {
@@ -38,17 +38,17 @@ export function HangRoomStrip({
             })}
           >
             {r.still ? (
-              <img src={r.still} alt="" className="h-16 w-full object-cover" />
+              <img src={r.still} alt="" className="h-[4.4rem] w-full object-cover" />
             ) : (
-              <div className="h-16 w-full bg-[linear-gradient(180deg,rgba(158,240,228,0.16),rgba(7,8,12,0.7))]" />
+              <div className="h-[4.4rem] w-full bg-[linear-gradient(180deg,rgba(158,240,228,0.16),rgba(7,8,12,0.7))]" />
             )}
             <span
               className={`block px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] ${
-                on ? "text-[#9ef0e4]" : "text-white/60"
+                on ? "text-[#9ef0e4]" : "text-white/65"
               }`}
             >
               Room {r.hall}
-              {r.living ? " · here" : ""}
+              {r.living ? " · here" : rooms.length === 1 ? " · only" : ""}
             </span>
           </button>
         );
@@ -81,7 +81,7 @@ export function HangAskSheet({
   }, []);
   return (
     <div
-      className="absolute inset-0 z-[90] flex flex-col bg-black/88 px-5 pt-[max(1.6rem,env(safe-area-inset-top))] pb-[max(1.6rem,env(safe-area-inset-bottom))]"
+      className="fixed inset-0 z-[90] flex flex-col bg-black/92 px-5 pt-[max(1.6rem,env(safe-area-inset-top))] pb-[max(1.6rem,env(safe-area-inset-bottom))]"
       data-hang-ask={door}
       data-hang-sheet="1"
       data-hang-armed={armed ? "1" : "0"}

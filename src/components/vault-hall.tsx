@@ -410,10 +410,6 @@ export function VaultHall() {
         <div className="mt-4">
           <p className="mb-2 font-mono text-[9px] uppercase tracking-[0.2em] text-white/40">Next continue / shift</p>
           <ClipSpecBar disabled={busy} />
-          <p className="mt-3 mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[#9ef0e4]/80">
-            Hang on room{hangRooms.length > 1 ? ` · ${hangRooms.length} halls` : ""}
-          </p>
-          <HangRoomStrip rooms={hangRooms} hall={hangHallN} onHall={setHangHallN} disabled={busy} />
           <button
             type="button"
             data-hang-bot={vaultHangStart("bot").dataHang}
@@ -436,7 +432,17 @@ export function VaultHall() {
         </div>
 
         {packs.length ? (
-          <div className={`mt-6 grid min-h-0 flex-1 gap-3 overflow-y-auto pb-4 ${packs.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
+          <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto pb-4">
+            <div className="sticky top-0 z-20 -mx-1 mb-3 rounded-2xl border border-[#9ef0e4]/25 bg-black/80 px-3 py-3 backdrop-blur-sm">
+              <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[#9ef0e4]">
+                Hang on room{hangRooms.length > 1 ? ` · ${hangRooms.length} halls` : " · Room 1"}
+              </p>
+              <HangRoomStrip rooms={hangRooms} hall={hangHallN} onHall={setHangHallN} disabled={busy} />
+              <p className="mt-2 font-mono text-[9px] uppercase tracking-[0.16em] text-white/45">
+                then Hang A or Hang B on a pack — pick the room on the sheet
+              </p>
+            </div>
+            <div className={`grid min-h-0 gap-3 ${packs.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
             {packs.map((f) => {
               const head = familyHead(f);
               const n = f.playlist.length;
@@ -577,6 +583,7 @@ export function VaultHall() {
                           })}
                         >
                           Hang A
+                          <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/40">pick room</span>
                         </button>
                         <button
                           type="button"
@@ -591,6 +598,7 @@ export function VaultHall() {
                           })}
                         >
                           Hang B
+                          <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/40">pick room</span>
                         </button>
                       </span>
                     )}
@@ -598,6 +606,7 @@ export function VaultHall() {
                 </div>
               );
             })}
+            </div>
           </div>
         ) : ready ? (
           <div className="mt-auto mb-6 flex flex-col items-center gap-6">
