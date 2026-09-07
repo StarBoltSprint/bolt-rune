@@ -64,12 +64,16 @@ export function mergeHall(hall: HungArtifact[], local: HungArtifact[]): HungArti
     const newer = (a.hungAt || 0) >= (prev.hungAt || 0);
     const keep = aN > pN || (aN === pN && newer) ? a : prev;
     const room = newer ? (a.room !== undefined ? a.room : prev.room) : prev.room !== undefined ? prev.room : a.room;
+    const hallRaw = [room?.hall, a.room?.hall, prev.room?.hall]
+      .map((n) => Number(n))
+      .find((n) => Number.isFinite(n) && n >= 1 && n <= 8);
+    const hall = hallRaw != null ? Math.round(hallRaw) : undefined;
     byId.set(a.id, {
       ...keep,
       playlist: uniqueClips([...(prev.playlist || []), ...(a.playlist || [])]),
       still: keep.still || prev.still || a.still,
       grade: a.grade || prev.grade,
-      room,
+      room: room == null ? room : hall ? { ...room, hall } : room,
     });
   }
   return [...byId.values()].sort((a, b) => (b.hungAt || 0) - (a.hungAt || 0)).slice(0, 24);
