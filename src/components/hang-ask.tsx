@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { vaultHangRoom } from "@/game/path-entry";
 import {
   HANG_CONFIRM_ARM_MS,
@@ -15,6 +15,80 @@ import {
 import { type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import { press } from "@/lib/press";
 
+const CHIP = {
+  ice: "border-[#9ef0e4]/40 text-[#9ef0e4]",
+  gold: "border-[#e4c37a]/40 text-[#f0d48a]",
+  quiet: "border-white/22 text-white/75",
+  warn: "border-[#f0b4a8]/35 text-[#f0b4a8]",
+} as const;
+
+export function StillChip({
+  children,
+  tone = "ice",
+  disabled,
+  className = "",
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  tone?: keyof typeof CHIP;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      className={`inline-flex min-h-11 flex-col items-center justify-center rounded-full border bg-black/55 px-4 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] disabled:opacity-30 ${CHIP[tone]} ${className}`}
+      style={{ touchAction: "manipulation" }}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+}
+
+function StillDots({ count, index }: { count: number; index: number }) {
+  if (count <= 1) return null;
+  return (
+    <div className="pointer-events-none mb-2 flex justify-center gap-1.5" data-hang-dots={count}>
+      {Array.from({ length: count }, (_, d) => (
+        <span key={d} className={`h-1 w-1 rounded-full ${d === index ? "bg-white/80" : "bg-white/25"}`} />
+      ))}
+    </div>
+  );
+}
+
+function StillActions({
+  title,
+  count,
+  index,
+  children,
+}: {
+  title?: string;
+  count: number;
+  index: number;
+  children?: ReactNode;
+}) {
+  return (
+    <div
+      data-still-actions=""
+      className="absolute inset-x-0 bottom-0 z-20 px-4 pb-[max(1.1rem,env(safe-area-inset-bottom))] pt-16"
+      style={{
+        background: "linear-gradient(180deg, transparent, rgba(7,8,12,0.86) 38%)",
+        touchAction: "manipulation",
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {title ? (
+        <p className="mb-2 text-center font-display text-[1.7rem] leading-none text-white/92 drop-shadow-[0_8px_18px_rgba(0,0,0,0.85)]">
+          {title}
+        </p>
+      ) : null}
+      <StillDots count={count} index={index} />
+      {children ? <div className="flex flex-col items-center gap-2">{children}</div> : null}
+    </div>
+  );
+}
+
 function StillStage({
   still,
   index,
@@ -26,6 +100,8 @@ function StillStage({
   disabled,
   kind,
   lockAttr,
+  title,
+  actions,
 }: {
   still: string;
   index: number;
@@ -37,6 +113,8 @@ function StillStage({
   disabled?: boolean;
   kind: "citadel" | "room" | "load" | "vault";
   lockAttr?: Record<string, string | number | undefined>;
+  title?: string;
+  actions?: ReactNode;
 }) {
   const start = useRef<{ x: number; y: number } | null>(null);
   const n = Math.max(1, count);
@@ -103,18 +181,10 @@ function StillStage({
       >
         ×
       </button>
-      {n > 1 ? (
-        <div
-          className="pointer-events-none absolute inset-x-0 bottom-[max(1.2rem,env(safe-area-inset-bottom))] z-10 flex justify-center gap-1.5"
-          data-hang-dots={n}
-        >
-          {Array.from({ length: n }, (_, d) => (
-            <span
-              key={d}
-              className={`h-1 w-1 rounded-full ${d === i ? "bg-white/80" : "bg-white/25"}`}
-            />
-          ))}
-        </div>
+      {title || actions || n > 1 ? (
+        <StillActions title={title} count={n} index={i}>
+          {actions}
+        </StillActions>
       ) : null}
       {lockAttr ? (
         <span
@@ -132,12 +202,14 @@ export function HangCitadelStrip({
   onCitadel,
   onBack,
   disabled,
+  actions,
 }: {
   citadels: HangCitadelPick[];
   citadel: string;
   onCitadel: (id: string) => void;
   onBack?: () => void;
   disabled?: boolean;
+  actions?: ReactNode;
 }) {
   const start = Math.max(0, citadels.findIndex((c) => c.id === citadel));
   const [at, setAt] = useState(start);
@@ -156,6 +228,22 @@ export function HangCitadelStrip({
         count={citadels.length}
         disabled={disabled}
         lockAttr={{ "data-hang-citadel-pick": shown.id }}
+        title={shown.title || "Citadel"}
+        actions={
+          actions ?? (
+            <StillChip
+              data-hang-citadel-lock={shown.id}
+              disabled={disabled}
+              onPointerDown={(e) => e.stopPropagation()}
+              {...press(() => {
+                if (disabled) return;
+                onCitadel(shown.id);
+              })}
+            >
+              Lock
+            </StillChip>
+          )
+        }
         onNext={() => {
           if (disabled) return;
           setAt((i) => hangStillWrap(citadels.length, i, 1));
@@ -184,6 +272,7 @@ export function HangRoomStrip({
   onLock,
   onBack,
   disabled,
+  actions,
 }: {
   rooms: HangRoomPick[];
   hall: number;
@@ -191,6 +280,7 @@ export function HangRoomStrip({
   onLock?: (n: number) => void;
   onBack?: () => void;
   disabled?: boolean;
+  actions?: ReactNode;
 }) {
   const cards = hangStripCards(rooms);
   const idx = Math.max(0, cards.findIndex((c) => c.hall === hangCardHall(hall)));
@@ -214,6 +304,23 @@ export function HangRoomStrip({
           "data-hang-card-index": card.index,
           ...vaultHangRoom(n),
         }}
+        title={r?.name || `Room ${n}`}
+        actions={
+          actions ?? (
+            <StillChip
+              data-hang-room-lock={n}
+              disabled={disabled}
+              onPointerDown={(e) => e.stopPropagation()}
+              {...press(() => {
+                if (disabled) return;
+                pick(String(n));
+                onLock?.(hangCardHall(n) || n);
+              })}
+            >
+              Walk this hall
+            </StillChip>
+          )
+        }
         onNext={() => {
           if (disabled || cards.length <= 1) return;
           const next = cards[hangStillWrap(cards.length, idx, 1)];
@@ -263,6 +370,8 @@ export function StillCarousel({
   onBack,
   disabled,
   kind,
+  title,
+  actions,
 }: {
   still: string;
   index: number;
@@ -273,6 +382,8 @@ export function StillCarousel({
   onBack: () => void;
   disabled?: boolean;
   kind: "load" | "vault";
+  title?: string;
+  actions?: ReactNode;
 }) {
   return (
     <StillStage
@@ -285,6 +396,8 @@ export function StillCarousel({
       onBack={onBack}
       disabled={disabled}
       kind={kind}
+      title={title}
+      actions={actions}
     />
   );
 }
@@ -416,26 +529,26 @@ export function HangAskSheet({
             }
             onClose();
           }}
+          actions={
+            armed ? (
+              <StillChip
+                data-hang-confirm={door}
+                {...vaultHangRoom(picked)}
+                onPointerDown={(e) => e.stopPropagation()}
+                {...press(() => onConfirm(hangBindHall(picked) || hangBindHall(pickedRef.current)))}
+              >
+                Walk this hall
+                <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/45">
+                  Hang {door} · room {picked}
+                </span>
+              </StillChip>
+            ) : (
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/45" data-hang-confirm-wait={door}>
+                pick a room — then confirm
+              </p>
+            )
+          }
         />
-      )}
-      {armed ? (
-        <button
-          type="button"
-          data-hang-confirm={door}
-          {...vaultHangRoom(picked)}
-          className="sr-only"
-          style={{ touchAction: "manipulation" }}
-          {...press(() => onConfirm(hangBindHall(picked) || hangBindHall(pickedRef.current)))}
-        >
-          Hang {door} · room {picked}
-        </button>
-      ) : (
-        <p
-          className="sr-only"
-          data-hang-confirm-wait={door}
-        >
-          pick a room — then confirm
-        </p>
       )}
     </div>
   );

@@ -8,9 +8,8 @@ import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/
 import { hangHall, listHall } from "@/lib/hall";
 import { bindCitadel, defaultHangRoom, hallN, hangOpensSheet, holdHangRooms, listHangCitadels, listHangRooms, resolveHangRoom, type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import { hydrateSessions, lastPlay, listSessions, listStoredHallHints, stampPlay } from "@/game/rune-session";
-import { HangAskSheet, HangCitadelStrip, HangRoomStrip, StillCarousel } from "@/components/hang-ask";
+import { HangAskSheet, StillCarousel, StillChip } from "@/components/hang-ask";
 import { HANG_LEFTOVER_SWALLOW_MS, hangBindHall, hangStillWrap, swallowOpeningTap, writeHangPending } from "@/game/hang-ask";
-import { HallMark } from "@/components/hall-mark";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { FilmStage } from "@/components/film-stage";
 import { sfxForge } from "@/game/audio";
@@ -528,12 +527,11 @@ export function VaultHall() {
   const head = vaultPack ? familyHead(vaultPack) : null;
   const vaultHead = head;
   const vaultHungOn = head?.room?.door === "B" ? "B" : head?.room?.door === "A" ? "A" : "";
+  const vaultClips = vaultPack?.playlist.length || 0;
+  const chosen = vaultPack ? (pick[vaultPack.id] ?? Math.max(0, vaultClips - 1)) : 0;
+  const vaultRoomN = hangBindHall(head?.room?.hall);
   void clipCount;
   void when;
-  void HangCitadelStrip;
-  void HangRoomStrip;
-  void HallMark;
-  void dropClipAt;
 
   return (
     <div className="relative min-h-dvh overflow-hidden bg-bg" data-vault-hall="10" style={{ touchAction: "manipulation" }}>
@@ -544,6 +542,7 @@ export function VaultHall() {
           index={vaultIdx}
           count={packs.length}
           disabled={busy}
+          title={vaultHungOn && vaultRoomN ? hungPlayChrome(vaultRoomN, vaultHungOn).keeper : vaultPack.name}
           onNext={() => setVaultAt((i) => hangStillWrap(packs.length, i, 1))}
           onPrev={() => setVaultAt((i) => hangStillWrap(packs.length, i, -1))}
           onLock={() => {
@@ -558,6 +557,120 @@ export function VaultHall() {
           onBack={() => {
             window.location.assign("/");
           }}
+          actions={
+            <div data-vault-actions="" className="sticky bottom-0 flex w-full flex-col items-center gap-2">
+              <p className={`font-mono text-[9px] uppercase tracking-[0.16em] ${vaultHungOn ? "text-[#9ef0e4]" : "text-white/40"}`}>
+                {vaultHungOn
+                  ? `${vaultHangCaption(head.room)}${vaultPack.name ? ` · ${vaultPack.name}` : ""}`
+                  : "not on a door · Hang then walk A or B"}
+              </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                <StillChip
+                  data-play-sprint=""
+                  tone="quiet"
+                  disabled={busy}
+                  {...press(() => {
+                    if (busy) return;
+                    if (vaultClips < 1) {
+                      setFrost("No clip yet. Howl again — Imagine never landed a video.");
+                      return;
+                    }
+                    sfxForge("enter");
+                    playArt(head);
+                  })}
+                >
+                  Play
+                </StillChip>
+                <StillChip
+                  tone="gold"
+                  disabled={busy}
+                  {...press(() => {
+                    abort.current = false;
+                    lock.current = false;
+                    setBusy(true);
+                    setForge(true);
+                    setPct(1);
+                    setFrost("Continue");
+                    void continueArt(head, chosen);
+                  })}
+                >
+                  Continue
+                </StillChip>
+                <StillChip
+                  tone="ice"
+                  disabled={busy}
+                  {...press(() => {
+                    setSeed("");
+                    setShift({ a: head, at: chosen });
+                  })}
+                >
+                  Shift
+                </StillChip>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {vaultHungOn ? (
+                  <StillChip
+                    tone="ice"
+                    disabled={busy}
+                    {...press(() => {
+                      if (busy) return;
+                      unhangDoor(head);
+                    })}
+                  >
+                    Unhang · {vaultRoomN ? hungPlayChrome(vaultRoomN, vaultHungOn).keeper : vaultHungOn}
+                  </StillChip>
+                ) : (
+                  <>
+                    <StillChip
+                      tone="ice"
+                      disabled={busy}
+                      data-hang={vaultHangStart("A").dataHang}
+                      {...vaultHangRoom(hangHallN)}
+                      {...press(() => {
+                        if (busy) return;
+                        void askHang(head, "A", hangHallRef.current);
+                      })}
+                    >
+                      Hang A
+                      <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/40">pick room</span>
+                    </StillChip>
+                    <StillChip
+                      tone="gold"
+                      disabled={busy}
+                      data-hang={vaultHangStart("B").dataHang}
+                      {...vaultHangRoom(hangHallN)}
+                      {...press(() => {
+                        if (busy) return;
+                        void askHang(head, "B", hangHallRef.current);
+                      })}
+                    >
+                      Hang B
+                      <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/40">pick room</span>
+                    </StillChip>
+                  </>
+                )}
+                {vaultClips > 0 ? (
+                  <StillChip
+                    tone="warn"
+                    disabled={busy}
+                    {...press(() => {
+                      if (busy || vaultClips < 1) return;
+                      const gone = dropClipAt(vaultPack.id, chosen, hung);
+                      setHung(gone);
+                      setPick((p) => ({
+                        ...p,
+                        [vaultPack.id]: Math.max(0, Math.min(chosen, Math.max(0, (gone.find((x) => x.id === vaultPack.id)?.playlist.length || 1) - 1))),
+                      }));
+                      setFrost(`Erased clip ${chosen + 1} · ${familiesOf(gone).length} artifact${familiesOf(gone).length === 1 ? "" : "s"} left`);
+                      window.setTimeout(() => setFrost(""), 2200);
+                    })}
+                  >
+                    Erase clip {chosen + 1}
+                  </StillChip>
+                ) : null}
+              </div>
+            </div>
+          }
         />
       ) : null}
       <div className="sr-only sticky top-0">
@@ -575,51 +688,6 @@ export function VaultHall() {
           Grok Bot Hang
           pick room
         </button>
-        {head && vaultPack ? (
-          <>
-            <button
-              type="button"
-              data-play-sprint=""
-              {...press(() => {
-                if (busy) return;
-                if ((vaultPack.playlist.length || 0) < 1) {
-                  setFrost("No clip yet. Howl again — Imagine never landed a video.");
-                  return;
-                }
-                sfxForge("enter");
-                playArt(head);
-              })}
-            >
-              {vaultHungOn ? `${vaultHangCaption(head.room)}` : vaultPack.name}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              data-hang={vaultHangStart("A").dataHang}
-              {...vaultHangRoom(hangHallN)}
-              {...press(() => {
-                if (busy) return;
-                void askHang(head, "A", hangHallRef.current);
-              })}
-            >
-              Hang A
-              pick room
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              data-hang={vaultHangStart("B").dataHang}
-              {...vaultHangRoom(hangHallN)}
-              {...press(() => {
-                if (busy) return;
-                void askHang(head, "B", hangHallRef.current);
-              })}
-            >
-              Hang B
-              pick room
-            </button>
-          </>
-        ) : null}
       </div>
       {!packs.length ? (
         ready ? (
