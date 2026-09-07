@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CitadelHub } from "@/components/citadel-hub";
 import { RuneEngine } from "@/components/rune-engine";
+import { parseLookForge } from "@/game/path-entry";
 import { clearLivePlay } from "@/game/rune-session";
 
 export const Route = createFileRoute("/rune")({
@@ -24,13 +25,14 @@ export const Route = createFileRoute("/rune")({
             : undefined,
       rooms: roomsN >= 1 && roomsN <= 8 ? roomsN : undefined,
       hall: hallN >= 1 && hallN <= 8 ? hallN : undefined,
+      forge: parseLookForge(s),
     };
   },
   component: RunePage,
 });
 
 function RunePage() {
-  const { tour, fresh, plan, drive, first, session, do: deed, rooms, hall, stills, art } = Route.useSearch();
+  const { tour, fresh, plan, drive, first, session, do: deed, rooms, hall, stills, art, forge } = Route.useSearch();
   if (art) {
     return (
       <RuneEngine
@@ -56,7 +58,7 @@ function RunePage() {
   if (first && (!tour || plan)) {
     return (
       <RuneEngine
-        boot={{ kind: "path", first, drive, rooms: rooms ?? 1, hall: hall ?? 1, stills }}
+        boot={{ kind: "path", first, drive, rooms: rooms ?? 1, hall: hall ?? 1, stills, forge }}
         onBack={() => {
           clearLivePlay();
           window.location.href = `/rune?drive=${drive}`;

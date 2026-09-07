@@ -13,7 +13,7 @@ import {
   stockBiomePlaylist,
   stockTransUrl,
 } from "./enter-graph.ts";
-import { biomeBotStart, lookForgeStart, vaultHangStart } from "./path-entry.ts";
+import { biomeBotStart, createBotForgeHref, lookForgeStart, parseLookForge, vaultHangStart } from "./path-entry.ts";
 import { HALL_LOOP } from "./stock-room.ts";
 
 function art(id: string, biome = "forest") {
@@ -143,5 +143,6 @@ describe("enter graph · hang any artefact on any door", () => {
     assert.deepEqual(vaultHangStart("bot"), { dataHang: "bot", sealed: true });
     assert.deepEqual(vaultHangStart("A"), { dataHang: "A", sealed: false });
     assert.deepEqual(vaultHangStart("B"), { dataHang: "B", sealed: false });
+    assert.equal(parseLookForge(createBotForgeHref("m1")), "bot");
   });
 });
