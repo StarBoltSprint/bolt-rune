@@ -3961,7 +3961,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   async function mintStill(label: string, prompt: string, ratio: "9:16" | "1:1", extra?: string[], edit = false, editOnly = false) {
     const wish = worldHold.current.trim();
-    if (label === "bolt" || label === "bolt-face" || label === "bolt-body") {
+    if (label === "bolt" || label === "bolt-face" || label === "bolt-body" || label === "face") {
       const packed = packStill(label);
       if (packed) {
         setLoadPct(100);
