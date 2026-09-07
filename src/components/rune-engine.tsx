@@ -741,7 +741,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const sprintHold = useRef(false);
   const [hangRoomN, setHangRoomN] = useState(1);
   const hangRoomRef = useRef(1);
-  const [hallN, setHallN] = useState(() => (boot?.kind === "path" ? boot.hall || 1 : 1));
+  const [liveHall, setLiveHall] = useState(() => (boot?.kind === "path" ? boot.hall || 1 : 1));
   function pickHangHall(n: number) {
     const hall = Math.max(1, Math.min(8, n || 1));
     hangRoomRef.current = hall;
@@ -2431,7 +2431,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   async function goHungHall(n: number, idle = true) {
     if (n < 1 || n > 8) return;
     if (n === hallHold.current && phaseRef.current === "play") {
-      setHallN(n);
+      setLiveHall(n);
       return;
     }
     rememberSlice(snapHall());
@@ -2453,7 +2453,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       hallsHold.current = putSlice(hallsHold.current, slice);
     }
     applyHall(slice, false);
-    setHallN(n);
+    setLiveHall(n);
     roomsHold.current = Math.max(roomsHold.current, n, hallsHold.current.length);
     persist({
       hall: n,
@@ -2511,7 +2511,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function applyHall(slice: HallSlice, playEnter = false) {
     hallHold.current = slice.n;
-    setHallN(slice.n);
+    setLiveHall(slice.n);
     viaHold.current = slice.via || "";
     const m1 = slice.next?.m1 ? String(slice.next.m1) : undefined;
     const m2 = slice.next?.m2 ? String(slice.next.m2) : undefined;
@@ -5114,7 +5114,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if (!hereHung) wantHall = hungN;
     }
     hallHold.current = wantHall;
-    setHallN(wantHall);
+    setLiveHall(wantHall);
     const restored = hydrateRift(s.id, wantHall, s.rift || {}, artsNow);
     riftRef.current = restored;
     setRift(restored);
@@ -5375,7 +5375,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (hungLive) {
       roomsHold.current = Math.max(roomsHold.current, hungLive);
       hallHold.current = hungLive;
-      setHallN(hungLive);
+      setLiveHall(hungLive);
     }
     titleHold.current = titleHold.current || "Citadel";
     const doors = plannedObjects(2).map((o) => ({ id: o.id, name: o.name, x: o.x, y: o.y }));
@@ -6096,7 +6096,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       <div
         className="relative flex min-h-dvh flex-col overflow-hidden bg-bg px-5 pt-[max(1.4rem,env(safe-area-inset-top))] pb-[max(1.1rem,env(safe-area-inset-bottom))]"
         data-gate="1"
-        data-hall={hallN}
+        data-hall={liveHall}
         style={{ touchAction: "manipulation" }}
       >
         <img src={hall} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
@@ -6117,7 +6117,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         </button>
         <p className="relative z-10 mt-6 font-mono text-[10px] uppercase tracking-[0.48em] text-white/45">Citadel</p>
         <h1 className="relative z-10 mt-1 font-display text-[2.6rem] leading-none text-white/90 drop-shadow-[0_10px_28px_rgba(0,0,0,0.9)]">
-          Room {hallN}
+          Room {liveHall}
         </h1>
         <p className="relative z-10 mt-3 max-w-xs font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">
           same films · new hall · or a biome
@@ -6479,7 +6479,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       data-shots={shots.length}
       data-forged={forged}
       data-here={here}
-      data-hall={hallN}
+      data-hall={liveHall}
       data-door-hit={doorHit ? "1" : "0"}
       data-stock-walk={phase === "play" && (beat === "playvid" || beat === "walk") ? "1" : "0"}
       data-marks={pins.length}
