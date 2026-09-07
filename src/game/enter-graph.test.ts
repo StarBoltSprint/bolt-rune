@@ -35,7 +35,9 @@ import {
   hungEnterNeedsWalk,
   hungFilmHold,
   hungPlayChrome,
+  hungStayHall,
   hungStageChrome,
+  riftGateMatchesHall,
   stockBiomePlaylist,
   stockTransUrl,
   vaultHangCaption,
@@ -54,6 +56,8 @@ import {
   cueFillSide,
   cuePictureSpot,
   paceAfterMiss,
+  prepareHoldBeats,
+  scaleBeats,
   turnBeatsForRun,
 } from "./films.ts";
 
@@ -626,7 +630,95 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(stage, /if \(holdDoorLoops\(holdDoorRef\.current\)\) \{\s*\n\s*restartHoldChart\(\)/);
     assert.match(stage, /if \(hold && t \+ 0\.45 < loopT\.current\) restartHoldChart\(\)/);
     assert.match(stage, /v\.currentTime = 0/);
+    assert.match(stage, /prepareHoldBeats\(plate, seed\)/);
+    assert.match(stage, /g\.streakMiss = 0/);
+    assert.match(stage, /if \(holdDoorLoops\(holdDoorRef\.current\)\) \{\s*\n\s*restartHoldChart\(\)/);
     assert.doesNotMatch(stage, /if \(biomeQteQuiet\(holdDoorRef\.current\)\) return \[\]/);
+  });
+
+  it("hung stay chart is native to the ~6s plate — scaled 15s cook chart must not pack four CueFill misses", () => {
+    const hold = prepareHoldBeats(6, 1);
+    const cue = hold.filter((beat) => cueFillShown(beat));
+    assert.equal(cue.length, 2);
+    assert.ok(cue.every((beat) => beat.at < 5.5));
+    const cooked = {
+      id: "sprint" as const,
+      name: "Play Sprint",
+      keeper: "Room 2 • Door A",
+      line: "Forest",
+      verb: "Sprint",
+      still: "/films/cook-forest.jpg",
+      portraitStill: "/films/cook-forest.jpg",
+      local: "/ui/forge.mp4",
+      portrait: "/ui/forge.mp4",
+      origin: "/ui/forge.mp4",
+      chart: 15,
+      pad: "arrows" as const,
+      lives: 3,
+      beats: turnBeatsForRun([15]),
+      playlist: ["/ui/forge.mp4"],
+    };
+    const packed = scaleBeats(cooked, 6).filter((beat) => cueFillShown(beat));
+    assert.ok(packed.length >= 4);
+    assert.ok(cue.length < packed.length);
+    const here = dirname(fileURLToPath(import.meta.url));
+    const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    const chartFor = stage.slice(stage.indexOf("function chartFor"), stage.indexOf("function restartHoldChart"));
+    assert.match(chartFor, /prepareHoldBeats\(plate, seed\)/);
+    assert.doesNotMatch(chartFor, /prepareBeats\(one, plate/);
+    const rewind = stage.slice(stage.indexOf("function rewind"), stage.indexOf("function onKey"));
+    assert.match(rewind, /holdDoorLoops\(holdDoorRef\.current\)/);
+    assert.match(rewind, /restartHoldChart\(\)/);
+    assert.match(rewind, /v\.currentTime = 0/);
+    assert.match(stage, /g\.streakMiss = 0/);
+  });
+
+  it("enter chrome is hung Room N — stale Room 1 Asteroid rift cannot win", () => {
+    const id = "art-h2-forest";
+    const hung = hangArtifactOnDoor(id, "A", { hall: 2, citadel: "cit-2" }, [art(id, "forest")]);
+    const leak = {
+      m1: {
+        biome: "asteroid" as const,
+        name: "Asteroid",
+        still: biomeStill("asteroid"),
+        loop: "/films/forge-asteroid.mp4",
+        art: "art-stale-asteroid",
+      },
+    };
+    assert.equal(riftGateMatchesHall(leak.m1, 2, hung), false);
+    assert.equal(riftGateMatchesHall(leak.m1, 1, hung), false);
+    const fromHall1 = stayBiomePlay(resolveHungEnter("A", 1, "cit-2", hung, leak));
+    assert.equal(fromHall1.kind, "biome");
+    if (fromHall1.kind !== "biome") return;
+    assert.equal(fromHall1.hall, 2);
+    assert.notEqual(fromHall1.name, "Asteroid");
+    const chrome = hungPlayChrome(fromHall1.hall, fromHall1.door);
+    assert.deepEqual(chrome, { keeper: "Room 2 • Door A", name: "Play Sprint" });
+    assert.notEqual(chrome.keeper, "Room 1 • Door A");
+    assert.equal(hungStayHall({ artHall: 1, enterHall: 1, hangRoom: 1, liveHall: 2 }), 2);
+    assert.equal(hungStayHall({ artHall: 1, enterHall: 1, hangRoom: 1, doorHall: 2 }), 2);
+    assert.notEqual(hungStayHall({ liveHall: 2, hangRoom: 1 }), 1);
+    assert.equal(hungStageChrome(1, "A", { keeper: "Room 2 • Door A", name: "Play Sprint", line: "Asteroid" }).title, "Room 2 • Door A");
+    assert.notEqual(hungStageChrome(2, "A", { name: "Asteroid Sprint", keeper: "StarBoltSprint", line: "asteroid" }).title, "Asteroid Sprint");
+    const cleaned = hydrateRift("cit-2", 2, leak, hung);
+    assert.equal(cleaned.m1?.art, id);
+    assert.notEqual(cleaned.m1?.name, "Asteroid");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const goEnterFn = engine.slice(engine.indexOf("async function goEnter"), engine.indexOf("function enterNext"));
+    assert.match(goEnterFn, /hungStayHall/);
+    assert.match(goEnterFn, /Never snap a living Room 2\+ hang down to Room 1/);
+    assert.match(goEnterFn, /bindHall >= 2 && bindHall !== hallHold\.current/);
+    const playRift = engine.slice(engine.indexOf("async function playRift"), engine.indexOf("function refreshHung"));
+    assert.match(playRift, /hungStayHall/);
+    assert.match(playRift, /liveHall: hallHold\.current/);
+    assert.match(engine, /hangRoomRef\.current = hallHold\.current/);
+    assert.match(engine, /hangRoomRef\.current = slice\.n/);
+    const cine = readFileSync(join(here, "../components/cine-app.tsx"), "utf8");
+    assert.match(cine, /hungStay \? "sprint" : "asteroid"/);
+    assert.match(cine, /custom\?\.playlist\?\.length \|\| hungStay \? custom/);
+    const arts = readFileSync(join(here, "./artifacts.ts"), "utf8");
+    assert.match(arts, /hall: a\.room\.hall/);
   });
 
   it("hung Door A/B first tap walks in the hall — second tap same door enters", () => {
