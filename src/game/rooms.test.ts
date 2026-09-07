@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bindCitadel, citadelRoomCount, defaultHangRoom, hangOpensSheet, holdHangRooms, isBiomeArtefactMeta, listHangRooms, livingLoadPacks, loadHangHallCount, packCitadels, resolveHangRoom } from "./rooms.ts";
+import { bindCitadel, citadelRoomCount, defaultHangRoom, hangOpensSheet, holdHangRooms, isBiomeArtefactMeta, listHangRooms, livingHangHall, livingLoadPacks, loadHangHallCount, packCitadels, resolveHangRoom } from "./rooms.ts";
 import type { RuneSessionMeta } from "./rune-session.ts";
 
 function cit(rooms: number, hall = 1, id = "cit-1"): RuneSessionMeta {
@@ -27,6 +27,9 @@ describe("hang room pick", () => {
     );
     assert.equal(rooms.find((r) => r.living)?.hall, 2);
     assert.equal(defaultHangRoom(rooms), 2);
+    assert.equal(livingHangHall(rooms, 2), 2);
+    assert.equal(livingHangHall(rooms, 1), 1);
+    assert.equal(livingHangHall([{ hall: 1, name: "Room 1", still: "", living: true }], 2), 2);
     assert.equal(bindCitadel([cit(3, 2)], { id: "cit-1", hall: 2 }).hall, 2);
   });
 

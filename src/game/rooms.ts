@@ -460,3 +460,10 @@ export function resolveHangRoom(rooms: HangRoomPick[], want?: number | string | 
   if (n && list.some((r) => r.hall === n)) return n;
   return defaultHangRoom(list);
 }
+
+/** Living Hang Room N is hall N. A picked 2 must not collapse to Room 1. */
+export function livingHangHall(rooms: HangRoomPick[], want?: number | string | null): number {
+  const n = hallN(typeof want === "number" ? want : want == null || want === "" ? 0 : want);
+  if (n) return n;
+  return resolveHangRoom(rooms, want);
+}

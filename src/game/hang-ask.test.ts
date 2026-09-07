@@ -64,13 +64,16 @@ describe("hang ask leftover tap", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
     assert.match(src, /onConfirm: \(hall: number\) => void/);
-    assert.match(src, /onConfirm\(hall\)/);
+    assert.match(src, /onConfirm\(picked\)/);
+    assert.match(src, /const \[picked, setPicked\]/);
     const vault = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
     assert.match(vault, /onConfirm=\{\(hall\) => \{/);
     assert.match(vault, /hangDoor\(hangAsk\.a, hangAsk\.door, undefined, hall\)/);
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     assert.match(engine, /onConfirm=\{\(hall\) => \{/);
-    assert.match(engine, /beginRift\(door, gateFromHung\(hangAsk\.a\), hall\)/);
+    assert.match(engine, /beginRift\(door, gateFromHung\(hangAsk\.a\), livingHangHall\(rooms, hall\)\)/);
+    assert.match(engine, /pickHangHall/);
+    assert.match(engine, /livingHangHall/);
     assert.match(engine, /goHungHall/);
     assert.match(engine, /hungDoorReady/);
     assert.match(engine, /resolveHungEnter/);

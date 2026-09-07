@@ -67,6 +67,7 @@ import { dropRoom, hangArtifact, hangOnRoom, isClip, mergeHall, readArtifacts, u
 import {
   biomeStill,
   doorLetterOf,
+  bindHungRoom,
   gateFromHung,
   hydrateRift,
   latestHungHall,
@@ -98,7 +99,7 @@ import {
 import { BootScreen } from "@/components/citadel-hub";
 import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
 import { swallowOpeningTap } from "@/game/hang-ask";
-import { defaultHangRoom, hallN, listHangRooms, liveSlice, putSlice, seedHalls, type HangRoomPick } from "@/game/rooms";
+import { defaultHangRoom, hallN, listHangRooms, liveSlice, livingHangHall, putSlice, seedHalls, type HangRoomPick } from "@/game/rooms";
 import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
 import { playableClipSrc } from "@/game/play-clip";
@@ -740,7 +741,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const sprintHold = useRef(false);
   const [hangRoomN, setHangRoomN] = useState(1);
   const hangRoomRef = useRef(1);
-  hangRoomRef.current = hangRoomN;
+  const [hallN, setHallN] = useState(() => (boot?.kind === "path" ? boot.hall || 1 : 1));
+  function pickHangHall(n: number) {
+    const hall = Math.max(1, Math.min(8, n || 1));
+    hangRoomRef.current = hall;
+    setHangRoomN(hall);
+  }
   const [hangAsk, setHangAsk] = useState<{ a: HungArtifact; door: "A" | "B" } | null>(null);
   const [liveHangRooms, setLiveHangRooms] = useState<HangRoomPick[]>([{ hall: 1, name: "Room 1", still: "", living: true }]);
   const [hungArts, setHungArts] = useState<HungArtifact[]>(() => (typeof window === "undefined" ? [] : readArtifacts()));
@@ -2424,7 +2430,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   async function goHungHall(n: number, idle = true) {
     if (n < 1 || n > 8) return;
-    if (n === hallHold.current && phaseRef.current === "play") return;
+    if (n === hallHold.current && phaseRef.current === "play") {
+      setHallN(n);
+      return;
+    }
     rememberSlice(snapHall());
     let slice = hallsHold.current[n - 1];
     if (!slice || !(slice.bank || []).length) {
@@ -2444,6 +2453,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       hallsHold.current = putSlice(hallsHold.current, slice);
     }
     applyHall(slice, false);
+    setHallN(n);
     roomsHold.current = Math.max(roomsHold.current, n, hallsHold.current.length);
     persist({
       hall: n,
@@ -2501,6 +2511,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function applyHall(slice: HallSlice, playEnter = false) {
     hallHold.current = slice.n;
+    setHallN(slice.n);
     viaHold.current = slice.via || "";
     const m1 = slice.next?.m1 ? String(slice.next.m1) : undefined;
     const m2 = slice.next?.m2 ? String(slice.next.m2) : undefined;
@@ -4574,37 +4585,51 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       .catch(() => setHungArts(readArtifacts()));
   }
 
-  function attachRift(door: "m1" | "m2", gate: RiftGate) {
-    const bindHall = hangRoomRef.current || hallHold.current;
+  function attachRift(door: "m1" | "m2", gate: RiftGate, hallWant?: number) {
+    const bindHall = Math.max(1, Math.min(8, hallN(hallWant) || hangRoomRef.current || hallHold.current || 1));
+    hangRoomRef.current = bindHall;
     const hereHall = bindHall === hallHold.current;
-    const next = hereHall ? { ...riftRef.current, [door]: gate } : { ...riftRef.current };
-    if (hereHall) {
-      riftRef.current = next;
-      setRift(next);
-      if (nextHold.current[door]) {
-        const rooms = { ...nextHold.current };
-        delete rooms[door];
-        nextHold.current = rooms;
-      }
-      persist({ phase: "play", rift: next, next: Object.keys(nextHold.current).length ? nextHold.current : undefined });
+    const next = { ...riftRef.current, [door]: gate };
+    riftRef.current = next;
+    setRift(next);
+    if (nextHold.current[door]) {
+      const rooms = { ...nextHold.current };
+      delete rooms[door];
+      nextHold.current = rooms;
     }
+    persist({
+      phase: "play",
+      rift: next,
+      hall: hallHold.current,
+      rooms: roomsHold.current,
+      halls: hallsHold.current,
+      next: Object.keys(nextHold.current).length ? nextHold.current : undefined,
+    });
     try {
-      if (gate.art) {
+      const film = riftFilm(gate.name, gate.still, (gate.playlist?.length ? gate.playlist : [gate.loop]).filter(Boolean));
+      let from = hungArts.length ? hungArts : readArtifacts();
+      let artId = gate.art;
+      if (!artId) {
+        from = hangArtifact(film);
+        artId = from[0]?.id || "";
+      }
+      if (artId) {
+        const letter = door === "m2" ? "B" : "A";
+        const head = from.find((x) => x.id === artId) || { id: artId, name: gate.name, still: gate.still, playlist: gate.playlist || [], prompt: gate.name, hungAt: Date.now(), grade: null };
         const wired = hangOnRoom(
-          gate.art,
-          {
-            door: door === "m2" ? "B" : "A",
-            still: gate.still && !isHallFilm(gate.still) ? gate.still : biomeStill((gate.biome as BiomeName) || "open"),
-            trans: gate.trans || stockTransUrl(door),
+          artId,
+          bindHungRoom(head, letter, {
             citadel: sid.current,
             hall: bindHall,
-            biome: gate.biome,
-          },
-          hungArts.length ? hungArts : undefined,
+            still: gate.still && !isHallFilm(gate.still) ? gate.still : biomeStill((gate.biome as BiomeName) || "open"),
+            trans: gate.trans || stockTransUrl(door),
+            biome: (gate.biome as BiomeName) || "open",
+          }),
+          from,
         );
         if (wired.length) {
           setHungArts(wired);
-          const a = wired.find((x) => x.id === gate.art);
+          const a = wired.find((x) => x.id === artId);
           if (a) {
             void hangHall({
               data: {
@@ -4618,8 +4643,6 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             }).catch(() => {});
           }
         }
-      } else {
-        hangArtifact(riftFilm(gate.name, gate.still, (gate.playlist?.length ? gate.playlist : [gate.loop]).filter(Boolean)));
       }
     } catch {
       /* vault still holds the door */
@@ -4633,8 +4656,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setFrost(
       hereHall
         ? gate.trans
-          ? `${gate.name} · door ${letter} opens`
-          : `${gate.name} · door ${letter} · tap twice to enter`
+          ? `${gate.name} · room ${bindHall} · door ${letter} opens`
+          : `${gate.name} · room ${bindHall} · door ${letter} · tap to enter`
         : `${gate.name} · hung on room ${bindHall} door ${letter}`,
     );
     sfxForge("enter");
@@ -4702,19 +4725,24 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function beginRift(door: "m1" | "m2", gate: RiftGate, hall?: number) {
-    const bindHall = hall || hangRoomRef.current || hallHold.current;
+    const rooms = liveHangRooms.length ? liveHangRooms : livingHangRooms();
+    const bindHall = livingHangHall(rooms, hall || hangRoomRef.current || hallHold.current);
     hangRoomRef.current = bindHall;
     setHangRoomN(bindHall);
+    setRiftPick(null);
+    setHangAsk(null);
     riftCookTok.current += 1;
     void goHungHall(bindHall, true).then(() => {
-      attachRift(door, gate);
+      if (hallHold.current !== bindHall) return goHungHall(bindHall, false);
+    }).then(() => {
+      attachRift(door, gate, bindHall);
       setFrost(`${gate.name} · hung on room ${bindHall} ${door === "m2" ? "B" : "A"}`);
     });
     void cookRiftTrans(door, gate, riftCookTok.current).then((url) => {
       if (!url) return;
       const live = riftRef.current[door];
       if (!live) return;
-      attachRift(door, { ...live, trans: url });
+      attachRift(door, { ...live, trans: url }, bindHall);
       setFrost(`${gate.name} · door opens from room ${bindHall}`);
     });
   }
@@ -4722,13 +4750,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   function pickBiome(door: "m1" | "m2", biome: BiomeId) {
     const hit = BIOMES.find((b) => b.id === biome);
     if (!hit) return;
-    beginRift(door, {
-      biome: hit.id,
-      name: hit.name,
-      still: hit.still,
-      loop: hit.loop,
-      playlist: biomePlaylist(hit.id),
-    });
+    beginRift(
+      door,
+      {
+        biome: hit.id,
+        name: hit.name,
+        still: hit.still,
+        loop: hit.loop,
+        playlist: biomePlaylist(hit.id),
+      },
+      hangRoomRef.current,
+    );
   }
 
   async function stillForCook(url?: string | null): Promise<string> {
@@ -5082,6 +5114,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if (!hereHung) wantHall = hungN;
     }
     hallHold.current = wantHall;
+    setHallN(wantHall);
     const restored = hydrateRift(s.id, wantHall, s.rift || {}, artsNow);
     riftRef.current = restored;
     setRift(restored);
@@ -5342,6 +5375,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (hungLive) {
       roomsHold.current = Math.max(roomsHold.current, hungLive);
       hallHold.current = hungLive;
+      setHallN(hungLive);
     }
     titleHold.current = titleHold.current || "Citadel";
     const doors = plannedObjects(2).map((o) => ({ id: o.id, name: o.name, x: o.x, y: o.y }));
@@ -5718,7 +5752,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     swallowOpeningTap();
     const rooms = livingHangRooms();
     setLiveHangRooms(rooms);
-    setHangRoomN((prev) => (rooms.some((r) => r.hall === prev) ? prev : defaultHangRoom(rooms)));
+    const next = rooms.some((r) => r.hall === hangRoomRef.current) ? hangRoomRef.current : defaultHangRoom(rooms);
+    pickHangHall(next);
     setHangAsk({ a, door });
   }
 
@@ -5726,7 +5761,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (!riftPick && !hangAsk) return;
     const rooms = livingHangRooms();
     setLiveHangRooms(rooms);
-    setHangRoomN((prev) => (rooms.some((r) => r.hall === prev) ? prev : defaultHangRoom(rooms)));
+    const next = rooms.some((r) => r.hall === hangRoomRef.current) ? hangRoomRef.current : defaultHangRoom(rooms);
+    pickHangHall(next);
   }, [riftPick, hungArts, hangAsk]);
 
   useEffect(() => {
@@ -5939,7 +5975,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
               still: thumbSrc(r.still),
             }))}
             hall={hangRoomN}
-            onHall={setHangRoomN}
+            onHall={pickHangHall}
           />
         </div>
         <div className="relative z-10 mt-6 mb-4 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
@@ -6042,11 +6078,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         name={hangAsk.a.name}
         rooms={rooms}
         hall={hangRoomN}
-        onHall={setHangRoomN}
+        onHall={pickHangHall}
         onClose={() => setHangAsk(null)}
         onConfirm={(hall) => {
           const door = hangAsk.door === "B" ? "m2" : "m1";
-          beginRift(door, gateFromHung(hangAsk.a), hall);
+          const rooms = liveHangRooms.length ? liveHangRooms : livingHangRooms();
+          beginRift(door, gateFromHung(hangAsk.a), livingHangHall(rooms, hall));
           setHangAsk(null);
         }}
       />
@@ -6059,7 +6096,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       <div
         className="relative flex min-h-dvh flex-col overflow-hidden bg-bg px-5 pt-[max(1.4rem,env(safe-area-inset-top))] pb-[max(1.1rem,env(safe-area-inset-bottom))]"
         data-gate="1"
-        data-hall={hallHold.current}
+        data-hall={hallN}
         style={{ touchAction: "manipulation" }}
       >
         <img src={hall} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
@@ -6080,7 +6117,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         </button>
         <p className="relative z-10 mt-6 font-mono text-[10px] uppercase tracking-[0.48em] text-white/45">Citadel</p>
         <h1 className="relative z-10 mt-1 font-display text-[2.6rem] leading-none text-white/90 drop-shadow-[0_10px_28px_rgba(0,0,0,0.9)]">
-          Room {hallHold.current}
+          Room {hallN}
         </h1>
         <p className="relative z-10 mt-3 max-w-xs font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">
           same films · new hall · or a biome
@@ -6442,7 +6479,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       data-shots={shots.length}
       data-forged={forged}
       data-here={here}
-      data-hall={hallHold.current}
+      data-hall={hallN}
       data-door-hit={doorHit ? "1" : "0"}
       data-stock-walk={phase === "play" && (beat === "playvid" || beat === "walk") ? "1" : "0"}
       data-marks={pins.length}
