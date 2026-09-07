@@ -571,6 +571,7 @@ export function VaultHall() {
                   ? `${vaultHangCaption(head.room)}${vaultPack.name ? ` · ${vaultPack.name}` : ""}`
                   : "not on a door · Hang then Bind or Hang & enter"}
               </p>
+              <ClipSpecBar compact disabled={busy} />
               <div className="flex flex-wrap justify-center gap-2">
                 <StillChip
                   data-play-sprint=""

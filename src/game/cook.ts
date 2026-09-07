@@ -7,6 +7,7 @@ export type ClipSecs = 6 | 10 | 15;
 export type ClipRes = "720" | "1080";
 
 const SPEC_KEY = "bolt-clip-spec-v1";
+export const CLIP_SPEC_EVENT = "bolt-clip-spec";
 
 export function readClipSpec(): { secs: ClipSecs; res: ClipRes } {
   try {
@@ -27,6 +28,7 @@ export function writeClipSpec(secs: ClipSecs, res: ClipRes) {
   try {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(SPEC_KEY, JSON.stringify({ secs, res }));
+    window.dispatchEvent(new Event(CLIP_SPEC_EVENT));
   } catch {
     /* */
   }
