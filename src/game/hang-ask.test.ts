@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { walkHangHallHref } from "./enter-graph.ts";
-import { HANG_CONFIRM_ARM_MS, HANG_HALL_FLOOR, HANG_LEFTOVER_SWALLOW_MS, HANG_PENDING_KEY, dropHangPending, hangBindHall, hangCardHall, hangStillLane, hangStillSwipe, hangStillWrap, hangStripCards, hangStripPick, readHangPending, sheetConfirmHall, swallowOpeningTap, takeHangPending, writeHangFloor, writeHangPending } from "./hang-ask.ts";
+import { HANG_CONFIRM_ARM_MS, HANG_HALL_FLOOR, HANG_LEFTOVER_SWALLOW_MS, HANG_PENDING_KEY, dropHangPending, hangActEnters, hangBindHall, hangCardHall, hangDoorAct, hangStillLane, hangStillSwipe, hangStillWrap, hangStripCards, hangStripPick, readHangPending, sheetConfirmHall, swallowOpeningTap, takeHangPending, writeHangFloor, writeHangPending } from "./hang-ask.ts";
 
 function clickOn(target: { closest?: (sel: string) => unknown; getAttribute: (k: string) => string | null }) {
   const e = new Event("click", { bubbles: true, cancelable: true });
@@ -183,6 +183,13 @@ describe("hang ask leftover tap", () => {
     assert.equal(hangBindHall("7"), 7);
     assert.equal(hangBindHall(undefined), 0);
     assert.notEqual(hangBindHall(undefined), 8);
+    assert.equal(hangDoorAct("enter"), "enter");
+    assert.equal(hangDoorAct("bind"), "bind");
+    assert.equal(hangDoorAct("walk"), "bind");
+    assert.equal(hangDoorAct(undefined), "bind");
+    assert.equal(hangActEnters("enter"), true);
+    assert.equal(hangActEnters("bind"), false);
+    assert.equal(hangActEnters(null), false);
   });
 
   it("strip card index is not hall N — tap index 2 binds Room 3, not 8", () => {
@@ -219,6 +226,12 @@ describe("hang ask leftover tap", () => {
     assert.match(src, /data-still-carousel/);
     assert.match(src, /data-still-actions/);
     assert.match(src, /Walk this hall/);
+    assert.match(src, /Hang & enter/);
+    assert.match(src, /data-hang-act="bind"/);
+    assert.match(src, /data-hang-act="enter"/);
+    assert.match(src, /data-hang-choice/);
+    assert.match(src, /onLock=\{pickHall\}/);
+    assert.doesNotMatch(src, /onLock=\{lockRoom\}/);
     assert.match(src, /hangStillSwipe/);
     assert.match(src, /hangStillLane/);
     assert.doesNotMatch(src, /overflow-x-auto/);
@@ -231,8 +244,8 @@ describe("hang ask leftover tap", () => {
   it("confirm passes the picked hall so Hang A room 2 does not bind room 1", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
-    assert.match(src, /onConfirm: \(hall: number\) => void/);
-    assert.match(src, /onConfirm\(hangBindHall\(picked\) \|\| hangBindHall\(pickedRef\.current\)\)/);
+    assert.match(src, /onConfirm: \(hall: number, act: HangDoorAct\) => void/);
+    assert.match(src, /onConfirm\(hangBindHall\(picked\) \|\| hangBindHall\(pickedRef\.current\), hangDoorAct\(act\)\)/);
     assert.match(src, /const \[picked, setPicked\]/);
     assert.match(src, /choseRef\.current/);
     assert.match(src, /if \(choseRef\.current\) return/);
@@ -244,12 +257,16 @@ describe("hang ask leftover tap", () => {
     assert.doesNotMatch(src, /onPointerUp=\{\(e\) => \{\s*e\.stopPropagation\(\);\s*pick\(\);/);
     assert.doesNotMatch(src, /pickedRef\.current = picked;/);
     const vault = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
-    assert.match(vault, /onConfirm=\{\(hall\) => \{/);
+    assert.match(vault, /onConfirm=\{\(hall, act\) => \{/);
     assert.match(vault, /pickHangCitadel/);
     assert.match(vault, /listHangCitadels/);
     assert.match(vault, /citadels=\{hangCitadels\}/);
     assert.match(vault, /writeHangPending/);
     assert.match(vault, /walkHangHallHref/);
+    assert.match(vault, /hangActEnters/);
+    assert.match(vault, /hangDoorAct\(act\)/);
+    assert.match(vault, /data-hang-bound/);
+    assert.match(vault, /hung · Play to walk/);
     assert.match(vault, /StillCarousel/);
     assert.match(vault, /data-vault-actions/);
     assert.match(vault, />\s*Continue\s*</);
@@ -261,20 +278,23 @@ describe("hang ask leftover tap", () => {
     const botOnly = vault.indexOf("sr-only sticky");
     assert.ok(vaultActions >= 0 && hangAVis > vaultActions);
     assert.ok(botOnly < 0 || hangAVis < botOnly);
-    assert.match(vault, /hangDoor\(hangAsk\.a, hangAsk\.door, undefined, hangBindHall\(hall\)\)/);
+    assert.match(vault, /hangDoor\(hangAsk\.a, hangAsk\.door, undefined, hangBindHall\(hall\), choice\)/);
     assert.match(vault, /hangBindHall\(hallWant\)/);
     assert.match(vault, /const bindHall = hangBindHall\(hallWant\)/);
     assert.match(vault, /if \(now < hangGuard\.current\) return/);
     assert.match(vault, /swallowOpeningTap\(\)/);
     assert.doesNotMatch(vault, /const bindHall = pick\?\.bindHall \|\| hall/);
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
-    assert.match(engine, /onConfirm=\{\(hall\) => \{/);
+    assert.match(engine, /onConfirm=\{\(hall, act\) => \{/);
     assert.match(engine, /writeHangPending/);
     assert.match(engine, /readHangPending/);
     assert.match(engine, /takeHangPending/);
     assert.match(engine, /beginRift\(id, gateFromHung\(a\), bind\)/);
     assert.match(engine, /walkHangHallHref/);
     assert.match(engine, /hangBindHall\(hall\)/);
+    assert.match(engine, /hangActEnters\(choice\)/);
+    assert.match(engine, /attachRift\(door, gateFromHung\(hangAsk\.a\), bindHall\)/);
+    assert.match(engine, /if \(!hangActEnters\(choice\)\) return/);
     assert.match(engine, /pickHangHall/);
     assert.match(engine, /livingHangHall/);
     assert.match(engine, /hangBindHall/);
@@ -304,7 +324,7 @@ describe("hang ask leftover tap", () => {
     const src = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
     assert.match(src, /do not overwrite a tapped Room N/);
     assert.match(src, /Do not release swallow on unmount/);
-    assert.match(src, /onConfirm\(hangBindHall\(picked\) \|\| hangBindHall\(pickedRef\.current\)\)/);
+    assert.match(src, /onConfirm\(hangBindHall\(picked\) \|\| hangBindHall\(pickedRef\.current\), hangDoorAct\(act\)\)/);
     assert.match(src, /hangCardHall/);
     assert.match(src, /onPointerDown/);
     assert.doesNotMatch(src, /return \(\) => \{\s*release\(\);/);
@@ -339,6 +359,12 @@ describe("hang ask leftover tap", () => {
     const hangDoorFn = vaultHang.slice(vaultHang.indexOf("function hangDoor"), vaultHang.indexOf("function botHang"));
     assert.match(hangDoorFn, /swallowOpeningTap\(\)/);
     assert.match(hangDoorFn, /hangGuard\.current/);
+    assert.match(hangDoorFn, /if \(hangActEnters\(act\)\)/);
+    assert.match(hangDoorFn, /hung · Play to walk/);
+    assert.match(hangDoorFn, /Only Hang & enter walks the hall/);
+    const assignAt = hangDoorFn.indexOf("window.location.assign(href)");
+    const enterGateAt = hangDoorFn.indexOf("if (hangActEnters(act))");
+    assert.ok(enterGateAt >= 0 && assignAt > enterGateAt);
     const load = readFileSync(join(here, "../components/citadel-hub.tsx"), "utf8");
     assert.match(load, /data-load-play/);
     assert.match(load, /StillChip/);

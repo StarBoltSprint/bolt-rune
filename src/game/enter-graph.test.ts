@@ -440,11 +440,17 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(engine, /data-hall-wired=/);
     assert.match(engine, /if \(now < hangGuard\.current\) return/);
     const vault = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
+    const ask = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
     assert.match(vault, /vaultHangCaption\(head\.room\)/);
     assert.match(vault, /holdHall=\{hangBindHall\(live\.room\?\.hall\)/);
     assert.match(vault, /hangThumbStill\(vaultHead\)/);
     assert.match(vault, /walkHungHref\(live\.room/);
     assert.match(vault, /window\.location\.assign\(href\)/);
+    assert.match(vault, /hangActEnters/);
+    assert.match(vault, /data-hang-bound/);
+    assert.match(ask, /Hang & enter/);
+    assert.match(ask, /data-hang-act="bind"/);
+    assert.match(engine, /if \(!hangActEnters\(choice\)\) return/);
     const cine = readFileSync(join(here, "../components/cine-app.tsx"), "utf8");
     assert.match(cine, /hungFilmHold\(custom\)/);
     assert.match(cine, /holdHall=\{hold\.hall\}/);

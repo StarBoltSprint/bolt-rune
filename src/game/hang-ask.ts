@@ -128,6 +128,19 @@ export function hangBindHall(picked?: number | string | null): number {
   return hangCardHall(picked);
 }
 
+/** After Hang A/B + room pick: Hang writes the bind; Hang & enter walks. */
+export type HangDoorAct = "bind" | "enter";
+
+/** Hang A/B tap is never enter. Missing / junk act stays on the card. */
+export function hangDoorAct(kind?: string | null): HangDoorAct {
+  return kind === "enter" ? "enter" : "bind";
+}
+
+/** Only the Enter chip walks the living hall / play. Bind stays. */
+export function hangActEnters(kind?: string | null): boolean {
+  return hangDoorAct(kind) === "enter";
+}
+
 export type HangStripCard = {
   index: number;
   hall: number;

@@ -107,7 +107,7 @@ import {
 } from "@/game/rune-session";
 import { BootScreen } from "@/components/citadel-hub";
 import { HangAskSheet, HangCitadelStrip, HangRoomStrip } from "@/components/hang-ask";
-import { HANG_LEFTOVER_SWALLOW_MS, hangBindHall, readHangPending, swallowOpeningTap, takeHangPending, writeHangPending } from "@/game/hang-ask";
+import { HANG_LEFTOVER_SWALLOW_MS, hangActEnters, hangBindHall, hangDoorAct, readHangPending, swallowOpeningTap, takeHangPending, writeHangPending } from "@/game/hang-ask";
 import { bindCitadel, defaultHangRoom, hallN, listHangCitadels, listHangRooms, liveSlice, livingHangHall, putSlice, seedHalls, type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
@@ -6261,17 +6261,22 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         citadel={hangCitadel}
         onCitadel={pickHangCitadel}
         onClose={() => setHangAsk(null)}
-        onConfirm={(hall) => {
+        onConfirm={(hall, act) => {
           const dest = hangCitadelRef.current || sid.current;
           const bindHall = hangBindHall(hall);
-          writeHangPending({ id: hangAsk.a.id, citadel: dest || "", hall: bindHall });
+          const choice = hangDoorAct(act);
           hangGuard.current = (typeof performance !== "undefined" ? performance.now() : Date.now()) + HANG_LEFTOVER_SWALLOW_MS;
           swallowOpeningTap();
           setHangAsk(null);
+          const door = hangAsk.door === "B" ? "m2" : "m1";
+          /* Bind writes the door and stays on Hang UI. Enter walks as today. */
+          attachRift(door, gateFromHung(hangAsk.a), bindHall);
+          if (!hangActEnters(choice)) return;
+          writeHangPending({ id: hangAsk.a.id, citadel: dest || "", hall: bindHall });
           if (dest && dest !== sid.current && bindHall) {
             const roomsN = Math.max(bindHall, rooms.filter((r) => !r.citadel || r.citadel === dest).length, 1);
             stampPlay(dest, hangCitadels.find((c) => c.id === dest)?.title, bindHall, roomsN);
-            const href = walkHangHallHref(dest, bindHall, roomsN) || walkHungHref({ hall: bindHall, door: "A", citadel: dest }, roomsN);
+            const href = walkHangHallHref(dest, bindHall, roomsN) || walkHungHref({ hall: bindHall, door: hangAsk.door, citadel: dest }, roomsN);
             if (href) window.location.assign(href);
             return;
           }
