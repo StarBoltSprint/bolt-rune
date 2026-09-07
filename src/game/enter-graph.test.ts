@@ -607,8 +607,9 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.equal(paceAfterMiss(0.8, "A", true), 0.8);
     assert.equal(paceAfterMiss(1, "B", true), 1);
     assert.equal(paceAfterMiss(1, null, true), 1);
-    assert.equal(paceAfterMiss(1, null, false), 0.68, "Asteroid / other cook keeps 0.32 drop");
-    assert.equal(missPace(1, false), 0.68);
+    assert.equal(paceAfterMiss(1, null, false), 1 - SPRINT_MISS_PACE, "Asteroid / other cook keeps 0.32 drop");
+    assert.equal(missPace(1, false), 1 - SPRINT_MISS_PACE);
+    assert.equal(Number((1 - SPRINT_MISS_PACE).toFixed(2)), 0.68);
     assert.equal(missPace(0.7, false), 0.5);
 
     const here = dirname(fileURLToPath(import.meta.url));
