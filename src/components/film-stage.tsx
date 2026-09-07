@@ -28,9 +28,9 @@ import { sfxHit, unlockAudio, startScore, stopScore, syncScore } from "@/game/au
 import { press } from "@/lib/press";
 import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
-import { playableClipSrc, stockBiomeLoop, warmClip, warmedClip } from "@/game/play-clip";
+import { playableClipSrc, stockBiomeLoop, warmClip } from "@/game/play-clip";
 import { HazardLayer } from "@/components/hazard-layer";
-import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, holdDoorLoops, holdLoopSeam, hungBiomePlaylist, hungStageChrome, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
+import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, holdDoorLoops, holdLoopSeam, holdPlateStuck, holdPlateUnderrun, hungBiomePlaylist, hungStageChrome, shouldHoldBiome, sprintHallDoor, stagePlateMustLoad } from "@/game/enter-graph";
 import { doorAtPoint, isHallFilm, isLivingHallLoop } from "@/game/stock-room";
 
 export type RunResult = {
@@ -249,6 +249,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   const skipAcc = useRef(0);
   const loopT = useRef(0);
   const coarse = useRef(false);
+  const recoverAt = useRef(0);
 
   function bindActive(n: 0 | 1) {
     laneRef.current = n;
@@ -259,7 +260,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   function armPlate(el: HTMLVideoElement | null, url: string | undefined) {
     if (!el || !url) return;
     el.loop = holdDoorLoops(holdDoorRef.current);
-    if (el.getAttribute("data-url") === url && el.readyState >= 2) return;
+    if (el.getAttribute("data-url") === url && el.readyState >= 3 && !el.paused) return;
     el.setAttribute("data-url", url);
     el.setAttribute("playsinline", "true");
     el.setAttribute("webkit-playsinline", "true");
@@ -268,15 +269,12 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     el.playsInline = true;
     el.preload = "auto";
     const src = playableClipSrc(url) || url;
-    const warmed = holdDoorRef.current ? warmedClip(src) : null;
-    if (el.getAttribute("src") !== src) {
-      el.src = src;
-      /* Hall already warmed this plate — skip cold load() from zero. */
-      if (!(warmed && warmed.readyState >= 2 && (warmed.getAttribute("src") === src || warmed.currentSrc === src))) {
-        el.load();
-      }
-    } else if (el.readyState < 2 && !(warmed && warmed.readyState >= 2)) {
+    /* warmClip is HTTP cache only — always load() the visible stage plate. */
+    const changed = el.getAttribute("src") !== src;
+    if (changed) el.src = src;
+    if (stagePlateMustLoad(changed, el.readyState)) {
       el.load();
+      recoverAt.current = typeof performance !== "undefined" ? performance.now() : Date.now();
     }
     el.onerror = () => {
       if (holdDoorRef.current) {
@@ -359,6 +357,38 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       setLive(true);
       setUsingStill(false);
     }).catch(() => holdBiomePlate(v));
+  }
+
+  /** waiting/stalled with paused===false — load()+play so the MP4 is not a frozen poster. */
+  function recoverHoldPlate(el?: HTMLVideoElement | null, event?: string | null) {
+    if (!holdDoorRef.current || !el) return;
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (now - recoverAt.current < 420) return;
+    if (!holdPlateStuck(el.readyState, el.paused, event) && !el.paused) return;
+    recoverAt.current = now;
+    if (event === "waiting" || event === "stalled" || el.readyState < 2) {
+      const keep = Number.isFinite(el.currentTime) ? el.currentTime : 0;
+      try {
+        el.load();
+      } catch {
+        /* */
+      }
+      if (keep > 0.05) {
+        try {
+          el.currentTime = keep;
+        } catch {
+          /* */
+        }
+      }
+    }
+    el.loop = true;
+    el.muted = true;
+    el.defaultMuted = true;
+    el.playsInline = true;
+    void el.play().then(() => {
+      setLive(true);
+      setUsingStill(false);
+    }).catch(() => {});
   }
 
   useEffect(() => {
@@ -521,20 +551,28 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         keepHoldLoop(v);
         return;
       }
+      if (holdDoorLoops(holdDoorRef.current) && holdPlateStuck(v.readyState, v.paused)) {
+        recoverHoldPlate(v);
+        return;
+      }
       void v.play().then(() => {
         setLive(true);
         setUsingStill(false);
       }).catch(() => {});
     };
+    const onWait = () => recoverHoldPlate(v, "waiting");
+    const onStall = () => recoverHoldPlate(v, "stalled");
     if (v.readyState >= 2) kick();
     v.addEventListener("canplay", kick);
+    v.addEventListener("waiting", onWait);
+    v.addEventListener("stalled", onStall);
     v.addEventListener("playing", () => {
       setLive(true);
       setUsingStill(false);
     });
     kick();
     const retry = window.setInterval(() => {
-      if (!v.paused) {
+      if (!v.paused && v.readyState >= 2) {
         window.clearInterval(retry);
         return;
       }
@@ -543,6 +581,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     if (film.score) startScore(film.score, 0);
     return () => {
       v.removeEventListener("canplay", kick);
+      v.removeEventListener("waiting", onWait);
+      v.removeEventListener("stalled", onStall);
       window.clearInterval(retry);
     };
   }, [phase, src]);
@@ -556,9 +596,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       if (g.hitstop > 0) g.hitstop -= dt;
       const hold = Boolean(holdDoorRef.current);
       const hallQuiet = hallPlateNow();
-      if (v && v.paused && live && phaseRef.current === "run" && !g.crashed && !g.done) {
+      if (v && phaseRef.current === "run" && !g.crashed && !g.done) {
         if (hold && holdLoopSeam(v.ended, v.currentTime, v.duration)) keepHoldLoop(v);
-        else void v.play().catch(() => {});
+        else if (hold && holdPlateStuck(v.readyState, v.paused)) recoverHoldPlate(v);
+        else if (hold && holdPlateUnderrun(v.readyState, v.paused, v.currentTime)) recoverHoldPlate(v, "waiting");
+        else if (v.paused && (live || hold)) void v.play().catch(() => {});
       }
 
       let t = 0;
@@ -1334,6 +1376,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
             setLive(true);
             setUsingStill(false);
           }}
+          onWaiting={() => recoverHoldPlate(aRef.current, "waiting")}
+          onStalled={() => recoverHoldPlate(aRef.current, "stalled")}
           onCanPlay={() => {
             if ((film.still || "").includes("citadel-tour")) return;
             const el = aRef.current;
@@ -1392,6 +1436,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
             setLive(true);
             setUsingStill(false);
           }}
+          onWaiting={() => recoverHoldPlate(bRef.current, "waiting")}
+          onStalled={() => recoverHoldPlate(bRef.current, "stalled")}
           onEnded={() => {
             if (laneRef.current !== 1) return;
             if (holdDoorLoops(holdDoorRef.current)) {

@@ -105,7 +105,8 @@ let warmEl: HTMLVideoElement | null = null;
 
 /**
  * Keep one hidden <video preload="auto"> plus an HTTP cache fetch.
- * Hall breath / hang bind use this so FilmStage armPlate is not a cold load().
+ * Hall breath / hang bind HTTP cache only — FilmStage armPlate always load()s
+ * the visible plate. Hidden readyState must not skip that load().
  */
 export function warmClip(url?: string | null): HTMLVideoElement | null {
   const src = clipWarmSrc(url);
