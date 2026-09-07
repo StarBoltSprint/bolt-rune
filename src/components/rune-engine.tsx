@@ -99,7 +99,7 @@ import {
 } from "@/game/rune-session";
 import { BootScreen } from "@/components/citadel-hub";
 import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
-import { swallowOpeningTap } from "@/game/hang-ask";
+import { sheetConfirmHall, swallowOpeningTap } from "@/game/hang-ask";
 import { confirmHangHall, defaultHangRoom, hallN, listHangRooms, liveSlice, livingHangHall, putSlice, seedHalls, type HangRoomPick } from "@/game/rooms";
 import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
@@ -2436,7 +2436,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       return;
     }
     rememberSlice(snapHall());
-    let slice = hallsHold.current[n - 1];
+    /* Index in hallsHold is not hall N — Room 3 is n=3, not hallsHold[2].n
+       when that slot still holds last-hung 8. */
+    let slice = hallsHold.current.find((h) => h.n === n) || hallsHold.current[n - 1];
+    if (slice && slice.n !== n) slice = { ...slice, n };
     if (!slice || !(slice.bank || []).length) {
       const first = pathFirst.current || "m1";
       const still = slice?.still || plateRef.current || startHold.current || HALL_STILL;
@@ -2453,7 +2456,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       };
       hallsHold.current = putSlice(hallsHold.current, slice);
     }
-    applyHall(slice, false);
+    applyHall({ ...slice, n }, false);
     setLiveHall(n);
     roomsHold.current = Math.max(roomsHold.current, n, hallsHold.current.length);
     persist({
@@ -4593,7 +4596,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function attachRift(door: "m1" | "m2", gate: RiftGate, hallWant?: number) {
-    const bindHall = Math.max(1, Math.min(8, hallN(hallWant) || hangRoomRef.current || hallHold.current || 1));
+    const bindHall = sheetConfirmHall(hallWant, hangRoomRef.current) || Math.max(1, Math.min(8, hallN(hallWant) || hangRoomRef.current || hallHold.current || 1));
     hangRoomRef.current = bindHall;
     setHangRoomN(bindHall);
     const hereHall = bindHall === hallHold.current;
@@ -4734,7 +4737,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function beginRift(door: "m1" | "m2", gate: RiftGate, hall?: number) {
     const rooms = liveHangRooms.length ? liveHangRooms : livingHangRooms();
-    const bindHall = confirmHangHall(rooms, hall ?? hangRoomRef.current);
+    const bindHall = sheetConfirmHall(hall, hangRoomRef.current) || confirmHangHall(rooms, hall ?? hangRoomRef.current);
     hangRoomRef.current = bindHall;
     setHangRoomN(bindHall);
     setLiveHall(bindHall);
@@ -5771,6 +5774,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (!riftPick && !hangAsk) return;
     const rooms = livingHangRooms();
     setLiveHangRooms(rooms);
+    /* Sheet pick is the source of truth — a late hydrate must not snap
+       Room 3 back to last-hung / living hall 8. */
+    if (hangAsk) return;
     const next = livingHangHall(rooms, hangRoomRef.current) || defaultHangRoom(rooms);
     pickHangHall(next);
   }, [riftPick, hungArts, hangAsk]);
@@ -6093,7 +6099,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         onConfirm={(hall) => {
           const door = hangAsk.door === "B" ? "m2" : "m1";
           const rooms = liveHangRooms.length ? liveHangRooms : livingHangRooms();
-          beginRift(door, gateFromHung(hangAsk.a), confirmHangHall(rooms, hall));
+          beginRift(door, gateFromHung(hangAsk.a), sheetConfirmHall(hall, hangRoomRef.current) || confirmHangHall(rooms, hall));
           setHangAsk(null);
         }}
       />
@@ -6468,7 +6474,14 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   });
   const hungDoor = rift.m1 ? "A" : rift.m2 ? "B" : null;
   const chromeHall =
-    hallN(hangRoomN) || hallN(hungArts.find((a) => a.room?.door === hungDoor)?.room?.hall) || 1;
+    hallN(hangRoomN) ||
+    hallN(liveHall) ||
+    hallN(
+      [...hungArts]
+        .filter((a) => a.room?.door === hungDoor && hallN(a.room?.hall))
+        .sort((p, q) => (q.hungAt || 0) - (p.hungAt || 0))[0]?.room?.hall,
+    ) ||
+    1;
   const livingChrome = hungDoor ? hungPlayChrome(chromeHall, hungDoor) : null;
 
   return (

@@ -9,7 +9,7 @@ import { hangHall, listHall } from "@/lib/hall";
 import { bindCitadel, confirmHangHall, defaultHangRoom, hallN, hangOpensSheet, holdHangRooms, listHangRooms, resolveHangRoom, type HangRoomPick } from "@/game/rooms";
 import { hydrateSessions, lastPlay, listSessions, listStoredHallHints } from "@/game/rune-session";
 import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
-import { HANG_LEFTOVER_SWALLOW_MS, swallowOpeningTap } from "@/game/hang-ask";
+import { HANG_LEFTOVER_SWALLOW_MS, sheetConfirmHall, swallowOpeningTap } from "@/game/hang-ask";
 import { HallMark } from "@/components/hall-mark";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { FilmStage } from "@/components/film-stage";
@@ -161,7 +161,7 @@ export function VaultHall() {
   function hangDoor(a: HungArtifact, door: "A" | "B", from?: HungArtifact[], hallWant?: number | string | null) {
     const cit = bindCitadel(listSessions(), lastPlay());
     const rooms = refreshHangRooms(from?.length ? from : hungRef.current);
-    const hall = confirmHangHall(rooms, hallWant ?? hangHallRef.current);
+    const hall = sheetConfirmHall(hallWant, hangHallRef.current) || confirmHangHall(rooms, hallWant ?? hangHallRef.current);
     const pick = rooms.find((r) => r.hall === hall);
     const citadel = pick?.citadel || cit.citadel || undefined;
     const bindHall = hall;

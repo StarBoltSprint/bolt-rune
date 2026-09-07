@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { vaultHangRoom } from "@/game/path-entry";
-import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, swallowOpeningTap } from "@/game/hang-ask";
+import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, hangCardHall, hangStripCards, hangStripPick, sheetConfirmHall, swallowOpeningTap } from "@/game/hang-ask";
 import { type HangRoomPick } from "@/game/rooms";
 import { press } from "@/lib/press";
 
@@ -18,37 +18,44 @@ export function HangRoomStrip({
 }) {
   return (
     <div className="flex gap-2 overflow-x-auto pb-1" data-hang-rooms="" data-hang-load-halls={rooms.length}>
-      {rooms.map((r, i) => {
-        const on = hall === r.hall;
+      {hangStripCards(rooms).map((card) => {
+        const r = rooms[card.index];
+        const n = card.hall;
+        const pick = (from?: string | null) => {
+          if (disabled) return;
+          onHall(hangCardHall(from) || hangStripPick(rooms, card.index) || n);
+        };
         return (
           <button
-            key={`${r.citadel || ""}-${r.hall}-${i}`}
+            key={`${r?.citadel || ""}-${n}-${card.index}`}
             type="button"
-            data-hang-pick={r.hall}
-            {...vaultHangRoom(r.hall)}
-            aria-pressed={on}
+            data-hang-pick={n}
+            data-hang-card-index={card.index}
+            {...vaultHangRoom(n)}
+            aria-pressed={hall === n}
             disabled={disabled}
             className={`min-w-[6.4rem] overflow-hidden rounded-2xl border bg-black/50 text-left disabled:opacity-40 ${
-              on ? "border-[#9ef0e4]/70 ring-1 ring-[#9ef0e4]/35" : "border-white/25"
+              hall === n ? "border-[#9ef0e4]/70 ring-1 ring-[#9ef0e4]/35" : "border-white/25"
             }`}
             style={{ touchAction: "manipulation" }}
-            {...press(() => {
-              if (disabled) return;
-              onHall(r.hall);
-            })}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              pick(e.currentTarget.getAttribute("data-hang-pick"));
+            }}
+            {...press(() => pick(String(n)))}
           >
-            {r.still ? (
+            {r?.still ? (
               <img src={r.still} alt="" className="h-[4.4rem] w-full object-cover" />
             ) : (
               <div className="h-[4.4rem] w-full bg-[linear-gradient(180deg,rgba(158,240,228,0.16),rgba(7,8,12,0.7))]" />
             )}
             <span
               className={`block px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] ${
-                on ? "text-[#9ef0e4]" : "text-white/65"
+                hall === n ? "text-[#9ef0e4]" : "text-white/65"
               }`}
             >
-              Room {r.hall}
-              {r.living ? " · here" : rooms.length === 1 ? " · only" : ""}
+              Room {n}
+              {r?.living ? " · here" : rooms.length === 1 ? " · only" : ""}
             </span>
           </button>
         );
@@ -76,10 +83,9 @@ export function HangAskSheet({
 }) {
   const [armed, setArmed] = useState(false);
   const [held, setHeld] = useState(rooms);
-  const [picked, setPicked] = useState(() => (hall >= 1 && hall <= 8 ? hall : 1));
+  const [picked, setPicked] = useState(() => hangCardHall(hall) || 1);
   const pickedRef = useRef(picked);
   const choseRef = useRef(false);
-  pickedRef.current = picked;
   useEffect(() => {
     const release = swallowOpeningTap(HANG_LEFTOVER_SWALLOW_MS);
     const t = window.setTimeout(() => setArmed(true), HANG_CONFIRM_ARM_MS);
@@ -92,13 +98,16 @@ export function HangAskSheet({
     if (rooms.length >= held.length) setHeld(rooms);
   }, [rooms, held.length]);
   useEffect(() => {
-    /* Parent hall is the column default — do not overwrite a tapped Room N. */
+    /* Parent hall is the column / last hang — do not overwrite a tapped Room N. */
     if (choseRef.current) return;
-    if (hall >= 1 && hall <= 8) setPicked(hall);
+    const next = hangCardHall(hall);
+    if (!next) return;
+    pickedRef.current = next;
+    setPicked(next);
   }, [hall]);
   const picks = held.length >= rooms.length ? held : rooms;
   function pickHall(n: number) {
-    const next = Math.max(1, Math.min(8, n || 1));
+    const next = hangCardHall(n) || 1;
     choseRef.current = true;
     pickedRef.current = next;
     setPicked(next);
@@ -144,7 +153,7 @@ export function HangAskSheet({
           {...vaultHangRoom(picked)}
           className="mt-6 rounded-2xl border border-[#9ef0e4]/50 px-4 py-3 font-display text-2xl text-[#9ef0e4]"
           style={{ touchAction: "manipulation" }}
-          {...press(() => onConfirm(pickedRef.current))}
+          {...press(() => onConfirm(sheetConfirmHall(pickedRef.current, hall)))}
         >
           Hang {door} · room {picked}
         </button>

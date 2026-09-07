@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, swallowOpeningTap } from "./hang-ask.ts";
+import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, hangCardHall, hangStripCards, hangStripPick, sheetConfirmHall, swallowOpeningTap } from "./hang-ask.ts";
 
 function clickOn(target: { closest?: (sel: string) => unknown; getAttribute: (k: string) => string | null }) {
   const e = new Event("click", { bubbles: true, cancelable: true });
@@ -60,25 +60,127 @@ describe("hang ask leftover tap", () => {
     assert.deepEqual(hits, ["room", "confirm"]);
   });
 
+  it("Room 3 card tap is never swallowed — leftover pointerup must not steal the pick", () => {
+    const hits: string[] = [];
+    const cap: Array<(e: Event) => void> = [];
+    const bubble: Array<(e: Event) => void> = [];
+    const root = {
+      addEventListener(type: string, fn: (e: Event) => void, capture?: boolean) {
+        (capture ? cap : bubble).push(fn);
+      },
+      removeEventListener(type: string, fn: (e: Event) => void, capture?: boolean) {
+        const list = capture ? cap : bubble;
+        const i = list.indexOf(fn);
+        if (i >= 0) list.splice(i, 1);
+      },
+      dispatch(e: Event) {
+        for (const fn of cap) fn(e);
+        if (!e.defaultPrevented) for (const fn of bubble) fn(e);
+      },
+    };
+    bubble.push((e) => hits.push((e.target as { kind?: string }).kind || e.type));
+    const leftover = {
+      kind: "leftover",
+      getAttribute: () => null,
+    };
+    const room3 = {
+      kind: "room3",
+      getAttribute: (k: string) => (k === "data-hang-pick" ? "3" : null),
+    };
+    const release = swallowOpeningTap(80, root);
+    const pointerup = new Event("pointerup", { bubbles: true, cancelable: true });
+    Object.defineProperty(pointerup, "target", { value: leftover });
+    Object.defineProperty(pointerup, "composedPath", { value: () => [leftover] });
+    root.dispatch(pointerup);
+    const click = new Event("click", { bubbles: true, cancelable: true });
+    Object.defineProperty(click, "target", { value: room3 });
+    Object.defineProperty(click, "composedPath", { value: () => [room3] });
+    root.dispatch(click);
+    release();
+    const freshCap: Array<(e: Event) => void> = [];
+    const freshBubble: Array<(e: Event) => void> = [];
+    const fresh = {
+      addEventListener(type: string, fn: (e: Event) => void, capture?: boolean) {
+        (capture ? freshCap : freshBubble).push(fn);
+      },
+      removeEventListener() {},
+      dispatch(e: Event) {
+        for (const fn of freshCap) fn(e);
+        if (!e.defaultPrevented) for (const fn of freshBubble) fn(e);
+      },
+    };
+    const freshHits: string[] = [];
+    freshBubble.push((e) => freshHits.push((e.target as { kind?: string }).kind || e.type));
+    const arm = swallowOpeningTap(80, fresh);
+    fresh.dispatch(clickOn(room3));
+    assert.deepEqual(freshHits, ["room3"]);
+    assert.ok(hits.includes("room3"));
+    arm();
+  });
+
+  it("tapped Room 3 confirm is 3, not last-hung / parent hall 8", () => {
+    assert.equal(hangCardHall(3), 3);
+    assert.equal(hangCardHall("3"), 3);
+    assert.equal(sheetConfirmHall(3, 8), 3);
+    assert.equal(sheetConfirmHall("3", 8), 3);
+    assert.notEqual(sheetConfirmHall(3, 8), 8);
+    assert.equal(sheetConfirmHall(undefined, 8), 8);
+  });
+
+  it("strip card index is not hall N — tap index 2 binds Room 3, not 8", () => {
+    const eight = [1, 2, 3, 4, 5, 6, 7, 8].map((hall) => ({
+      hall,
+      name: `Room ${hall}`,
+      still: "",
+      living: hall === 8,
+      bindHall: hall === 3 ? 8 : undefined,
+    }));
+    const cards = hangStripCards(eight);
+    assert.equal(cards[2]?.index, 2);
+    assert.equal(cards[2]?.hall, 3);
+    assert.equal(cards[2]?.bindHall, 8);
+    assert.equal(hangStripPick(eight, 2), 3);
+    assert.notEqual(hangStripPick(eight, 2), 8);
+    assert.notEqual(hangStripPick(eight, 2), eight.length);
+    assert.notEqual(hangStripPick(eight, 2), cards[2]?.index);
+    assert.notEqual(hangStripPick(eight, 2), cards[2]?.bindHall);
+    assert.equal(hangStripPick(eight, 7), 8);
+    assert.equal(sheetConfirmHall(hangStripPick(eight, 2), 8), 3);
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
+    assert.match(src, /data-hang-card-index=\{card\.index\}/);
+    assert.match(src, /data-hang-pick=\{n\}/);
+    assert.match(src, /hangStripPick\(rooms, card\.index\)/);
+    assert.doesNotMatch(src, /onHall\(i \+ 1\)/);
+    assert.doesNotMatch(src, /onHall\(card\.index\)/);
+    assert.doesNotMatch(src, /Room \{i \+ 1\}/);
+  });
+
   it("confirm passes the picked hall so Hang A room 2 does not bind room 1", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
     assert.match(src, /onConfirm: \(hall: number\) => void/);
-    assert.match(src, /onConfirm\(pickedRef\.current\)/);
+    assert.match(src, /onConfirm\(sheetConfirmHall\(pickedRef\.current, hall\)\)/);
     assert.match(src, /const \[picked, setPicked\]/);
     assert.match(src, /choseRef\.current/);
     assert.match(src, /if \(choseRef\.current\) return/);
     assert.match(src, /function pickHall/);
     assert.match(src, /data-hang-picked=\{picked\}/);
+    assert.match(src, /hangStripCards\(rooms\)/);
+    assert.match(src, /hangStripPick\(rooms, card\.index\)/);
+    assert.match(src, /onPointerDown/);
+    assert.doesNotMatch(src, /onPointerUp=\{\(e\) => \{\s*e\.stopPropagation\(\);\s*pick\(\);/);
+    assert.doesNotMatch(src, /pickedRef\.current = picked;/);
     const vault = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
     assert.match(vault, /onConfirm=\{\(hall\) => \{/);
     assert.match(vault, /hangDoor\(hangAsk\.a, hangAsk\.door, undefined, hall\)/);
+    assert.match(vault, /sheetConfirmHall\(hallWant, hangHallRef\.current\)/);
     assert.match(vault, /confirmHangHall\(rooms, hallWant/);
     assert.match(vault, /const bindHall = hall/);
     assert.doesNotMatch(vault, /const bindHall = pick\?\.bindHall \|\| hall/);
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     assert.match(engine, /onConfirm=\{\(hall\) => \{/);
-    assert.match(engine, /beginRift\(door, gateFromHung\(hangAsk\.a\), confirmHangHall\(rooms, hall\)\)/);
+    assert.match(engine, /beginRift\(door, gateFromHung\(hangAsk\.a\), sheetConfirmHall\(hall, hangRoomRef\.current\) \|\| confirmHangHall\(rooms, hall\)\)/);
     assert.match(engine, /pickHangHall/);
     assert.match(engine, /livingHangHall/);
     assert.match(engine, /confirmHangHall/);
@@ -103,16 +205,26 @@ describe("hang ask leftover tap", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
     assert.match(src, /do not overwrite a tapped Room N/);
-    assert.match(src, /onConfirm\(pickedRef\.current\)/);
+    assert.match(src, /onConfirm\(sheetConfirmHall\(pickedRef\.current, hall\)\)/);
+    assert.match(src, /hangCardHall/);
+    assert.match(src, /onPointerDown/);
     const vault = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
     const hangDoor = vault.slice(vault.indexOf("function hangDoor"), vault.indexOf("function botHang"));
+    assert.match(hangDoor, /sheetConfirmHall\(hallWant, hangHallRef\.current\)/);
     assert.match(hangDoor, /confirmHangHall\(rooms, hallWant/);
     assert.doesNotMatch(hangDoor, /resolveHangRoom\(rooms, hallWant/);
     assert.match(hangDoor, /const bindHall = hall;/);
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    assert.match(engine, /sheetConfirmHall\(hall/);
     assert.match(engine, /confirmHangHall\(rooms, hall\)/);
     assert.match(engine, /goHungHall\(bindHall/);
+    assert.match(engine, /hallsHold\.current\.find\(\(h\) => h\.n === n\)/);
+    assert.match(engine, /applyHall\(\{ \.\.\.slice, n \}, false\)/);
     assert.match(engine, /attachRift\(door, gate, bindHall\)/);
     assert.match(engine, /hungPlayChrome\(chromeHall/);
+    assert.match(engine, /if \(hangAsk\) return/);
+    const swallow = readFileSync(join(here, "./hang-ask.ts"), "utf8");
+    assert.match(swallow, /hitsHangPick/);
+    assert.match(swallow, /if \(hitsHangPick\(e\)\) return/);
   });
 });

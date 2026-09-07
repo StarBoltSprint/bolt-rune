@@ -271,6 +271,31 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.equal(fromRoom2.art, id);
   });
 
+  it("Hang Room 3 pick sticks through hang+enter — not last-hung Room 8", () => {
+    const id = "art-h3-a";
+    let hung = hangArtifactOnDoor(id, "A", { hall: 8, citadel: "cit-8" }, [art(id, "forest")]);
+    hung = hangArtifactOnDoor(id, "A", { hall: 3, citadel: "cit-8" }, hung);
+    const enter3 = resolveDoorEnter("A", 3, "cit-8", hung);
+    assert.equal(enter3.kind, "biome");
+    if (enter3.kind !== "biome") return;
+    assert.equal(enter3.hall, 3);
+    assert.equal(enter3.door, "A");
+    assert.deepEqual(hungPlayChrome(enter3.hall, enter3.door), { keeper: "Room 3 • Door A", name: "Play Sprint" });
+    assert.notDeepEqual(hungPlayChrome(enter3.hall, enter3.door), hungPlayChrome(8, "A"));
+    const fromRoom8 = resolveDoorEnter("A", 8, "cit-8", hung, {
+      m1: { biome: "forest", name: "Forest", still: biomeStill("forest"), loop: "/films/forge-forest.mp4", art: id },
+    });
+    assert.equal(fromRoom8.kind, "biome");
+    if (fromRoom8.kind !== "biome") return;
+    assert.equal(fromRoom8.hall, 3);
+    const jump = resolveHungEnter("A", 8, "cit-8", hung);
+    assert.equal(jump.kind, "biome");
+    if (jump.kind !== "biome") return;
+    assert.equal(jump.hall, 3);
+    assert.equal(latestHungHall(hung), 3);
+    assert.equal(hungHallForDoor("A", 8, hung), 3);
+  });
+
   it("stay play on hall 2 drops hall loops and keeps Room 2 chrome", () => {
     const hung = hangArtifactOnDoor("art-title-2", "A", { hall: 2, citadel: "cit-2" }, [art("art-title-2", "forest")]);
     const enter = stayBiomePlay(resolveDoorEnter("A", 2, "cit-2", hung));
