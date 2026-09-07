@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { chromium } from "playwright";
 
 const BASE = process.env.HALL_SMOKE_URL || "http://127.0.0.1:8080";
-const OUT = process.env.HALL_SMOKE_OUT || "/opt/cursor/artifacts/screenshots";
+const OUT = process.env.HALL_SMOKE_OUT || "/tmp/hang-room2-asteroid";
 mkdirSync(OUT, { recursive: true });
 
 async function seedAsteroidHalls(page) {
@@ -81,23 +81,28 @@ async function snapHall(page) {
 
 async function openHangA(page) {
   if (await page.locator("[data-hang-ask=A]").count()) return;
-  if (await page.locator("[data-hang=A]").count()) {
-    await page.locator("[data-hang=A]").first().click();
-    return;
+  if (!(await page.locator("[data-hang=A]").count())) {
+    const menu = page.locator('[aria-label="menu"]');
+    if (await menu.count()) {
+      await menu.first().click({ force: true });
+      await page.waitForTimeout(650);
+    }
+    const add = page.locator("button", { hasText: /Add artefact|Artefacts/i });
+    if (await add.count()) {
+      await add.first().click({ force: true });
+      await page.waitForTimeout(500);
+    }
   }
-  const menu = page.locator('[aria-label="menu"]');
-  if (await menu.count()) {
-    await menu.first().click();
-    await page.waitForTimeout(200);
+  await page.waitForSelector("[data-hang=A]", { timeout: 8000 });
+  if (await page.locator("[data-hang-pick='2']").count()) {
+    await page.locator("[data-hang-pick='2']").first().click({ force: true });
+    await page.waitForTimeout(120);
   }
-  const add = page.locator("button", { hasText: /Add artefact|Artefacts/i });
-  if (await add.count()) {
-    await add.first().click();
-    await page.waitForTimeout(400);
-  }
-  if (await page.locator("[data-hang=A]").count()) {
-    await page.locator("[data-hang=A]").first().click();
-  }
+  await page.evaluate(() => {
+    const d = document.querySelector("[data-hang=A]");
+    if (!d) return;
+    d.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, view: window }));
+  });
 }
 
 async function enterDoorA(page) {
