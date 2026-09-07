@@ -11,6 +11,7 @@ import { ForgeAura, type Mark } from "@/components/forge-aura";
 import { RuneEngine } from "@/components/rune-engine";
 import { boltFull, press } from "@/lib/press";
 import { boltBack, boltHome, boltDepth, locFromHash, pushBolt, readBolt, replaceBolt, sameBolt, type BoltLoc } from "@/lib/bolt-history";
+import { bootCookLoc } from "@/game/cook-ready";
 
 type Screen = "title" | "how" | "play" | "result" | "cook";
 type From = Mark | "idle";
@@ -166,10 +167,11 @@ export function CineApp({ bootScreen, playArt }: { bootScreen?: Screen; playArt?
 
   useEffect(() => {
     if (playArt) return;
-    const loc =
-      bootScreen === "cook"
-        ? { screen: "cook" as const, gate: "rifts" as const, page: 0 }
-        : (locFromHash() ?? readBolt() ?? { screen: "title" as const });
+    const loc = bootCookLoc({
+      bootScreen,
+      hashed: locFromHash(),
+      stored: readBolt(),
+    }) as BoltLoc;
     replaceBolt(loc);
     applyLoc(loc);
     const sync = () => {

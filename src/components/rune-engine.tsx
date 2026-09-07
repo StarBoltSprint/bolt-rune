@@ -50,6 +50,7 @@ import {
 } from "@/game/rune";
 import {
   biomeBotStart,
+  claimLookForgeAuto,
   lookForgeStart,
   lookForgeWalkStyle,
   lookHallLocked,
@@ -58,6 +59,7 @@ import {
   vaultHangRoom,
   type BoltForgeHook,
 } from "@/game/path-entry";
+import { lookForgeAlreadyDone, markLookForgeDone, shouldResumeForgePlay } from "@/game/cook-ready";
 import { freeRuneSlot, grabRuneFrame, pollCookPlate, startCookStill, startRuneExtend, startRuneFilm, startRuneStill, cacheClip, cacheStill } from "@/lib/cook";
 import { COOK_BUSY_WAIT_MS, COOK_START_ACCEPTED_PCT, cookBusyGiveUpFrost, cookBusyNext, cookBusyWaitFrost, isCookSlotBlock, isLocalSlotHold } from "@/lib/cook-busy";
 import { BIOMES, biomePlaylist, riftFilm, riftPrompt, type BiomeId } from "@/game/cook";
@@ -820,6 +822,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         setFrost("hang your artefact on a door");
       } else if (pathEntry(boot.stills) === "stock") {
         enterLivingRoom(boot.first);
+      } else if (shouldResumeForgePlay({ done: lookForgeAlreadyDone(), liveId: peekLivePlay()?.id })) {
+        const liveId = peekLivePlay()?.id;
+        if (liveId) void openSession(liveId, true);
       } else {
         setPhase("look");
         phaseRef.current = "look";
@@ -3706,6 +3711,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       hereRef.current = lastTo;
       cameFrom.current = lastFrom;
       persist({ phase: "play", plate: frame.still, here: lastTo, cameFrom: lastFrom, start: frame.still });
+      markLookForgeDone();
       if (next === lastTo) holdIdle();
       else void playWalk(next);
       prefetchFrom(hereRef.current);
@@ -3720,6 +3726,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     cameFrom.current = "start";
     bolt.current = { x: SPAWN.x, y: SPAWN.y };
     persist({ phase: "play", plate: frame.still, here: SPAWN.id, cameFrom: "start", start: frame.still, thumb: frame.still });
+    markLookForgeDone();
     setReelOn(false);
     setHallsOn(false);
     setTray(false);
@@ -5266,6 +5273,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         setFrost("hang your artefact on a door");
       } else if (pathEntry(boot.stills) === "stock") {
         enterLivingRoom(boot.first);
+      } else if (shouldResumeForgePlay({ done: lookForgeAlreadyDone(), liveId: peekLivePlay()?.id })) {
+        const liveId = peekLivePlay()?.id;
+        if (liveId) void openSession(liveId, true);
       } else {
         setPhase("look");
         phaseRef.current = "look";
@@ -5503,10 +5513,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   startBotForgeRef.current = startBotForge;
 
   function kickAutoBotForge() {
+    if (lookForgeAlreadyDone()) return false;
     if (botForgeAuto.current) return false;
     const stills = boot?.kind === "path" ? boot.stills : undefined;
     const forge = (boot?.kind === "path" ? boot.forge : undefined) || parseLookForge(typeof window !== "undefined" ? window.location.search : undefined);
     if (!shouldAutoStartBotForge({ phase: "look", forge, stills })) return false;
+    if (!claimLookForgeAuto()) return false;
     botForgeAuto.current = true;
     setForgeAutoOn(true);
     return startBotForge();
