@@ -85,6 +85,17 @@ import { BootScreen } from "@/components/citadel-hub";
 import { hallN, liveSlice, putSlice, seedHalls } from "@/game/rooms";
 import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
+import {
+  hallStillOf,
+  isBoltSilhouette,
+  isHallPlayStill,
+  livingPlayFrame,
+  packIdentityStill,
+  playStillOrHall,
+  seedMayBankIdle,
+  type LivingPlayFrame,
+  type PlayFrameKind,
+} from "@/game/play-frame";
 
 const FADE_MS = 1100;
 
@@ -113,7 +124,7 @@ function armFilm(el: HTMLVideoElement, url: string, _loop = false) {
 function durableStill(u?: string | null) {
   if (!u) return null;
   if (u.startsWith("blob:")) return null;
-  if (isStockArt(u)) return null;
+  if (isBoltSilhouette(u) || isStockArt(u)) return null;
   if (u.startsWith("/refs/")) return null;
   if (u.startsWith("data:") || u.startsWith("/films/") || u.startsWith("http")) return u;
   return null;
@@ -655,6 +666,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const [forgePack, setForgePack] = useState<"live" | "sealed" | "hall">("live");
   const [forgeWish, setForgeWish] = useState("");
   const [forgeAutoOn, setForgeAutoOn] = useState(false);
+  const [playFrameKind, setPlayFrameKind] = useState<PlayFrameKind | "">("");
+  const [playWalksOn, setPlayWalksOn] = useState(false);
   const hallStyleOnly = useRef(false);
   const [lookRes, setLookRes] = useState<"720" | "1080">("720");
   const lookResRef = useRef<"720" | "1080">("720");
@@ -880,8 +893,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       return u;
     };
     snap.plate = slimU(snap.plate) || slimU(snap.start) || slimU(hallKeep.current || undefined);
+    if (isBoltSilhouette(snap.plate)) snap.plate = slimU(hallKeep.current || undefined) || slimU(HALL_STILL) || "";
     snap.start = slimU(snap.start) || snap.plate;
+    if (isBoltSilhouette(snap.start)) snap.start = snap.plate;
     snap.thumb = slimU(snap.thumb) || snap.plate;
+    if (isBoltSilhouette(snap.thumb)) snap.thumb = snap.plate;
     snap.refs = (snap.refs || [])
       .map((r) => ({ ...r, src: slimU(r.src) }))
       .filter((r) => r.src)
@@ -1532,6 +1548,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function idleTrusted(clip?: { url: string; end: string } | null) {
     if (!clip?.url) return null;
+    if (isBoltSilhouette(clip.url) || isBoltSilhouette(clip.end)) return null;
     if (isHallFilm(clip.url) || isHallFilm(clip.end)) return clip;
     if (isStockArt(clip.end) || isStockArt(clip.url)) return null;
     const hall = startHold.current || plateRef.current || "";
@@ -1624,7 +1641,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function stickCover(src?: string | null) {
     const u = usableStill(src);
-    if (!u || isStockArt(u)) return false;
+    if (!u || isStockArt(u) || isBoltSilhouette(u)) return false;
     coverHold.current = u;
     lastLive.current = u;
     setLockCover(u);
@@ -1950,6 +1967,19 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     });
   }
 
+  function livingNow(): LivingPlayFrame {
+    return livingPlayFrame({
+      bank: bank.current,
+      hall: lookHall.current || refsMap.current.get("hall") || hallKeep.current,
+      empty: refsMap.current.get("empty"),
+      start: startHold.current,
+      plate: plateRef.current,
+      placed: refsMap.current.get("placed"),
+      seed: refsMap.current.get("seed"),
+      room: refsMap.current.get("room"),
+    });
+  }
+
   function holdIdle() {
     wrapping.current = false;
     playing.current = false;
@@ -1957,20 +1987,38 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     beatRef.current = "idle";
     setFrost(phaseRef.current === "play" ? "" : "tap a door");
     idleArmed.current = true;
-    const idle = idleFor(hereRef.current);
+    const frame = livingNow();
+    const seedBolt = isBoltSilhouette(refsMap.current.get("seed")) || isBoltSilhouette(refsMap.current.get("placed"));
+    const idle = seedBolt ? null : idleFor(hereRef.current);
     walkFace.current = standFace(hereRef.current);
     if (isHallFilm(idle?.url) && hereRef.current !== "spawn") stockSprite.current = true;
     else if (hereRef.current === "spawn") stockSprite.current = false;
+    if (hereRef.current === "spawn" && frame.still && !isBoltSilhouette(frame.still)) {
+      lockHall(frame.still);
+    }
     if (idle?.url) {
       filmLoop.current = true;
       setLoopOn(true);
+      setPlayFrameKind("breath");
       kickPlay(idle.url, true, true);
       return;
+    }
+    if (hereRef.current === "spawn" && frame.url && frame.playFrame === "breath") {
+      filmLoop.current = true;
+      setLoopOn(true);
+      setPlayFrameKind("breath");
+      kickPlay(frame.url, true, true);
+      return;
+    }
+    if (hereRef.current === "spawn" && frame.playFrame === "walk") {
+      setPlayFrameKind("hall");
+    } else if (phaseRef.current === "play") {
+      setPlayFrameKind(frame.playFrame === "fail" ? "hall" : frame.playFrame || "hall");
     }
     freezeVis(true);
     filmLoop.current = false;
     setLoopOn(false);
-    if (filmHasPaint(visFilm())) {
+    if (filmHasPaint(visFilm()) && filmUrl && !isBoltSilhouette(filmUrl)) {
       setFilmOn(true);
       setCoverFade(true);
     }
@@ -3370,9 +3418,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const latest = new Map<string, string>();
     const pose = new Map<string, string>();
     const goal = new Map<string, string>();
-    let still = refsMap.current.get("seed") || refsMap.current.get("pose-spawn") || plateRef.current || plate || "";
-    const hallStill = lookHall.current || refsMap.current.get("hall") || "";
+    const hallStill = lookHall.current || refsMap.current.get("hall") || hallKeep.current || HALL_STILL;
     const boltStill = refsMap.current.get("bolt") || "";
+    let still = playStillOrHall(
+      refsMap.current.get("seed") || refsMap.current.get("pose-spawn") || plateRef.current || plate || "",
+      hallStill,
+    );
     const pick = enterHold.current.pick;
     const enterSrc = pick === "b" ? enterHold.current.b || enterHold.current.a : enterHold.current.a || enterHold.current.b;
     const enterSide: "LEFT" | "RIGHT" = pick === "b" && enterHold.current.b ? "RIGHT" : "LEFT";
@@ -3429,6 +3480,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     latest.set(SPAWN.id, poseSpawn);
     pose.set(`${SPAWN.id}←start`, poseSpawn);
     goal.set(SPAWN.id, poseSpawn);
+    const taintedIdle =
+      isBoltSilhouette(refsMap.current.get("seed")) ||
+      isBoltSilhouette(refsMap.current.get("placed")) ||
+      (isBoltSilhouette(boltStill) && refsMap.current.get("seed") === boltStill) ||
+      isBoltSilhouette(bank.current.get("idle-spawn")?.end) ||
+      isBoltSilhouette(bank.current.get("idle-spawn")?.url);
+    if (taintedIdle) bank.current.delete("idle-spawn");
     if (!bank.current.get("idle-spawn")?.url && poseSpawn) {
       await cookIdleAt("spawn", poseSpawn, bank.current.get("enter→spawn")?.url);
     }
@@ -3596,10 +3654,36 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     if (!liveForge.current) return;
     liveForge.current = false;
-    const have = [...bank.current.keys()].filter((k) => k.includes("→") && !k.includes("←")).length;
-    const room = refsMap.current.get("room") || plateRef.current || still || plate;
-    setFilmUrl(null);
+    const frame = livingNow();
+    if (frame.playFrame === "fail") {
+      setPhase("forge");
+      phaseRef.current = "forge";
+      setBeat("idle");
+      beatRef.current = "idle";
+      setFilmUrl(null);
+      setPose(null);
+      setLoadPct(0);
+      setPlayFrameKind("fail");
+      setPlayWalksOn(false);
+      setFrost(frame.frost);
+      persist({ phase: "forge", plate: frame.still });
+      syncWalks();
+      return;
+    }
+    if (isBoltSilhouette(refsMap.current.get("seed")) || isBoltSilhouette(refsMap.current.get("room"))) {
+      refsMap.current.set("seed", frame.still);
+      refsMap.current.set("pose-spawn", frame.still);
+      refsMap.current.set("room", frame.still);
+    }
+    lockHall(frame.still);
+    setPlate(frame.still);
+    plateRef.current = frame.still;
+    startHold.current = frame.still;
+    setPlayFrameKind(frame.playFrame);
+    setPlayWalksOn(true);
     setPose(null);
+    if (frame.url) setFilmUrl(frame.url);
+    else setFilmUrl(null);
     armed.current = true;
     setPhase("play");
     phaseRef.current = "play";
@@ -3616,8 +3700,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setHere(lastTo);
       hereRef.current = lastTo;
       cameFrom.current = lastFrom;
-      persist({ phase: "play", plate: room, here: lastTo, cameFrom: lastFrom, start: room });
-      setFrost(have ? "tap a door · menu for room / artefact" : "forge failed · tap rune");
+      persist({ phase: "play", plate: frame.still, here: lastTo, cameFrom: lastFrom, start: frame.still });
       if (next === lastTo) holdIdle();
       else void playWalk(next);
       prefetchFrom(hereRef.current);
@@ -3627,21 +3710,16 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       syncWalks();
       return;
     }
-    setPlate(room);
-    plateRef.current = room;
-    startHold.current = room;
     setHere(SPAWN.id);
     hereRef.current = SPAWN.id;
     cameFrom.current = "start";
     bolt.current = { x: SPAWN.x, y: SPAWN.y };
-    setFrost(have ? "tap a door · menu for room / artefact" : "forge failed · tap rune");
-    persist({ phase: "play", plate: room, here: SPAWN.id, cameFrom: "start", start: room });
+    persist({ phase: "play", plate: frame.still, here: SPAWN.id, cameFrom: "start", start: frame.still, thumb: frame.still });
     setReelOn(false);
     setHallsOn(false);
     setTray(false);
     setEditOn(false);
     setGraphOn(false);
-    setFrost("");
     holdIdle();
     prefetchFrom("spawn");
     for (const [k, v] of bank.current) {
@@ -3654,10 +3732,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function packStill(label: string): string | null {
+    const packed = packIdentityStill(label);
+    if (packed) return packed;
     const n = label.toLowerCase();
-    if (n.includes("bolt-face")) return BOLT_FACE;
-    if (n.includes("bolt") && !n.includes("pose")) return BOLT_BODY;
-    if (n.includes("hall") || n.includes("empty") || n.includes("room") || n.includes("doors")) return TOUR_PLATE;
     if (n.includes("teal")) return "/refs/teal-door.jpg";
     if (n.includes("gold")) return "/refs/gold-door.jpg";
     return null;
@@ -3725,6 +3802,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   async function cookSeed(hallUrl: string, kit: string[]): Promise<string | null> {
+    if (!isHallPlayStill(hallUrl) || isBoltSilhouette(hallUrl)) {
+      hallUrl = kit.find((u) => isHallPlayStill(u) && !isBoltSilhouette(u)) || hallStillOf({ hall: lookHall.current || refsMap.current.get("hall") }) || HALL_STILL;
+    }
     setLoadName("seed video");
     setLoadPct(10);
     setFrost("seed video");
@@ -3837,14 +3917,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setBeat("shot");
     beatRef.current = "shot";
     setFilmUrl(null);
-    setStageSrc(shot);
-    setPose(shot);
-    bank.current.set("idle-spawn", { url: filmUrl, end: landed });
-    persist({ phase: "refs", plate: shot, start: shot, thumb: shot });
+    const seedStill = isHallPlayStill(shot) && !isBoltSilhouette(shot) ? shot : hallUrl;
+    setStageSrc(seedStill);
+    setPose(seedStill);
+    if (seedMayBankIdle(hallUrl) && !isBoltSilhouette(landed) && !isBoltSilhouette(filmUrl)) {
+      bank.current.set("idle-spawn", { url: filmUrl, end: isHallPlayStill(landed) ? landed : hallUrl });
+    }
+    persist({ phase: "refs", plate: seedStill, start: seedStill, thumb: seedStill });
     setFrost("shot · seed");
     sfxForge("enter");
     await sleep(360);
-    return shot;
+    return seedStill;
   }
 
   async function cookEnter(start: string, hall: string, bolt: string, side: "LEFT" | "RIGHT") {
@@ -3962,15 +4045,20 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     if (!seedShot) {
       setFrost("place · bolt");
-      const placed = await mintStill("place-bolt", placeBoltPrompt(), "9:16", [hallUrl, BOLT_BODY], true, true);
+      const rawPlaced = await mintStill("place-bolt", placeBoltPrompt(), "9:16", [hallUrl, BOLT_BODY], true, true);
+      const placed = rawPlaced && isHallPlayStill(rawPlaced) && !isBoltSilhouette(rawPlaced) ? rawPlaced : null;
       const start = placed || hallUrl;
       if (placed) {
         list.unshift({ id: "placed", name: "bolt in", src: placed });
+        refsMap.current.set("placed", placed);
         setRefs([...list]);
       }
       setStageSrc(start);
       seedShot = await cookSeed(start, boltKit([hallUrl, placed]));
-      if (!seedShot) seedShot = placed || hallUrl;
+      if (!seedShot || isBoltSilhouette(seedShot)) seedShot = placed || hallUrl;
+    }
+    if (!seedShot || isBoltSilhouette(seedShot)) {
+      seedShot = hallUrl;
     }
     if (!seedShot) {
       setBeat("idle");
@@ -5120,6 +5208,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     liveForge.current = false;
     setBeat("idle");
     beatRef.current = "idle";
+    setPlayFrameKind("breath");
+    setPlayWalksOn(true);
     setNeedOther(false);
     setNeedStill(false);
     setFrost("");
@@ -6073,6 +6163,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       data-forge-auto={forgeAutoOn ? "1" : undefined}
       data-camera="lock"
       data-living={phase === "play" && (filmOn || Boolean(idleFor(here))) ? "1" : "0"}
+      data-play-frame={phase === "play" ? playFrameKind || "hall" : phase === "forge" && playFrameKind === "fail" ? "fail" : undefined}
+      data-play-still={phase === "play" ? (isBoltSilhouette(plate) ? "bolt" : "hall") : undefined}
+      data-play-walks={phase === "play" && playWalksOn ? "1" : "0"}
       data-phase={phase}
       data-clips={counts.total}
       data-idles={counts.idles}
@@ -6162,9 +6255,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             zIndex: useB ? 32 : 28,
           }}
         />
-        {(lockCover || hallKeep.current || plate) && !isStockArt(lockCover || hallKeep.current || plate) ? (
+        {(lockCover || hallKeep.current || plate) && !isStockArt(lockCover || hallKeep.current || plate) && !isBoltSilhouette(lockCover || hallKeep.current || plate) ? (
           <img
-            src={durableStill(lockCover) || hallKeep.current || (plate && !/\.mp4(\?|$)/i.test(plate) && !plate.includes("imgen.x.ai") ? plate : "") || HALL_FALLBACK}
+            src={durableStill(lockCover) || hallKeep.current || (plate && !isBoltSilhouette(plate) && !/\.mp4(\?|$)/i.test(plate) && !plate.includes("imgen.x.ai") ? plate : "") || HALL_FALLBACK}
             alt=""
             draggable={false}
             onError={(e) => {
