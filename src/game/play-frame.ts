@@ -1,4 +1,4 @@
-import { playableClipSrc } from "./play-clip.ts";
+import { playableClipSrc, sameClipSrc } from "./play-clip.ts";
 import { BOLT_BODY, TOUR_PLATE } from "./rune.ts";
 import { HALL_STILL, isHallFilm } from "./stock-room.ts";
 
@@ -240,6 +240,89 @@ export function breathTapWalksNow(opts: {
   const beat = String(opts.beat || "");
   if (beat === "playvid" || beat === "walk" || beat === "cook") return false;
   return Boolean(opts.filmLoop) || beat === "idle" || beat === "shot" || !beat;
+}
+
+/** Bank keys that are this node's arrival / hold idle — never another marker's idle-*. */
+export function isNodeIdleKey(key: string, node: string): boolean {
+  const id = playNodeId(node);
+  if (!id || !key) return false;
+  return key === `idle-${id}` || key.startsWith(`idle-${id}←`) || key.startsWith(`idle-${id}#`);
+}
+
+/**
+ * True when `url` is THIS marker's arrival breath (idle-spawn / idle-m1 / idle-m2 / keyed).
+ * Walks, other-node idles, stock HALL_LOOP at a door, and stills are false.
+ */
+export function isNodeArrivalBreath(
+  bank: PlayBank,
+  node: string,
+  url?: string | null,
+  walkUrl?: string | null,
+): boolean {
+  const showing = (url || "").trim();
+  if (!showing || isBoltSilhouette(showing)) return false;
+  const walk = (walkUrl || "").trim();
+  if (walk && sameClipSrc(showing, walk)) return false;
+  const id = playNodeId(node);
+  if (!id) return false;
+  for (const [k, v] of bankEntries(bank)) {
+    if (!isNodeIdleKey(k, id) || !sameClipSrc(showing, v.url)) continue;
+    if (walk && sameClipSrc(v.url, walk)) continue;
+    if (id === "spawn") return !isBoltSilhouette(v.url);
+    return doorBreathPlayable(v, walk);
+  }
+  return false;
+}
+
+/**
+ * Already looping this marker's arrival breath — keep that clip.
+ * Timer, loop seam, visibility pause, and holdIdle re-entry must not
+ * swap to idle-spawn / idle-m1 / idle-m2 or a still cover.
+ */
+export function keepHeldBreath(opts: {
+  bank: PlayBank;
+  here?: string | null;
+  showing?: string | null;
+  filmLoop?: boolean;
+  beat?: string | null;
+  walkUrl?: string | null;
+}): boolean {
+  const beat = String(opts.beat || "");
+  if (beat === "playvid" || beat === "walk" || beat === "cook") return false;
+  if (!opts.filmLoop) return false;
+  return isNodeArrivalBreath(opts.bank, playNodeId(opts.here), opts.showing, opts.walkUrl);
+}
+
+/**
+ * Dual-buffer seam may swap only when the hidden slot is the same breath.
+ * A prefetched walk or another marker's idle must not become visible.
+ */
+export function breathSeamSameClip(visUrl?: string | null, hidUrl?: string | null): boolean {
+  return sameClipSrc(visUrl, hidUrl);
+}
+
+/**
+ * Living URL to loop at this marker. Node-local cooked idle wins.
+ * Never livingPlayFrame / breathClips spawn-first fallback (cross-node snap).
+ */
+export function holdBreathUrl(
+  bank: PlayBank,
+  node: string,
+  via?: string,
+  walkUrl?: string,
+  idle?: PlayClip | null,
+  visUrl?: string | null,
+): string {
+  const id = playNodeId(node);
+  const walk = (walkUrl || "").trim();
+  const atDoor = id === "m1" || id === "m2";
+  const local =
+    arrivalBreathUrl(bank, id, via, walk) || (doorBreathPlayable(idle, walk) ? clipUrl(idle) : "");
+  if (local) return local;
+  if (atDoor) return "";
+  const vis = (visUrl || "").trim();
+  if (vis && isNodeArrivalBreath(bank, id, vis, walk)) return vis;
+  return clipUrl(idle);
 }
 
 /**

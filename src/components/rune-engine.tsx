@@ -116,16 +116,19 @@ import { HANG_LEFTOVER_SWALLOW_MS, hangActEnters, hangBindHall, hangDoorAct, rea
 import { bindCitadel, defaultHangRoom, hallN, listHangCitadels, listHangRooms, liveSlice, livingHangHall, putSlice, seedHalls, type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
-import { playableClipSrc, warmClip } from "@/game/play-clip";
+import { playableClipSrc, sameClipSrc, warmClip } from "@/game/play-clip";
 import {
   arrivalBreathUrl,
   arrivalEndStill,
+  breathSeamSameClip,
   cookHasWalks,
   doorArrivalNeedsCook,
   hallStillOf,
+  holdBreathUrl,
   isBoltSilhouette,
   isHallPlayStill,
   isStockHallClip,
+  keepHeldBreath,
   livingPlayFrame,
   mergeBankClips,
   packIdentityStill,
@@ -835,6 +838,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if (phaseRef.current !== "play") return;
       if (sprintHold.current || playing.current || beatRef.current === "playvid") return;
       if (!film.current && !filmB.current) return;
+      /* Re-arm only if nothing is holding. Never cycle idle-spawn / m1 / m2 on this timer. */
       holdIdle();
     }, 80);
     return () => window.clearTimeout(t);
@@ -846,11 +850,14 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if (!el) return () => {};
       const onTime = () => stampLoop(el);
       const onEnd = () => againLoop(el);
+      const onPause = () => resumeHeldBreath(el);
       el.addEventListener("timeupdate", onTime);
       el.addEventListener("ended", onEnd);
+      el.addEventListener("pause", onPause);
       return () => {
         el.removeEventListener("timeupdate", onTime);
         el.removeEventListener("ended", onEnd);
+        el.removeEventListener("pause", onPause);
       };
     };
     const a = bind(film.current);
@@ -1039,16 +1046,25 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const flush = () => {
       persistRef.current();
     };
-    document.addEventListener("visibilitychange", flush);
+    const onVis = () => {
+      persistRef.current();
+      /* Overlay / screen-record: persist only. Resume the same breath — never holdIdle at spawn. */
+      if (document.visibilityState !== "visible") return;
+      resumeHeldBreath();
+    };
+    document.addEventListener("visibilitychange", onVis);
     window.addEventListener("pagehide", flush);
+    window.addEventListener("pageshow", onVis);
     const stay = () => {
       if (phaseRef.current !== "play") return;
+      if (filmLoop.current) return;
       freezeVis(true);
     };
     window.addEventListener("unhandledrejection", stay);
     return () => {
-      document.removeEventListener("visibilitychange", flush);
+      document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("pagehide", flush);
+      window.removeEventListener("pageshow", onVis);
       window.removeEventListener("unhandledrejection", stay);
     };
   }, []);
@@ -1668,6 +1684,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const targets = [next, ...outsFrom(from).filter((t) => t !== next)];
     for (const t of targets) warmUrl(clipFor(from, t)?.url);
     warmUrl(idleFor(from)?.url);
+    /* Holding breath: never arm hid with a walk — stampLoop/againLoop would teleport to that pose. */
+    if (filmLoop.current) return;
     const clip = targets.map((t) => clipFor(from, t)).find((c) => c?.url);
     if (!hid || !clip?.url) return;
     const hidNow = slotSrc(hid);
@@ -1889,12 +1907,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const t = el.currentTime;
     const skip = idleSkip(d);
     const hid = hidFilm();
-    if (!wrapping.current && t > d - 0.55 && t < d - 0.08 && hid) {
+    const url = visSrc();
+    if (!wrapping.current && t > d - 0.55 && t < d - 0.08 && hid && url) {
       wrapping.current = true;
-      const url = visSrc();
-      if (url) armSlot(hid, url, true);
+      if (!breathSeamSameClip(url, slotSrc(hid))) armSlot(hid, url, true);
       const cue = () => {
         if (!filmLoop.current) return;
+        if (!breathSeamSameClip(url, slotSrc(hid))) return;
         try {
           if (Number.isFinite(hid.duration) && skip > 0 && Math.abs(hid.currentTime - skip) > 0.04) hid.currentTime = skip;
         } catch {
@@ -1902,10 +1921,20 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         }
         void hid.play().catch(() => {});
       };
-      if (hid.readyState >= 2 && (hid.getAttribute("src") || "").trim() === url) cue();
+      if (hid.readyState >= 2 && breathSeamSameClip(url, slotSrc(hid))) cue();
       else hid.addEventListener("loadeddata", cue, { once: true });
     }
-    if (wrapping.current && hid && filmHasPaint(hid) && !hid.paused && hid.currentTime >= skip) {
+    if (wrapping.current && hid && url && !breathSeamSameClip(url, slotSrc(hid))) {
+      wrapping.current = false;
+    }
+    if (
+      wrapping.current &&
+      hid &&
+      breathSeamSameClip(url, slotSrc(hid)) &&
+      filmHasPaint(hid) &&
+      !hid.paused &&
+      hid.currentTime >= skip
+    ) {
       showIncoming();
       wrapping.current = false;
       setFilmOn(true);
@@ -1926,11 +1955,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     const hid = hidFilm();
     const url = visSrc();
-    if (hid && url) {
+    /* Seam swap only when hid is this same breath — never a walk or other idle-*. */
+    if (hid && url && breathSeamSameClip(url, slotSrc(hid)) && filmHasPaint(hid)) {
       wrapping.current = true;
-      armSlot(hid, url, true);
       const skip = idleSkip(el.duration);
       const go = () => {
+        if (!filmLoop.current || !breathSeamSameClip(url, slotSrc(hid))) return;
         try {
           hid.currentTime = skip;
         } catch {
@@ -1938,6 +1968,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         }
         void hid.play().catch(() => {});
         const wait = () => {
+          if (!filmLoop.current || !breathSeamSameClip(url, slotSrc(hid))) return;
           if (filmHasPaint(hid) && !hid.paused) {
             showIncoming();
             wrapping.current = false;
@@ -1953,6 +1984,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       else hid.addEventListener("loadeddata", go, { once: true });
       return;
     }
+    if (hid && url && !breathSeamSameClip(url, slotSrc(hid))) armSlot(hid, url, true);
     try {
       el.currentTime = idleSkip(el.duration);
       void el.play().catch(() => {});
@@ -2005,26 +2037,54 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     window.setTimeout(go, 90);
   }
 
+  function resumeHeldBreath(el?: HTMLVideoElement | null) {
+    if (sprintHold.current || playing.current) return;
+    if (phaseRef.current !== "play") return;
+    if (!filmLoop.current) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    const vis = visFilm();
+    if (!vis) return;
+    if (el && el !== vis) return;
+    const walkHere = clipFor(cameFrom.current, hereRef.current)?.url || "";
+    if (
+      !keepHeldBreath({
+        bank: bank.current,
+        here: hereRef.current,
+        showing: slotSrc(vis),
+        filmLoop: true,
+        beat: beatRef.current,
+        walkUrl: walkHere,
+      })
+    ) {
+      return;
+    }
+    setFilmOn(true);
+    setCoverFade(true);
+    if (vis.paused) void vis.play().catch(() => {});
+  }
+
   function kickPlay(url: string, loop: boolean, skip = false) {
     const playUrl = playableClipSrc(url) || url;
     if (!playUrl) return;
     url = playUrl;
     const vis = visFilm();
     const hid = hidFilm();
-    if (loop && visSrc() === url && filmHasPaint(vis) && filmLoop.current && vis && !vis.paused) {
+    /* Same breath already on screen — resume only. Paused overlay must not seek or swap. */
+    if (loop && sameClipSrc(visSrc(), url) && filmLoop.current && vis) {
       setFilmOn(true);
       setCoverFade(true);
+      if (vis.paused) void vis.play().catch(() => {});
       prefetchFrom(hereRef.current);
       return;
     }
     setLiving(loop ? "idle" : "walk", walkSecsRef.current);
-    if (hid && slotSrc(hid) === url && filmHasPaint(hid)) {
+    if (hid && sameClipSrc(slotSrc(hid), url) && filmHasPaint(hid) && !(loop && sameClipSrc(visSrc(), url))) {
       filmLoop.current = loop;
       skipIn.current = skip;
       setFilmUrl(url);
       setLoopOn(loop);
       hid.loop = false;
-      if (loop) seekBreath(hid);
+      if (loop && !sameClipSrc(visSrc(), url)) seekBreath(hid);
       void hid.play().catch(() => {});
       if (hid !== vis) showIncoming();
       setFilmOn(true);
@@ -2032,13 +2092,18 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       prefetchFrom(hereRef.current);
       return;
     }
-    if (vis && slotSrc(vis) === url && filmHasPaint(vis)) {
+    if (vis && sameClipSrc(slotSrc(vis), url) && filmHasPaint(vis)) {
       filmLoop.current = loop;
       skipIn.current = skip;
       setFilmUrl(url);
       setLoopOn(loop);
-      if (loop) seekBreath(vis);
-      void vis.play().catch(() => {});
+      if (loop && vis.paused) {
+        /* Resume the same clip — do not seekBreath (snap to another pose in-clip). */
+        void vis.play().catch(() => {});
+      } else {
+        if (loop) seekBreath(vis);
+        void vis.play().catch(() => {});
+      }
       setFilmOn(true);
       setCoverFade(true);
       prefetchFrom(hereRef.current);
@@ -2158,6 +2223,30 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function holdIdle() {
     if (sprintHold.current) return;
+    const walkHere = clipFor(cameFrom.current, hereRef.current)?.url || "";
+    /* Already on this marker's arrival breath — stay. No re-pick, no seek, no buffer swap. */
+    if (
+      keepHeldBreath({
+        bank: bank.current,
+        here: hereRef.current,
+        showing: visSrc(),
+        filmLoop: filmLoop.current,
+        beat: beatRef.current,
+        walkUrl: walkHere,
+      })
+    ) {
+      setBeat("idle");
+      beatRef.current = "idle";
+      setFrost(phaseRef.current === "play" ? "" : "tap a door");
+      filmLoop.current = true;
+      setLoopOn(true);
+      setPlayFrameKind("breath");
+      resumeHeldBreath();
+      if ((hereRef.current === "m1" || hereRef.current === "m2") && hungDoorReady(hereRef.current)) {
+        warmHungBiome(hereRef.current);
+      }
+      return;
+    }
     wrapping.current = false;
     playing.current = false;
     setBeat("idle");
@@ -2171,15 +2260,16 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (hereRef.current === "spawn" && frame.still && !isBoltSilhouette(frame.still)) {
       lockHall(frame.still);
     }
-    const walkHere = clipFor(cameFrom.current, hereRef.current)?.url || "";
     const atDoor = hereRef.current === "m1" || hereRef.current === "m2";
     /* Loop node-local idle. At m1/m2 never leak idle-spawn / HALL_LOOP / livingPlayFrame spawn breath. */
     const breathUrl =
+      holdBreathUrl(bank.current, hereRef.current, cameFrom.current, walkHere, idle, visSrc()) ||
       arrivalBreathUrl(bank.current, hereRef.current, cameFrom.current, walkHere) ||
       (doorBreathPlayable(idle, walkHere) ? idle!.url : "") ||
-      (atDoor ? "" : idle?.url || frame.url || visSrc() || "");
+      (atDoor ? "" : idle?.url || "");
     if (breathUrl && !isBoltSilhouette(breathUrl)) {
       if (isHallFilm(breathUrl) && hereRef.current !== "spawn") stockSprite.current = true;
+      else stockSprite.current = false;
       setPose(null);
       filmLoop.current = true;
       setLoopOn(true);
@@ -2414,12 +2504,14 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     if ((node === "m1" || node === "m2") && hungDoorReady(node)) warmHungBiome(node);
     const url =
+      holdBreathUrl(bank.current, node, via, walkUrl, idle) ||
       arrivalBreathUrl(bank.current, node, via, walkUrl) ||
       (doorBreathPlayable(idle, walkUrl) ? idle!.url : "");
     if (!url) {
       holdIdle();
       return true;
     }
+    stockSprite.current = false;
     filmLoop.current = true;
     setLoopOn(true);
     setPlayFrameKind("breath");
