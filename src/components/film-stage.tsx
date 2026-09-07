@@ -18,7 +18,7 @@ import { press } from "@/lib/press";
 import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
 import { HazardLayer } from "@/components/hazard-layer";
-import { doorLetterOf, sprintHallDoor } from "@/game/enter-graph";
+import { doorLetterOf, hallPlateAt, sprintHallDoor } from "@/game/enter-graph";
 import { doorAtPoint, isHallFilm } from "@/game/stock-room";
 
 export type RunResult = {
@@ -289,9 +289,10 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     advancing.current = false;
     laneRef.current = 0;
     swapLock.current = 0;
-    const list = uniqueClips(film.playlist || []).map(localizeClip);
+    const raw = uniqueClips(film.playlist || []);
+    const list = raw.map(localizeClip);
     platesRef.current = list.slice();
-    hallFlagsRef.current = list.map((u) => isHallFilm(u));
+    hallFlagsRef.current = raw.map((u) => isHallFilm(u) || Boolean(sprintHallDoor(u, 0.22, 0.42)));
     const first = list[0] || (original ? film.origin : portrait ? film.portrait : film.local);
     if (isClip(first)) setSrc(first);
     const pic = [film.portraitStill, film.still].find((u) => u && (/\.(jpe?g|png|webp)(\?|$)/i.test(u) || u.startsWith("data:image")));
@@ -791,11 +792,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     const v = videoRef.current;
     return Boolean(
       hallFlagsRef.current[i] ||
-        isHallFilm(list[i]) ||
-        isHallFilm(orig[i]) ||
-        isHallFilm(v?.getAttribute("data-url")) ||
-        isHallFilm(v?.currentSrc) ||
-        isHallFilm(v?.getAttribute("src")) ||
+        hallPlateAt(orig, i, v?.getAttribute("data-url") || v?.currentSrc || v?.getAttribute("src")) ||
+        hallPlateAt(list, i) ||
         sprintHallDoor(list[i] || orig[i] || v?.getAttribute("data-url"), 0.22, 0.42),
     );
   }
@@ -973,6 +971,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   function onMarkDown(e: PE<HTMLButtonElement>, beat: Beat) {
     e.stopPropagation();
     e.preventDefault();
+    if (tryHallDoor(e.clientX, e.clientY)) return;
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {

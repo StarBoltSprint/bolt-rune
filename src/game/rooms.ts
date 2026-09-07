@@ -161,10 +161,10 @@ export function citadelRoomCount(hint: RoomCountHint = {}): number {
   return Math.max(1, Math.min(8, n || 1));
 }
 
-/** Human Hang A/B always confirm. Bot Hang confirms when more than one hall exists. */
+/** Hang A/B and Grok Bot Hang always confirm a room before binding a door. */
 export function hangOpensSheet(kind: "A" | "B" | "bot", roomCount: number): boolean {
-  if (kind === "A" || kind === "B") return true;
-  return roomCount > 1;
+  void kind;
+  return roomCount >= 1;
 }
 
 /** The citadel and hall Hang A/B should bind — last Play, not whoever is first in the catalog. */

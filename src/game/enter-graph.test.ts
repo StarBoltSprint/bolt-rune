@@ -11,6 +11,7 @@ import {
   inferBiome,
   resolveDoorEnter,
   sprintHallDoor,
+  hallPlateAt,
   stockBiomePlaylist,
   stockTransUrl,
 } from "./enter-graph.ts";
@@ -35,6 +36,10 @@ describe("enter graph · hang any artefact on any door", () => {
     assert.equal(sprintHallDoor("/ui/citadel.mp4?v=aaa", 0.72, 0.4), "B");
     assert.equal(sprintHallDoor("/films/forge-forest.mp4", 0.22, 0.42), null);
     assert.equal(sprintHallDoor("/films/citadel-tour.jpg?v=sharp", 0.7, 0.4), "B");
+    assert.equal(hallPlateAt([HALL_LOOP, "/films/forge-forest.mp4"], 0), true);
+    assert.equal(hallPlateAt([HALL_LOOP, "/films/forge-forest.mp4"], 1), false);
+    assert.equal(hallPlateAt(["blob:http://local/1"], 0, "/ui/citadel.mp4?v=aaa"), true);
+    assert.equal(hallPlateAt(["/films/forge-forest.mp4"], 0, "blob:http://local/2"), false);
   });
 
   it("maps A/B to living-hall m1/m2", () => {
