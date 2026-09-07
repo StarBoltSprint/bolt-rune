@@ -434,6 +434,25 @@ export function holdLoopSeam(
   return currentTime >= duration - slop;
 }
 
+/**
+ * Visible FilmStage plate must load() itself after src is set.
+ * A hidden warmEl at readyState >= 2 must not skip that — HTTP cache only.
+ */
+export function stagePlateMustLoad(srcChanged: boolean, readyState = 0): boolean {
+  return srcChanged || readyState < 2;
+}
+
+/**
+ * Hung stay is frozen: not enough data, or waiting/stalled while "playing".
+ * paused===false during waiting never recovered when rAF only kicked paused.
+ */
+export function holdPlateStuck(readyState = 0, paused = true, event?: string | null): boolean {
+  if (event === "waiting" || event === "stalled") return true;
+  if (readyState < 2) return true;
+  void paused;
+  return false;
+}
+
 /** Hall N in 1–8, else 0. Living default 1 is a real hall — callers must not treat 0 as Room 1. */
 export function hungHallN(v?: number | string | null): number {
   const raw = typeof v === "number" ? v : Number(v);

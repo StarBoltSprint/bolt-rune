@@ -111,9 +111,12 @@ describe("play frame after cook", () => {
       assert.equal(a?.getAttribute("data-warm-clip"), "1");
       assert.equal(a?.src, src);
       assert.equal((a as { loadCalls?: number } | null)?.loadCalls, 1);
-      assert.equal(warmedClip(src), a);
-      assert.equal(warmedClip("/ui/other.mp4"), null);
-      assert.ok(fetches.some((f) => f.url === src && f.cache === "force-cache"));
+    assert.equal(warmedClip(src), a);
+    assert.equal(warmedClip("/ui/other.mp4"), null);
+    assert.ok(fetches.some((f) => f.url === src && f.cache === "force-cache"));
+    const clip = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "./play-clip.ts"), "utf8");
+    assert.match(clip, /HTTP cache only/);
+    assert.match(clip, /must not skip that load/);
     } finally {
       Object.defineProperty(globalThis, "document", { value: prevDoc, configurable: true, writable: true });
       globalThis.fetch = prevFetch;

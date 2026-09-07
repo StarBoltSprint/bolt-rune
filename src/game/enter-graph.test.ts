@@ -25,11 +25,13 @@ import {
   resolveHungEnter,
   shouldHoldBiome,
   sprintHallDoor,
+  stagePlateMustLoad,
   stayBiomePlay,
   hallPlateAt,
   hangThumbStill,
   holdDoorLoops,
   holdLoopSeam,
+  holdPlateStuck,
   hungDoorTap,
   hungDoorArm,
   hungHallLocksDoors,
@@ -658,13 +660,50 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(clip, /data-warm-clip/);
     assert.match(clip, /cache: "force-cache"/);
     assert.match(clip, /function warmedClip/);
-    assert.match(stage, /warmedClip\(src\)/);
+    assert.match(clip, /HTTP cache only/);
     assert.match(stage, /if \(holdDoor && first\) warmClip\(first\)/);
     assert.match(stage, /holdDoor: first plate is warmed during hall breath/);
     assert.match(stage, /if \(holdDoor\) \{\s*\n\s*return \(\) => \{\s*\n\s*gone = true/);
-    assert.match(armPlate, /skip cold load\(\) from zero/);
-    assert.match(armPlate, /if \(!\(warmed && warmed\.readyState >= 2/);
+    assert.match(armPlate, /warmClip is HTTP cache only/);
+    assert.match(armPlate, /stagePlateMustLoad\(changed, el\.readyState\)/);
+    assert.doesNotMatch(armPlate, /skip cold load\(\) from zero/);
+    assert.doesNotMatch(armPlate, /warmed && warmed\.readyState/);
+    assert.doesNotMatch(stage, /warmedClip\(/);
     assert.doesNotMatch(stage, /if \(holdDoor\) \{\s*\n\s*const l = document\.createElement\("link"\)/);
+  });
+
+  it("hung enter always load()s the stage plate and recovers waiting/stalled", () => {
+    assert.equal(stagePlateMustLoad(true, 4), true);
+    assert.equal(stagePlateMustLoad(true, 0), true);
+    assert.equal(stagePlateMustLoad(false, 0), true);
+    assert.equal(stagePlateMustLoad(false, 1), true);
+    assert.equal(stagePlateMustLoad(false, 2), false);
+    assert.equal(stagePlateMustLoad(false, 3), false);
+    assert.equal(holdPlateStuck(0, false), true);
+    assert.equal(holdPlateStuck(1, true), true);
+    assert.equal(holdPlateStuck(4, false), false);
+    assert.equal(holdPlateStuck(4, true), false);
+    assert.equal(holdPlateStuck(3, false, "waiting"), true);
+    assert.equal(holdPlateStuck(3, false, "stalled"), true);
+    assert.equal(holdPlateStuck(2, false), false);
+    const here = dirname(fileURLToPath(import.meta.url));
+    const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    const armPlate = stage.slice(stage.indexOf("function armPlate"), stage.indexOf("function otherPlate"));
+    const recover = stage.slice(stage.indexOf("function recoverHoldPlate"), stage.indexOf("useEffect(() => {\n    return () => stopScore()"));
+    const tick = stage.slice(stage.indexOf("const tick = (now: number)"), stage.indexOf("function pop("));
+    const kick = stage.slice(stage.indexOf("const kick = () => {\n      advancing.current = false"), stage.indexOf("if (film.score) startScore"));
+    assert.match(armPlate, /if \(stagePlateMustLoad\(changed, el\.readyState\)\) \{\s*\n\s*el\.load\(\)/);
+    assert.match(recover, /el\.load\(\)/);
+    assert.match(recover, /el\.play\(\)/);
+    assert.match(stage, /onWaiting=\{\(\) => recoverHoldPlate\(aRef\.current, "waiting"\)\}/);
+    assert.match(stage, /onStalled=\{\(\) => recoverHoldPlate\(aRef\.current, "stalled"\)\}/);
+    assert.match(stage, /v\.addEventListener\("waiting", onWait\)/);
+    assert.match(stage, /v\.addEventListener\("stalled", onStall\)/);
+    assert.match(tick, /holdPlateStuck\(v\.readyState, v\.paused\)/);
+    assert.match(tick, /v\.paused && \(live \|\| hold\)/);
+    assert.doesNotMatch(tick, /v && v\.paused && live && phaseRef/);
+    assert.match(kick, /holdPlateStuck\(v\.readyState, v\.paused\)/);
+    assert.match(kick, /!v\.paused && v\.readyState >= 2/);
   });
 
   it("hung Door A native-loops the MP4 — plate end never Film-fractures stay", () => {
