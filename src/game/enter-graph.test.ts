@@ -52,10 +52,13 @@ import {
   CUE_GAP_MIN,
   FILM_BY_ID,
   HOLD_CUE_APPROACH,
+  HOLD_CUE_TAIL,
   PACE_MAX,
   PACE_MIN,
   PACE_MISS,
   b,
+  cueFillGone,
+  cueFillLive,
   cueFillShown,
   cueFillSide,
   cuePictureSpot,
@@ -689,7 +692,8 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
   it("hung Forest QTE is sparse plate-local turns — not a 0.5s metronome, asteroid chart HOLD", () => {
     assert.equal(CUE_GAP_MIN, 1.8);
     assert.equal(CUE_GAP_AIM, 2.2);
-    assert.equal(HOLD_CUE_APPROACH, 1);
+    assert.equal(HOLD_CUE_APPROACH, 1.2);
+    assert.equal(HOLD_CUE_TAIL, 0.28);
     assert.ok(HOLD_CUE_APPROACH < CUE_GAP_MIN, "CueFill lead-in must not overlap the next turn");
     assert.ok(CUE_GAP_MIN >= 1.5 && CUE_GAP_MIN <= 2.5);
 
@@ -733,8 +737,12 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(stage, /HOLD_CUE_APPROACH/);
     assert.match(stage, /holdDoorRef\.current && \(!g\.beats\[g\.i\] \|\| !cueFillShown\(g\.beats\[g\.i\]\)\)/);
     assert.match(stage, /holdDoorRef\.current && beat && !cueFillShown\(beat\) \? null : beat/);
+    assert.match(stage, /holdDoorRef\.current && !cueFillLive\(beat, t\)/);
+    assert.match(stage, /Last CueFill this plate — ignore taps until the loop seam restarts the chart/);
+    assert.doesNotMatch(stage, /skipToHoldCue\(g, fromAt\);\s*\n\s*if \(g\.i >= g\.beats\.length && holdDoorLoops/);
     const cueFill = stage.slice(stage.indexOf("function CueFill"), stage.indexOf("function CutWash"));
     assert.match(cueFill, /HOLD_CUE_APPROACH/);
+    assert.match(cueFill, /cueFillLive\(beat, t\)/);
     assert.match(cueFill, /width: 6/);
     assert.match(cueFill, /height: 34/);
     assert.match(cueFill, /data-cue-axis="y"/);
@@ -742,6 +750,50 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(resonance, /score/);
     assert.match(resonance, /pace/);
     assert.doesNotMatch(resonance, /CueFill/);
+  });
+
+  it("empty-space taps ignore when no CueFill is live — last-cue wrap must not MISS", () => {
+    const right = b("t4", 12.5, "right", "r", "→", { win: 1.32, spot: { x: 0.8, y: 0.56 } });
+    const left = b("t1", 2.5, "left", "l", "←", { win: 1.32, spot: { x: 0.2, y: 0.56 } });
+    const jump = b("j1", 7.6, "tap", "c", "↑", { spot: { x: 0.5, y: 0.58 } });
+
+    assert.equal(cueFillLive(right, 12.5), true);
+    assert.equal(cueFillLive(right, 12.5 - HOLD_CUE_APPROACH), true);
+    assert.equal(cueFillLive(right, 12.5 - HOLD_CUE_APPROACH - 0.05), false);
+    assert.equal(cueFillLive(right, 12.5 + right.win * HOLD_CUE_TAIL), false);
+    assert.equal(cueFillLive(right, 12.7), true);
+    assert.equal(cueFillLive(right, 13.1), false);
+    assert.equal(cueFillGone(right, 12.7), false);
+    assert.equal(cueFillGone(right, 13.1), true);
+    assert.equal(cueFillLive(left, 12.7), false);
+    assert.equal(cueFillGone(left, 12.7), true);
+    assert.equal(cueFillLive(jump, 7.6), false);
+    assert.equal(cueFillLive(undefined, 12.7), false);
+
+    const plate = prepareHoldBeats(15, 1).filter((beat) => cueFillShown(beat));
+    assert.deepEqual(plate.map((beat) => beat.at), [2.5, 5.8, 9.2, 12.5]);
+    for (let i = 1; i < plate.length; i++) {
+      assert.ok(plate[i]!.at - plate[i - 1]!.at >= CUE_GAP_MIN);
+    }
+
+    const asteroid = FILM_BY_ID.asteroid.beats.map((beat) => beat.at);
+    assert.deepEqual(asteroid, [7.0, 12.3, 16.3, 21.6, 25.6, 30.9, 34.9, 40.2, 44.2, 49.5, 53.5]);
+
+    const here = dirname(fileURLToPath(import.meta.url));
+    const films = readFileSync(join(here, "./films.ts"), "utf8");
+    const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    assert.match(films, /export function cueFillLive/);
+    assert.match(films, /export function cueFillGone/);
+    assert.match(films, /export const HOLD_CUE_APPROACH = 1\.2/);
+    assert.match(films, /export const HOLD_CUE_TAIL = 0\.28/);
+    assert.doesNotMatch(films, /id: "asteroid"[\s\S]{0,400}prepareHoldBeats/);
+    assert.match(stage, /Empty-space \/ dead-window taps: no MISS, no pace drop, no path fracture/);
+    assert.match(stage, /Last CueFill this plate — ignore taps until the loop seam restarts the chart/);
+    assert.match(stage, /Jumped past this CueFill \(seek \/ stale wrap\) — do not MISS/);
+    assert.match(stage, /if \(!nearSpot\(nx, ny, cuePictureSpot\(beat\), box\)\) return/);
+    const advance = stage.slice(stage.indexOf("function advance"), stage.indexOf("function hallPlateNow"));
+    assert.doesNotMatch(advance, /restartHoldChart\(\)/);
+    assert.match(advance, /holdDoorLoops\(holdDoorRef\.current\)/);
   });
 
   it("enter chrome is hung Room N — stale Room 1 Asteroid rift cannot win", () => {
