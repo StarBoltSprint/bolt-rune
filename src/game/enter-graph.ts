@@ -304,7 +304,7 @@ export const ENTER_LEFTOVER_MS = 1100;
 /**
  * Hall-plate tap during biome enter.
  * Leftover enter tap and any door while we hold a hung biome stay on biome —
- * never QTE-MISS or fracture back to the hall.
+ * never QTE-MISS, never tank pace, never fracture back to the hall.
  */
 export function hallDoorTap(
   now: number,

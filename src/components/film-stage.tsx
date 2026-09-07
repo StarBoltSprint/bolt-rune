@@ -2,8 +2,12 @@ import { useEffect, useRef, useState, type PointerEvent as PE } from "react";
 import {
   FILM_BY_ID,
   gradeOf,
+  cueFillShown,
+  cueFillSide,
   cuePictureSpot,
-  cueSide,
+  PACE_MAX,
+  PACE_MIN,
+  paceAfterMiss,
   prepareBeats,
   shardsOf,
   spotOf,
@@ -45,8 +49,6 @@ type Phase = "arm" | "run" | "crash" | "done";
 
 const APPROACH = 1.55;
 const HOLD_NEED_DEFAULT = 520;
-const PACE_MIN = 0.5;
-const PACE_MAX = 8;
 
 type Props = {
   id: FilmId;
@@ -580,6 +582,10 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           if (biomeQteQuiet(holdDoorRef.current, hallQuiet) || hallQuiet) {
             g.resolved = true;
             advance(g);
+          } else if (holdDoorRef.current && !cueFillShown(beat)) {
+            /* Jump / vault / center: no CueFill this pass — do not MISS or tank pace. */
+            g.resolved = true;
+            advance(g);
           } else if (t - beat.at > 1.35) {
             g.resolved = true;
             advance(g);
@@ -786,7 +792,14 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   }
 
   function miss(g: G, beat: Beat) {
+    /* Hall leftover / door taps on a hung enter never MISS and never tank pace. */
     if (biomeQteQuiet(holdDoorRef.current, hallPlateNow()) || hallPlateNow()) {
+      if (g.resolved) return;
+      g.resolved = true;
+      advance(g);
+      return;
+    }
+    if (holdDoorRef.current && !cueFillShown(beat)) {
       if (g.resolved) return;
       g.resolved = true;
       advance(g);
@@ -801,7 +814,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.resonance = Math.max(0.04, g.resonance * 0.32);
     sfxHit("miss");
     pop("MISS", "bad", liveSpot(beat, clock()).x * 100, liveSpot(beat, clock()).y * 100);
-    g.pace = Math.max(PACE_MIN, g.pace - 0.32);
+    g.pace = paceAfterMiss(g.pace);
     setFlash(1);
     window.setTimeout(() => setFlash(0), 120);
     if (g.streakMiss >= (film.lives ?? 3)) {
@@ -1559,14 +1572,15 @@ function Resonance({ value, score = 0, pace = 1 }: { value: number; score?: numb
   );
 }
 
-/** Narrow vertical tick in the picture at the turn / vault — not a Resonance HUD strip. */
+/** Narrow vertical tick on the turn lane / path side — never on the white GSD, never a Resonance HUD strip. */
 function CueFill({ beat, t }: { beat?: Beat; t: number }) {
   if (!beat) return null;
+  const side = cueFillSide(beat);
+  if (!side) return null;
   const until = beat.at - t;
   if (until > APPROACH || until < -beat.win * 0.28) return null;
   const fill = until >= 0 ? Math.max(0, Math.min(1, 1 - until / APPROACH)) : 1;
   const live = Math.abs(t - beat.at) < beat.win * 0.55;
-  const side = cueSide(beat);
   const spot = cuePictureSpot(beat);
   return (
     <div

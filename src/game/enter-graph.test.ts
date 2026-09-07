@@ -38,6 +38,17 @@ import {
 import { biomeBotStart, createBotForgeHref, lookForgeStart, parseLookForge, vaultHangRoom, vaultHangStart } from "./path-entry.ts";
 import { playableClipSrc, stockBiomeLoop } from "./play-clip.ts";
 import { HALL_LOOP } from "./stock-room.ts";
+import {
+  PACE_MAX,
+  PACE_MIN,
+  PACE_MISS,
+  b,
+  cueFillShown,
+  cueFillSide,
+  cuePictureSpot,
+  paceAfterMiss,
+  turnBeatsForRun,
+} from "./films.ts";
 
 function art(id: string, biome = "forest") {
   return {
@@ -578,6 +589,7 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(stage, /return prepareBeats\(film, duration, seed, original\)/);
     assert.doesNotMatch(stage, /if \(biomeQteQuiet\(holdDoorRef\.current\)\) return \[\]/);
     assert.match(stage, /if \(biomeQteQuiet\(holdDoorRef\.current, hallQuiet\) \|\| hallQuiet\)/);
+    assert.match(stage, /Hall leftover \/ door taps on a hung enter never MISS and never tank pace/);
     assert.match(stage, /if \(!hallPlateNow\(\)\) return false/);
     assert.match(stage, /if \(holdDoorRef\.current\) return true/);
     assert.doesNotMatch(stage, /g\.beats = prepareBeats\(film, a\.duration/);
@@ -622,6 +634,8 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(stage, /width: 6/);
     assert.match(stage, /height: 34/);
     assert.match(stage, /height: `\$\{fill \* 100\}%`/);
+    assert.match(stage, /const side = cueFillSide\(beat\)/);
+    assert.match(stage, /if \(!side\) return null/);
     assert.match(stage, /cuePictureSpot\(beat\)/);
     assert.doesNotMatch(stage, /width: 52/);
     assert.doesNotMatch(stage, /height: 10/);
@@ -637,11 +651,12 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(stage, /hud\.pace/);
   });
 
-  it("SmiR cues are narrow vertical ticks at the turn / vault in picture, not Resonance HUD strips", () => {
+  it("SmiR cues are narrow vertical L/R ticks at the turn lane — never on Bolt, never Resonance HUD", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const films = readFileSync(join(here, "./films.ts"), "utf8");
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
     assert.match(films, /export function cueSide/);
+    assert.match(films, /export function cueFillSide/);
     assert.match(films, /export function cuePictureSpot/);
     assert.match(films, /x: Math.min\(spot.x, 0.26\)/);
     assert.match(films, /x: Math.max\(spot.x, 0.74\)/);
@@ -654,6 +669,52 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(stage, /data-cue-axis="y"/);
     assert.match(stage, /left: `\$\{spot\.x \* 100\}%`/);
     assert.match(stage, /top: `\$\{spot\.y \* 100\}%`/);
+    assert.match(stage, /const side = cueFillSide\(beat\)/);
+    assert.match(stage, /if \(!side\) return null/);
+    assert.match(stage, /holdDoorRef\.current && !cueFillShown\(beat\)/);
     assert.doesNotMatch(stage, /mb-2 h-\[10px\]/);
+
+    const left = b("t1", 2.5, "left", "l", "←", { spot: { x: 0.2, y: 0.56 } });
+    const right = b("t2", 5.8, "right", "r", "→", { spot: { x: 0.8, y: 0.56 } });
+    const jump = b("j1", 7.6, "tap", "c", "↑", { spot: { x: 0.5, y: 0.58 } });
+    const vault = b("s2", 4.5, "tap", "c", "VAULT", { spot: { x: 0.5, y: 0.58 } });
+    assert.equal(cueFillSide(left), "left");
+    assert.equal(cueFillSide(right), "right");
+    assert.equal(cueFillSide(jump), null);
+    assert.equal(cueFillSide(vault), null);
+    assert.equal(cueFillShown(jump), false);
+    assert.equal(cueFillShown(left), true);
+    const leftSpot = cuePictureSpot(left);
+    const rightSpot = cuePictureSpot(right);
+    assert.ok(leftSpot.x <= 0.26);
+    assert.ok(rightSpot.x >= 0.74);
+    assert.ok(leftSpot.x < 0.32, "left tick stays off the white GSD");
+    assert.ok(rightSpot.x > 0.68, "right tick stays off the white GSD");
+
+    const chart = turnBeatsForRun([15]);
+    assert.ok(chart.some((beat) => beat.kind === "left"));
+    assert.ok(chart.some((beat) => beat.kind === "right"));
+    assert.ok(chart.some((beat) => beat.label === "↑"), "jump beats stay in the chart for later");
+    assert.ok(chart.filter((beat) => cueFillShown(beat)).every((beat) => beat.kind === "left" || beat.kind === "right"));
+    assert.ok(!chart.filter((beat) => cueFillShown(beat)).some((beat) => /jump|vault|↑/i.test(beat.label)));
+  });
+
+  it("MISS drops pace by 0.1 and clamps to the 0.4–0.5 floor — leftover never tanks pace", () => {
+    assert.equal(PACE_MISS, 0.1);
+    assert.ok(PACE_MIN >= 0.4 && PACE_MIN <= 0.5);
+    assert.equal(PACE_MAX, 8);
+    assert.equal(paceAfterMiss(1), 0.9);
+    assert.equal(paceAfterMiss(0.55), PACE_MIN);
+    assert.equal(paceAfterMiss(PACE_MIN), PACE_MIN);
+    assert.equal(biomeQteQuiet("A", true), true);
+    assert.equal(hallDoorTap(40000, 0, "A", "A"), "stay");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    const films = readFileSync(join(here, "./films.ts"), "utf8");
+    assert.match(films, /export const PACE_MISS = 0\.1/);
+    assert.match(films, /export const PACE_MIN = 0\.5/);
+    assert.match(stage, /g\.pace = paceAfterMiss\(g\.pace\)/);
+    assert.doesNotMatch(stage, /g\.pace = Math\.max\(PACE_MIN, g\.pace - 0\.32\)/);
+    assert.match(stage, /Hall leftover \/ door taps on a hung enter never MISS and never tank pace/);
   });
 });
