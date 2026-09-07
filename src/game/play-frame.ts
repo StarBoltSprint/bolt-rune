@@ -1,5 +1,5 @@
 import { playableClipSrc } from "./play-clip.ts";
-import { BOLT_BODY, BOLT_FACE, TOUR_PLATE } from "./rune.ts";
+import { BOLT_BODY, TOUR_PLATE } from "./rune.ts";
 import { HALL_STILL, isHallFilm } from "./stock-room.ts";
 
 export type PlayClip = { url: string; end?: string };
@@ -40,8 +40,7 @@ export function isHallPlayStill(u?: string | null): boolean {
 /** Sealed pack identity labels only. `place-bolt` / seed / pose must not pack to BOLT_BODY. */
 export function packIdentityStill(label: string): string | null {
   const n = label.toLowerCase().trim();
-  if (n === "bolt-face" || n === "face") return BOLT_FACE;
-  if (n === "bolt" || n === "bolt-body") return BOLT_BODY;
+  if (n === "bolt" || n === "bolt-body" || n === "bolt-face" || n === "face") return BOLT_BODY;
   if (n.includes("place") || n.includes("pose") || n.includes("seed") || /\bin\b/.test(n)) return null;
   if (n.includes("hall") || n.includes("empty") || n.includes("room") || n.includes("doors")) return TOUR_PLATE;
   return null;

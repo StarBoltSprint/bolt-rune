@@ -55,7 +55,8 @@ describe("play frame after cook", () => {
   it("packIdentityStill never packs place-bolt / seed onto the isolated Bolt still", () => {
     assert.equal(packIdentityStill("bolt"), BOLT_BODY);
     assert.equal(packIdentityStill("bolt-body"), BOLT_BODY);
-    assert.equal(packIdentityStill("bolt-face"), BOLT_FACE);
+    assert.equal(packIdentityStill("bolt-face"), BOLT_BODY);
+    assert.equal(packIdentityStill("face"), BOLT_BODY);
     assert.equal(packIdentityStill("hall"), TOUR_PLATE);
     assert.equal(packIdentityStill("doors"), TOUR_PLATE);
     assert.equal(packIdentityStill("place-bolt"), null);

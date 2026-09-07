@@ -12,7 +12,8 @@ import {
   walkPrompt,
   plannedObjects,
   boltKit,
-  BOLT_FACE,
+  dropTaintedBolt,
+  forgeTrayRefs,
   BOLT_BODY,
   emptyHallPrompt,
   hallDoorsPrompt,
@@ -2567,7 +2568,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     lockHall(plateRef.current);
     rememberHall(sid.current, plateRef.current);
     bank.current = new Map((slice.bank || []).filter((b) => b?.key && b.url).map((b) => [b.key, { url: b.url, end: b.end || "" }]));
-    refsHold.current = slice.refs || [];
+    refsHold.current = forgeTrayRefs(slice.refs || []);
     refsMap.current = new Map(refsHold.current.map((r) => [r.id, r.src]));
     setRefs(refsHold.current);
     pinsRef.current = slice.pins || [];
@@ -3508,7 +3509,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function refKit(extra?: string | null) {
-    return [extra, refsMap.current.get("bolt"), refsMap.current.get("m1"), refsMap.current.get("m2")].filter((u): u is string => !!u);
+    return boltKit([extra, refsMap.current.get("bolt"), refsMap.current.get("m1"), refsMap.current.get("m2")]);
   }
 
   async function cookIdleAt(node: string, still: string, fromFilm?: string, via?: string) {
@@ -3932,7 +3933,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         if (dead.current) return null;
         try {
           got = (await Promise.race([
-            startRuneStill({ data: { prompt, ratio, refs: extra, edit, editOnly, res: lookResRef.current } }),
+            startRuneStill({ data: { prompt, ratio, refs: dropTaintedBolt(extra), edit, editOnly, res: lookResRef.current } }),
             sleep(55000).then(() => ({ ok: false as const, error: "timeout" })),
           ])) as { ok: true; url: string } | { ok: false; error: string };
         } catch (err) {
@@ -4143,10 +4144,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setLoadName("hall");
     setFrost(worldHold.current.trim() ? `ref · ${worldHold.current.trim().slice(0, 32)}` : "ref · hall + doors");
     refsMap.current.set("bolt", BOLT_BODY);
-    refsMap.current.set("bolt-face", BOLT_FACE);
     refsMap.current.set("spawn", BOLT_BODY);
     list.push({ id: "bolt", name: "bolt", src: BOLT_BODY });
-    list.push({ id: "bolt-face", name: "face", src: BOLT_FACE });
     const same = enterHold.current.hall || lookPackRef.current.find((p) => p.id === "same-hall")?.src || "";
     const packA = enterHold.current.a || lookPackRef.current.find((p) => p.id === "door-a")?.src || "";
     const packB = enterHold.current.b || lookPackRef.current.find((p) => p.id === "door-b")?.src || "";
@@ -4155,7 +4154,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (same) list.push({ id: "same", name: "same", src: same });
     if (packA) list.push({ id: "enter-a", name: "A", src: packA });
     if (packB) list.push({ id: "enter-b", name: "B", src: packB });
-    setRefs([...list]);
+    setRefs(forgeTrayRefs([...list]));
     if (same && !worldHold.current.trim()) {
       hallUrl = same;
       setStageSrc(same);
@@ -4192,8 +4191,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     refsMap.current.set("hall", hallUrl);
     refsMap.current.set("empty", hallUrl);
     for (const obj of plan) refsMap.current.set(obj.id, hallUrl);
-    setRefs([...list]);
-    persist({ phase: "refs", plate: hallUrl, refs: list, start: hallUrl, thumb: hallUrl });
+    setRefs(forgeTrayRefs([...list]));
+    persist({ phase: "refs", plate: hallUrl, refs: forgeTrayRefs(list), start: hallUrl, thumb: hallUrl });
     const enterSrc = pick === "b" ? packB || packA : packA || packB;
     setStageSrc(enterSrc || hallUrl);
     if (dead.current) return;
@@ -4214,7 +4213,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if (placed) {
         list.unshift({ id: "placed", name: "bolt in", src: placed });
         refsMap.current.set("placed", placed);
-        setRefs([...list]);
+        setRefs(forgeTrayRefs([...list]));
       }
       setStageSrc(start);
       seedShot = await cookSeed(start, boltKit([hallUrl, placed]));
@@ -4234,8 +4233,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     refsMap.current.set("room", seedShot);
     setPlate(seedShot);
     plateRef.current = seedShot;
-    setRefs([...list]);
-    persist({ phase: "time", plate: seedShot, refs: list, start: seedShot });
+    setRefs(forgeTrayRefs([...list]));
+    persist({ phase: "time", plate: seedShot, refs: forgeTrayRefs(list), start: seedShot });
     const doors = plan.map((o) => ({ id: o.id, name: o.name, x: o.x, y: o.y }));
     setPins(doors);
     pinsRef.current = doors;
@@ -5211,15 +5210,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const playNow = !(boot?.kind === "session" && (boot.do === "more" || boot.do === "room" || boot.do === "reset"));
     const hereNow = playNow ? SPAWN.id : resume?.here || s.here || SPAWN.id;
     const herePic = hallStill || firstStill([s.refs.find((r) => r.id === `pose-${hereNow}`)?.src, resume?.plate, s.plate]);
-    refsHold.current = s.refs;
-    refsMap.current = new Map(s.refs.map((r) => [r.id, r.src]));
+    refsHold.current = forgeTrayRefs(s.refs);
+    refsMap.current = new Map(refsHold.current.map((r) => [r.id, r.src]));
     lockHall(herePic);
     setHere(hereNow);
     hereRef.current = hereNow;
     cameFrom.current = playNow ? "start" : s.cameFrom;
     const node = withSpawn(s.pins).find((n) => n.id === hereNow);
     bolt.current = node ? { x: node.x, y: node.y } : { x: SPAWN.x, y: SPAWN.y };
-    setRefs(s.refs);
+    setRefs(refsHold.current);
     if (s.wish) {
       const kept = cleanWish(s.wish);
       worldHold.current = kept;
@@ -7587,7 +7586,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             }}
             onPointerUp={(e) => e.stopPropagation()}
           >
-            {refs.map((r) => (
+            {forgeTrayRefs(refs).map((r) => (
               <button
                 key={r.id}
                 type="button"
