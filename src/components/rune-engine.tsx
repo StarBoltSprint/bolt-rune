@@ -77,6 +77,7 @@ import {
   hungEnterBindHall,
   stayBiomePlay,
   stockTransUrl,
+  hungDoorTap,
   walkHungHref,
   type BiomeName,
 } from "@/game/enter-graph";
@@ -1443,8 +1444,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       const now = typeof performance !== "undefined" ? performance.now() : Date.now();
       /* Leftover Hang A / Door A after confirm must stay on hall N — not jump to FilmStage. */
       if (now < hangGuard.current) return;
-      void goEnter(id);
-      return;
+      /* First tap walks. Second tap SAME door while breathing enters. Other door walks. */
+      if (hungDoorTap(hereRef.current, id) === "enter") {
+        void goEnter(id);
+        return;
+      }
     }
     if (phaseRef.current === "play") {
       const stock = stockHallNow();
@@ -2219,7 +2223,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (id === "m1" || id === "m2") {
       if (skipAsk.current !== id) {
         skipAsk.current = "";
-        if (destHall(id) > 0 || riftRef.current[id]) {
+        if (hungDoorReady(id)) {
+          /* Breath / hold at hung door. No chrome Enter. Second tap same door enters. */
+          void prefetchExit(id);
+        } else if (destHall(id) > 0 || riftRef.current[id]) {
           setEnterAsk(id);
           void prefetchExit(id);
         }
