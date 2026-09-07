@@ -352,8 +352,20 @@ async function seedForest(page, rooms = 2, living = 1) {
         sessionStorage.setItem("bolt-artifacts-mem-v1", JSON.stringify([art]));
         localStorage.setItem("bolt-rune-catalog-v1", JSON.stringify([cit]));
         sessionStorage.setItem("bolt-rune-catalog-v1", JSON.stringify([cit]));
-        localStorage.setItem("bolt-last-play", JSON.stringify({ id: cit.id, title: cit.title, hall: living }));
-        sessionStorage.setItem("bolt-last-play", JSON.stringify({ id: cit.id, title: cit.title, hall: living }));
+        localStorage.setItem("bolt-last-play", JSON.stringify({ id: cit.id, title: cit.title, hall: living, rooms }));
+        sessionStorage.setItem("bolt-last-play", JSON.stringify({ id: cit.id, title: cit.title, hall: living, rooms }));
+        const stored = {
+          ...cit,
+          halls: Array.from({ length: rooms }, (_, i) => ({
+            n: i + 1,
+            still: "/refs/hall-doors.jpg",
+            bank: [],
+            refs: [],
+            pins: [],
+          })),
+        };
+        localStorage.setItem("bolt-rune-store-v1", JSON.stringify([stored]));
+        sessionStorage.setItem("bolt-rune-mem-v1", JSON.stringify([stored]));
       } catch {
         /* */
       }

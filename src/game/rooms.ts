@@ -134,7 +134,7 @@ export type HangRoomPick = {
   living: boolean;
 };
 
-export type LastPlayHint = { id?: string; hall?: number } | null;
+export type LastPlayHint = { id?: string; hall?: number; rooms?: number } | null;
 
 /** The citadel and hall Hang A/B should bind — last Play, not whoever is first in the catalog. */
 export function bindCitadel(
@@ -191,6 +191,10 @@ export function listHangRooms(
   for (const a of arts || []) {
     const hall = hallN(a.room?.hall);
     if (hall) put(hall, `Room ${hall}`, a.room?.still || a.still || "");
+  }
+  const lastRooms = Math.max(1, Math.min(8, last?.rooms || 0));
+  if (last?.rooms) {
+    for (let i = 1; i <= lastRooms; i++) put(i, `Room ${i}`, roomStill(i, undefined, arts));
   }
   const lastN = hallN(last?.hall);
   if (lastN) put(lastN, `Room ${lastN}`, roomStill(lastN, undefined, arts));

@@ -612,6 +612,12 @@ export function VaultHall() {
                             if (busy) return;
                             askHang(head, "A", e.currentTarget.getAttribute("data-hang-room"));
                           }}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (busy) return;
+                            askHang(head, "A", (e.currentTarget as HTMLButtonElement).getAttribute("data-hang-room"));
+                          }}
                         >
                           Hang A
                         </button>
@@ -627,6 +633,12 @@ export function VaultHall() {
                             e.stopPropagation();
                             if (busy) return;
                             askHang(head, "B", e.currentTarget.getAttribute("data-hang-room"));
+                          }}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (busy) return;
+                            askHang(head, "B", (e.currentTarget as HTMLButtonElement).getAttribute("data-hang-room"));
                           }}
                         >
                           Hang B

@@ -38,6 +38,14 @@ describe("hang room pick", () => {
     assert.equal(bindCitadel([], null).hall, 1);
   });
 
+  it("lastPlay.rooms keeps hall 2 when hydrate dropped catalog rooms", () => {
+    const rooms = listHangRooms([cit(1, 1)], { id: "cit-1", hall: 1, rooms: 2 });
+    assert.deepEqual(
+      rooms.map((r) => r.hall),
+      [1, 2],
+    );
+  });
+
   it("lists a hung hall even when the catalog only has room 1", () => {
     const rooms = listHangRooms([cit(1, 1)], { id: "cit-1", hall: 1 }, [
       { still: "/films/cook-forest.jpg", room: { hall: 2, still: "/films/cook-canyon.jpg" } },

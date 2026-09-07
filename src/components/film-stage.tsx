@@ -18,8 +18,8 @@ import { press } from "@/lib/press";
 import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
 import { HazardLayer } from "@/components/hazard-layer";
-import { sprintHallDoor } from "@/game/enter-graph";
-import { isHallFilm } from "@/game/stock-room";
+import { doorLetterOf, sprintHallDoor } from "@/game/enter-graph";
+import { doorAtPoint, isHallFilm } from "@/game/stock-room";
 
 export type RunResult = {
   score: number;
@@ -162,6 +162,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   const offsetRef = useRef(0);
   const plateRef = useRef(0);
   const platesRef = useRef<string[]>([]);
+  const hallFlagsRef = useRef<boolean[]>([]);
   const advancing = useRef(false);
   const laneRef = useRef<0 | 1>(0);
   const swapLock = useRef(0);
@@ -290,6 +291,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     swapLock.current = 0;
     const list = uniqueClips(film.playlist || []).map(localizeClip);
     platesRef.current = list.slice();
+    hallFlagsRef.current = list.map((u) => isHallFilm(u));
     const first = list[0] || (original ? film.origin : portrait ? film.portrait : film.local);
     if (isClip(first)) setSrc(first);
     const pic = [film.portraitStill, film.still].find((u) => u && (/\.(jpe?g|png|webp)(\?|$)/i.test(u) || u.startsWith("data:image")));
@@ -783,9 +785,19 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   }
 
   function hallPlateNow() {
-    const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
-    const url = list[plateRef.current] || videoRef.current?.getAttribute("data-url") || film.local || "";
-    return isHallFilm(url);
+    const orig = uniqueClips(film.playlist || []);
+    const list = platesRef.current.length ? platesRef.current : orig;
+    const i = plateRef.current;
+    const v = videoRef.current;
+    return Boolean(
+      hallFlagsRef.current[i] ||
+        isHallFilm(list[i]) ||
+        isHallFilm(orig[i]) ||
+        isHallFilm(v?.getAttribute("data-url")) ||
+        isHallFilm(v?.currentSrc) ||
+        isHallFilm(v?.getAttribute("src")) ||
+        sprintHallDoor(list[i] || orig[i] || v?.getAttribute("data-url"), 0.22, 0.42),
+    );
   }
 
   function tryHallDoor(clientX: number, clientY: number) {
@@ -794,10 +806,9 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     if (!box) return Boolean(onHallDoorRef.current);
     const nx = (clientX - box.left) / box.width;
     const ny = (clientY - box.top) / box.height;
-    const door = sprintHallDoor(videoRef.current?.getAttribute("data-url") || platesRef.current[plateRef.current] || film.local, nx, ny);
-    if (door && onHallDoorRef.current) {
-      onHallDoorRef.current(door);
-      return true;
+    const hit = doorAtPoint(nx, ny);
+    if ((hit === "m1" || hit === "m2") && onHallDoorRef.current) {
+      onHallDoorRef.current(doorLetterOf(hit));
     }
     return true;
   }
@@ -939,7 +950,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.holding = false;
     const start = swipe.current;
     swipe.current = null;
-    if (start && tryHallDoor(e.clientX, e.clientY)) return;
+    if (tryHallDoor(e.clientX, e.clientY)) return;
     const beat = g.beats[g.i];
     const box = wrapRef.current?.getBoundingClientRect();
     if (!box || !beat || !start) return;

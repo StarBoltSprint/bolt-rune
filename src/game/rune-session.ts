@@ -291,13 +291,25 @@ function idsOf(list: RuneSessionMeta[]) {
   }));
 }
 
+function keepRooms(a?: number, b?: number) {
+  const n = Math.max(Number(a) > 0 ? Number(a) : 0, Number(b) > 0 ? Number(b) : 0);
+  return n >= 1 ? Math.min(8, Math.round(n)) : a || b;
+}
+
+function isSessionRow(s: unknown): s is RuneSession {
+  if (!s || typeof s !== "object") return false;
+  const o = s as Record<string, unknown>;
+  if (!o.id || typeof o.id !== "string") return false;
+  return Boolean(o.phase || o.halls || o.rooms || o.bank || o.pins || o.want);
+}
+
 function pullSessions(raw: unknown): RuneSession[] {
   if (!raw) return [];
-  if (Array.isArray(raw)) return raw.filter((s) => s && typeof s === "object" && s.id) as RuneSession[];
+  if (Array.isArray(raw)) return raw.filter(isSessionRow);
   if (typeof raw === "object") {
     const o = raw as { rooms?: unknown; id?: string };
     if (Array.isArray(o.rooms)) return pullSessions(o.rooms);
-    if (o.id) return [raw as RuneSession];
+    if (isSessionRow(raw)) return [raw];
   }
   return [];
 }
@@ -310,6 +322,7 @@ function scanStorageSessions(): RuneSession[] {
       for (let i = 0; i < space.length; i++) {
         const k = space.key(i);
         if (!k || !k.startsWith("bolt-")) continue;
+        if (/^bolt-(artifacts|last-play|live-play|guest)/.test(k)) continue;
         const v = readJson(space, k);
         out.push(...pullSessions(v));
       }
@@ -343,6 +356,8 @@ function readCatalog(): RuneSessionMeta[] {
         via: meta.via || prev?.via,
         title: meta.title || prev?.title,
         thumb: keepUrl(meta.thumb) || prev?.thumb || "/refs/hall-doors.jpg",
+        rooms: keepRooms(prev?.rooms, meta.rooms),
+        hall: meta.hall || prev?.hall,
       });
     }
   };
@@ -414,6 +429,8 @@ export function listSessions(): RuneSessionMeta[] {
           from: meta.from || prev?.from,
           via: meta.via || prev?.via,
           title: meta.title || prev?.title,
+          rooms: keepRooms(prev?.rooms, meta.rooms),
+          hall: meta.hall || prev?.hall,
         });
       }
     };
@@ -431,6 +448,8 @@ export function listSessions(): RuneSessionMeta[] {
         want: 2,
         walks: 0,
         thumb: "/refs/hall-doors.jpg",
+        rooms: last.rooms,
+        hall: last.hall,
       });
     }
     return [...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 48);
@@ -450,26 +469,31 @@ export function listStoredHallHints(): { hall: number; still: string; name: stri
     seen.add(n);
     out.push({ hall: n, still, name: name || `Room ${n}` });
   };
-  for (const s of readStore()) {
+  const fill = (s: { rooms?: number; hall?: number; halls?: { n?: number; still?: string; plate?: string }[]; thumb?: string; plate?: string }) => {
     if (s.halls?.length) {
       for (const h of s.halls) put(Math.max(1, h.n || 1), h.still || h.plate || s.thumb || "", `Room ${h.n || 1}`);
     }
-    const cap = Math.max(1, s.rooms || 1, s.hall || 1, s.halls?.length || 0);
-    for (let i = 1; i <= cap; i++) {
+    const cap = Math.max(s.rooms || 0, s.hall || 0, s.halls?.length || 0);
+    for (let i = 1; i <= cap && i <= 8; i++) {
       put(i, i === (s.hall || 1) ? s.thumb || s.plate || "" : "", `Room ${i}`);
     }
-  }
+  };
+  for (const s of readStore()) fill(s);
+  for (const s of readCatalog()) fill(s);
+  const last = lastPlay();
+  if (last?.rooms) fill({ rooms: last.rooms, hall: last.hall });
+  else if (last?.hall) put(last.hall, "", `Room ${last.hall}`);
   return out.sort((a, b) => a.hall - b.hall);
 }
 
-export function lastPlay(): { id: string; title?: string; hall?: number } | null {
+export function lastPlay(): { id: string; title?: string; hall?: number; rooms?: number } | null {
   try {
     const raw =
       (typeof localStorage !== "undefined" ? localStorage.getItem(LAST) : null) ||
       (typeof sessionStorage !== "undefined" ? sessionStorage.getItem(LAST) : null);
     if (!raw) return null;
-    const v = JSON.parse(raw) as { id?: string; title?: string; hall?: number };
-    return v?.id ? { id: v.id, title: v.title, hall: v.hall } : null;
+    const v = JSON.parse(raw) as { id?: string; title?: string; hall?: number; rooms?: number };
+    return v?.id ? { id: v.id, title: v.title, hall: v.hall, rooms: v.rooms } : null;
   } catch {
     return null;
   }
@@ -484,9 +508,14 @@ export function roomOneId() {
   return hit.id;
 }
 
-export function stampPlay(id: string, title?: string, hall?: number) {
+export function stampPlay(id: string, title?: string, hall?: number, rooms?: number) {
   if (!id) return;
-  const raw = JSON.stringify({ id, title: title || "Citadel", hall: hall && hall >= 1 ? hall : undefined });
+  const raw = JSON.stringify({
+    id,
+    title: title || "Citadel",
+    hall: hall && hall >= 1 ? hall : undefined,
+    rooms: rooms && rooms >= 1 ? Math.min(8, Math.round(rooms)) : undefined,
+  });
   try {
     localStorage.setItem(LAST, raw);
   } catch {
@@ -665,7 +694,7 @@ export function saveSessionSync(session: RuneSession): RuneSessionMeta {
     next: packed.next || kept.next,
     from: packed.from || kept.from,
     via: packed.via || kept.via,
-    rooms: packed.rooms || kept.rooms,
+    rooms: keepRooms(packed.rooms, kept.rooms),
     hall: packed.hall || kept.hall,
     title: packed.title || kept.title,
     halls: (packed.halls?.length || 0) >= (kept.halls?.length || 0) ? packed.halls : kept.halls,
@@ -677,7 +706,7 @@ export function saveSessionSync(session: RuneSession): RuneSessionMeta {
   index.unshift(meta);
   writeCatalog(index);
   writeStore([merged, ...readStore().filter((s) => s.id !== session.id)]);
-  stampPlay(session.id, session.title || session.name, merged.hall);
+  stampPlay(session.id, session.title || session.name, merged.hall, merged.rooms || merged.halls?.length);
   return meta;
 }
 
@@ -785,6 +814,8 @@ function mergeMeta(list: RuneSessionMeta[]) {
       from: newer.from || older.from,
       via: newer.via || older.via,
       title: newer.title || older.title,
+      rooms: keepRooms(older.rooms, newer.rooms),
+      hall: newer.hall || older.hall,
     });
   }
   const rows = relinkMetas([...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0)));
@@ -873,6 +904,8 @@ export async function hydrateSessions(onList?: (rows: RuneSessionMeta[]) => void
           want: 2,
           walks: 0,
           thumb: "/refs/hall-doors.jpg",
+          rooms: last.rooms,
+          hall: last.hall,
         },
       ]),
     );
