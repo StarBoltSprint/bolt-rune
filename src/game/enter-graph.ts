@@ -116,7 +116,7 @@ export function stockTransUrl(_door: DoorLetter | DoorId = "A", _biome?: BiomeNa
 
 function keepClip(u?: string) {
   if (!u) return "";
-  if (/\.mp4(\?|$)/i.test(u) || u.includes("xai-vidgen") || u.includes("/films/clips/") || u.includes("/films/") || u.includes("/ui/")) {
+  if (/\.mp4(\?|$)/i.test(u) || u.includes("xai-vidgen") || u.startsWith("/api/clip") || u.includes("/films/clips/") || u.includes("/films/") || u.includes("/ui/")) {
     if (/\.(jpe?g|png|webp|gif)(\?|$)/i.test(u)) return "";
     return u;
   }

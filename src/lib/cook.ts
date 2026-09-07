@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createServerFn } from "@tanstack/react-start";
 import { platePrompt, stillPrompt, type BiomeId, ACTS } from "@/game/cook";
+import { playableClipSrc } from "@/game/play-clip";
 import { clipImaginePrompt, runeFilmVariants, runeStillJobs } from "@/game/imagine-payload";
 import { CAM_LOCK, citadelPrompt } from "@/game/rune";
 import { bindCookSlot, classifyImagineRaw, emptyCookSlot, freeCookSlot, releaseCookSlot, slotStatus, sweepStale, takeCookSlot, type CookSlot } from "@/lib/cook-slot";
@@ -455,7 +456,8 @@ export const cacheStill = createServerFn({ method: "POST" })
   });
 
 async function stashClip(url: string): Promise<string> {
-  return durableMedia(url);
+  const raw = durableMedia(url);
+  return playableClipSrc(raw) || raw;
 }
 
 export const cacheClip = createServerFn({ method: "POST" })

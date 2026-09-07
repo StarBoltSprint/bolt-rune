@@ -17,6 +17,7 @@ import { sfxHit, unlockAudio, startScore, stopScore, syncScore } from "@/game/au
 import { press } from "@/lib/press";
 import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
+import { playableClipSrc } from "@/game/play-clip";
 import { HazardLayer } from "@/components/hazard-layer";
 import { doorLetterOf, sprintHallDoor } from "@/game/enter-graph";
 import { doorAtPoint, isHallFilm } from "@/game/stock-room";
@@ -248,8 +249,9 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     el.defaultMuted = true;
     el.playsInline = true;
     el.preload = "auto";
-    if (el.getAttribute("src") !== url) {
-      el.src = url;
+    const src = playableClipSrc(url) || url;
+    if (el.getAttribute("src") !== src) {
+      el.src = src;
       el.load();
     }
   }

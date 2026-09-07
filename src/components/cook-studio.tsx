@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Flame, Mic, PenLine } from "lucide-react";
 import { ACTS, BIOMES, biomePlaylist, biomeSprintFilm, cookFilm, hasRuneFilm, readClipSpec, runeLoop, runeStill, stockBiomeFilm, worldOf, type BiomeId } from "@/game/cook";
 import { biomeBotStart } from "@/game/path-entry";
-import { clearCookReady, cookOverlayForging, readCookReady, resolveCookStudioMount, writeCookReady } from "@/game/cook-ready";
+import { biomeReadySrc, clearCookReady, cookOverlayForging, readCookReady, resolveCookStudioMount, writeCookReady } from "@/game/cook-ready";
+import { playableClipSrc, stockBiomeLoop } from "@/game/play-clip";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { ENGINE } from "@/game/laws";
 import { startCookPlate, pollCookPlate, cookStatus, startCookStill, freeRuneSlot } from "@/lib/cook";
@@ -297,8 +298,9 @@ export function CookStudio({
   function makeFilm(live: string[]) {
     const line = [runeRef.current, seedRef.current || spokenRef.current].filter(Boolean).join(". ");
     const name = line.trim() || worldOf(biome, line);
-    const urls = live.filter((u) => /\.mp4(\?|$)/i.test(u) || u.startsWith("http"));
-    return cookFilm(name.slice(0, 42), customStill || (urls[0] ? "" : world.still), urls);
+    const urls = live.map((u) => playableClipSrc(u)).filter(Boolean);
+    const playlist = urls.length ? urls : [stockBiomeLoop(biome)];
+    return cookFilm(name.slice(0, 42), customStill || (playlist[0] ? "" : world.still), playlist);
   }
 
   function hangNow(live: string[]) {
@@ -310,12 +312,13 @@ export function CookStudio({
   }
 
   function firePlay() {
-    const live = platesRef.current.map((p) => p.url).filter((u): u is string => typeof u === "string" && /\.mp4(\?|$)/i.test(u));
-    if (!live.length) {
+    const live = platesRef.current.map((p) => p.url).filter((u): u is string => Boolean(playableClipSrc(u) || (u && /\.mp4(\?|$)/i.test(u))));
+    const src = biomeReadySrc(live, biome);
+    if (!src) {
       setFrost("No MP4 yet. Wait for 100%.");
       return;
     }
-    const film = hangNow(live);
+    const film = hangNow(live.length ? live : [src]);
     onPlay(film);
   }
 
@@ -719,18 +722,19 @@ export function CookStudio({
           if (polled.frame) setFrameHint(polled.frame);
           setFrost(polled.frame ? `frame ${polled.frame}` : "Imagine is forging");
           if (polled.status === "done" && polled.url) {
-            got.push(polled.url);
-            mark(0, { status: "ready", url: polled.url });
+            const playable = biomeReadySrc([polled.url, ...got], cookBiome);
+            got.push(playable);
+            mark(0, { status: "ready", url: playable });
             hangNow(got);
             watchI.current = 0;
-            setWatch(polled.url);
+            setWatch(playable);
             pace.n = 100;
             setPct(100);
             setFrost("MP4 ready · touch the path to enter");
             writeCookReady({
               biome: cookBiome,
               urls: got,
-              watch: polled.url,
+              watch: playable,
               still: stillUrl || still,
               frost: "MP4 ready · touch the path to enter",
             });
@@ -867,9 +871,10 @@ export function CookStudio({
   const liveRune = runes[0];
   const runeFilm = liveRune && hasRuneFilm(biome, liveRune);
   const pickedWorld = picked ? (BIOMES.find((b) => b.id === picked) ?? null) : null;
+  const cookSrc = gate === "cook" ? biomeReadySrc([watch || "", ...urls], biome) : "";
   const filmSrc =
-    gate === "cook" && watch
-      ? watch
+    gate === "cook" && cookSrc
+      ? cookSrc
       : gate === "howl"
         ? HOWLS[0]
         : gate === "rune"
@@ -938,9 +943,16 @@ export function CookStudio({
             const u = platesRef.current[nextI]?.url;
             if (u) {
               watchI.current = nextI;
-              setWatch(u);
+              setWatch(playableClipSrc(u) || u);
               setFrost(`${ACTS[nextI].title} is running.`);
             }
+          }}
+          onError={() => {
+            if (gate !== "cook") return;
+            const fallback = stockBiomeLoop(biome);
+            if (watch === fallback) return;
+            setWatch(fallback);
+            setFrost("loop · stock path");
           }}
         />
       ) : customStill ? (
@@ -1175,6 +1187,7 @@ export function CookStudio({
           className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center"
           data-biome-cook="ready"
           data-cook-ready={readyN}
+          data-biome-src={cookSrc || watch || undefined}
         >
           <p className="font-display text-[5.8rem] leading-none text-ice drop-shadow-[0_10px_28px_rgba(0,0,0,0.8)]">
             100%

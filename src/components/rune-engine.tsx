@@ -89,12 +89,15 @@ import { BootScreen } from "@/components/citadel-hub";
 import { defaultHangRoom, hallN, listHangRooms, liveSlice, putSlice, seedHalls } from "@/game/rooms";
 import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
+import { playableClipSrc } from "@/game/play-clip";
 import {
+  cookHasWalks,
   hallStillOf,
   isBoltSilhouette,
   isHallPlayStill,
   livingPlayFrame,
   packIdentityStill,
+  playCoverStill,
   playStillOrHall,
   seedMayBankIdle,
   type LivingPlayFrame,
@@ -104,7 +107,8 @@ import {
 const FADE_MS = 1100;
 
 function armFilm(el: HTMLVideoElement, url: string, _loop = false) {
-  if (!url) return;
+  const src = playableClipSrc(url) || url;
+  if (!src) return;
   el.muted = true;
   el.defaultMuted = true;
   el.playsInline = true;
@@ -117,9 +121,9 @@ function armFilm(el: HTMLVideoElement, url: string, _loop = false) {
   }
   el.loop = false;
   const now = (el.getAttribute("src") || el.currentSrc || "").trim();
-  if (now === url) return;
+  if (now === src) return;
   try {
-    el.src = url;
+    el.src = src;
   } catch {
     /* */
   }
@@ -549,9 +553,19 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const [want, setWant] = useState(2);
   const [filmCap, setFilmCap] = useState(3);
   const [pins, setPins] = useState<RuneNode[]>([]);
-  const [phase, setPhase] = useState<Phase>(
-    hangArt.current || boot?.kind === "session" || boot?.kind === "path" ? "play" : "count",
-  );
+  const [phase, setPhase] = useState<Phase>(() => {
+    if (hangArt.current) return "play";
+    if (boot?.kind === "session") return "play";
+    if (boot?.kind === "path") {
+      if (pathEntry(boot.stills) === "stock") return "play";
+      if (typeof window !== "undefined") {
+        const live = peekLivePlay();
+        if (shouldResumeForgePlay({ done: lookForgeAlreadyDone(), liveId: live?.id })) return "play";
+      }
+      return "look";
+    }
+    return "count";
+  });
   const [walkSecs, setWalkSecs] = useState<WalkSecs>(10);
   const [graph, setGraph] = useState<RuneGraph | null>(null);
   const [here, setHere] = useState(SPAWN.id);
@@ -1169,6 +1183,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         setPose(null);
         setBeat("idle");
         beatRef.current = "idle";
+        if (!cookHasWalks(bank.current)) {
+          setPhase("forge");
+          phaseRef.current = "forge";
+          setPlayFrameKind("fail");
+          setFrost("walks failed · tap retry");
+          return;
+        }
         setPhase("play");
         phaseRef.current = "play";
         sfxForge("cook");
@@ -1268,7 +1289,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           plateShot.current = false;
           const first = forgeQueue(g)[0];
           if (first) startClip(first);
-          else {
+          else if (!cookHasWalks(bank.current)) {
+            setPhase("forge");
+            phaseRef.current = "forge";
+            setPlayFrameKind("fail");
+            setFrost("walks failed · tap retry");
+          } else {
             setPhase("play");
             phaseRef.current = "play";
           }
@@ -1283,6 +1309,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         setNowClip(null);
         setBeat("idle");
         beatRef.current = "idle";
+        if (!cookHasWalks(bank.current)) {
+          setPhase("forge");
+          phaseRef.current = "forge";
+          setPlayFrameKind("fail");
+          setFrost("walks failed · tap retry");
+          return;
+        }
         setPhase("play");
         phaseRef.current = "play";
         sfxForge("cook");
@@ -1842,7 +1875,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function kickPlay(url: string, loop: boolean, skip = false) {
-    if (!url) return;
+    const playUrl = playableClipSrc(url) || url;
+    if (!playUrl) return;
+    url = playUrl;
     const vis = visFilm();
     const hid = hidFilm();
     if (loop && visSrc() === url && filmHasPaint(vis) && filmLoop.current && vis && !vis.paused) {
@@ -5063,13 +5098,28 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         markLivePlay(s.id, hereRef.current, TOUR_PLATE);
         return;
       }
-      lockHall(firstStill([hallStill, plateRef.current, startHold.current]) || TOUR_PLATE);
-      rememberHall(s.id, hallKeep.current || hallStill);
+      const frame = livingNow();
+      if (frame.playFrame === "fail") {
+        lockHall(frame.still);
+        setPhase("forge");
+        phaseRef.current = "forge";
+        setPlayFrameKind("fail");
+        setPlayWalksOn(false);
+        setFrost(frame.frost);
+        doneBoot();
+        return;
+      }
+      lockHall(frame.still);
+      rememberHall(s.id, hallKeep.current || frame.still);
+      setPlate(frame.still);
+      plateRef.current = frame.still;
+      setPlayFrameKind(frame.playFrame);
+      setPlayWalksOn(true);
       setFrost("tap a door");
       sfxForge("enter");
       holdIdle();
       doneBoot();
-      markLivePlay(s.id, hereRef.current, hallKeep.current || plateRef.current);
+      markLivePlay(s.id, hereRef.current, hallKeep.current || frame.still);
       return;
     }
     if (s.phase === "gate" && !skipEnter.current) {
@@ -6214,6 +6264,16 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     );
   }
 
+  const playCover = playCoverStill({
+    hall: lookHall.current || refsMap.current.get("hall") || hallKeep.current,
+    empty: refsMap.current.get("empty"),
+    start: startHold.current,
+    plate,
+    placed: refsMap.current.get("placed"),
+    seed: refsMap.current.get("seed"),
+    room: refsMap.current.get("room"),
+  });
+
   return (
     <div
       className="relative min-h-dvh overflow-hidden bg-bg"
@@ -6224,7 +6284,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       data-camera="lock"
       data-living={phase === "play" && (filmOn || Boolean(idleFor(here))) ? "1" : "0"}
       data-play-frame={phase === "play" ? playFrameKind || "hall" : phase === "forge" && playFrameKind === "fail" ? "fail" : undefined}
-      data-play-still={phase === "play" ? (isBoltSilhouette(plate) ? "bolt" : "hall") : undefined}
+      data-play-still={phase === "play" ? (isBoltSilhouette(playCover) ? "bolt" : "hall") : undefined}
       data-play-walks={phase === "play" && playWalksOn ? "1" : "0"}
       data-phase={phase}
       data-clips={counts.total}
@@ -6254,7 +6314,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         {phase !== "refs" ? (
         <img
           ref={img}
-          src={firstStill([plate, hallKeep.current, startHold.current, refsMap.current.get("hall"), refsMap.current.get("seed")]) || ""}
+          src={playCover || HALL_FALLBACK}
           alt=""
           draggable={false}
           onError={(e) => {
