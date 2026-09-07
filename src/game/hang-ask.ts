@@ -59,6 +59,37 @@ export function takeHangPending(): HangPending | null {
   return p;
 }
 
+/** Same-tab Hang floor. hold grows; set is the Load count after a drop. */
+export const HANG_HALL_FLOOR = "bolt-hang-halls-floor";
+
+export function writeHangFloor(n: number, mode: "hold" | "set" = "hold") {
+  try {
+    if (typeof sessionStorage === "undefined") return;
+    const next = Math.max(1, Math.min(8, Math.round(Number(n) || 1)));
+    if (mode === "set") {
+      sessionStorage.setItem(HANG_HALL_FLOOR, String(next));
+      return;
+    }
+    const cur = Number(sessionStorage.getItem(HANG_HALL_FLOOR) || 0);
+    sessionStorage.setItem(HANG_HALL_FLOOR, String(Math.max(cur, next)));
+  } catch {
+    /* */
+  }
+}
+
+/** Drop / remap a pending hang that pointed at a deleted Load room. */
+export function dropHangPending(citadel: string, hall: number | "all", remap: Array<[number, number]> = []) {
+  const p = readHangPending();
+  if (!p) return;
+  if (p.citadel && citadel && p.citadel !== citadel) return;
+  if (hall === "all" || p.hall === hall) {
+    writeHangPending(null);
+    return;
+  }
+  const moved = remap.find(([from]) => from === p.hall)?.[1];
+  if (moved && moved !== p.hall) writeHangPending({ ...p, hall: moved });
+}
+
 /** Wrap carousel index. Swipe left (+1) is next. */
 export function hangStillWrap(count: number, index: number, delta: number): number {
   const n = Math.max(0, Math.floor(Number(count) || 0));

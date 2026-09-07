@@ -7,15 +7,13 @@ import { ClipSpecBar } from "@/components/clip-spec";
 import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/lib/cook";
 import { hangHall, listHall } from "@/lib/hall";
 import { bindCitadel, defaultHangRoom, hallN, hangOpensSheet, holdHangRooms, listHangCitadels, listHangRooms, resolveHangRoom, type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
-import { hydrateSessions, lastPlay, listSessions, listStoredHallHints, stampPlay } from "@/game/rune-session";
+import { hydrateSessions, lastPlay, listSessions, listStoredHallHints, LOAD_DROP_EVENT, stampPlay } from "@/game/rune-session";
 import { HangAskSheet, StillCarousel, StillChip } from "@/components/hang-ask";
-import { HANG_LEFTOVER_SWALLOW_MS, hangBindHall, hangStillWrap, swallowOpeningTap, writeHangPending } from "@/game/hang-ask";
+import { HANG_HALL_FLOOR, HANG_LEFTOVER_SWALLOW_MS, hangBindHall, hangStillWrap, swallowOpeningTap, writeHangFloor, writeHangPending } from "@/game/hang-ask";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { FilmStage } from "@/components/film-stage";
 import { sfxForge } from "@/game/audio";
 import { press } from "@/lib/press";
-
-const HANG_HALL_FLOOR = "bolt-hang-halls-floor";
 
 function readHangFloorPicks(): HangRoomPick[] {
   try {
@@ -28,15 +26,6 @@ function readHangFloorPicks(): HangRoomPick[] {
     }));
   } catch {
     return [{ hall: 1, name: "Room 1", still: "", living: true }];
-  }
-}
-
-function writeHangFloor(n: number) {
-  try {
-    const cur = Number(sessionStorage.getItem(HANG_HALL_FLOOR) || 0);
-    sessionStorage.setItem(HANG_HALL_FLOOR, String(Math.max(cur, Math.min(8, n))));
-  } catch {
-    /* */
   }
 }
 
@@ -111,7 +100,7 @@ export function VaultHall() {
       });
   }, []);
 
-  function refreshHangRooms(arts = hungRef.current) {
+  function refreshHangRooms(arts = hungRef.current, release = false) {
     const last = lastPlay();
     const rows = listSessions();
     const cit = bindCitadel(rows, last, hangCitadelRef.current);
@@ -120,12 +109,12 @@ export function VaultHall() {
     const citadels = listHangCitadels(rows, last, cit.citadel);
     setHangCitadels(citadels);
     const extra = listStoredHallHints(cit.citadel).map((h) => ({ ...h, living: false, citadel: cit.citadel || undefined }));
-    const computed = listHangRooms(rows, last, arts, extra, hangRoomsRef.current, cit.citadel);
-    const held = holdHangRooms(hangRoomsRef.current, computed);
+    const computed = listHangRooms(rows, last, arts, extra, release ? [] : hangRoomsRef.current, cit.citadel);
+    const held = holdHangRooms(release ? [] : hangRoomsRef.current, computed, release);
     const bind = hangBindHall(hangHallRef.current);
     const rooms = held.map((r) => ({ ...r, living: bind ? r.hall === bind : r.living }));
     hangRoomsRef.current = rooms;
-    writeHangFloor(rooms.length);
+    writeHangFloor(rooms.length, release ? "set" : "hold");
     setHangRooms(rooms);
     setHangHallN((prev) => {
       if (hangAskRef.current && hallN(prev) && rooms.some((r) => r.hall === prev)) return prev;
@@ -145,16 +134,24 @@ export function VaultHall() {
         if (rows.length) refreshHangRooms(hungRef.current);
       }).then(() => refreshHangRooms(hungRef.current));
     };
+    const onDrop = () => {
+      const arts = readArtifacts();
+      setHung(arts);
+      const next = refreshHangRooms(arts, true);
+      setHangAsk((cur) => (cur ? { ...cur, rooms: next } : cur));
+    };
     kick();
     const onVis = () => {
       if (typeof document !== "undefined" && document.visibilityState === "visible") kick();
     };
     window.addEventListener("focus", kick);
     window.addEventListener("storage", kick);
+    window.addEventListener(LOAD_DROP_EVENT, onDrop);
     document.addEventListener("visibilitychange", onVis);
     return () => {
       window.removeEventListener("focus", kick);
       window.removeEventListener("storage", kick);
+      window.removeEventListener(LOAD_DROP_EVENT, onDrop);
       document.removeEventListener("visibilitychange", onVis);
     };
   }, []);

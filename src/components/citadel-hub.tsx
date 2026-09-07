@@ -1,6 +1,6 @@
 import { TOUR_PLATE, createPathHref } from "@/game/rune";
-import { listSessions, hydrateSessions, dumpRooms, dumpRoom, takeRooms, renameSession, lastPlay, type RuneSessionMeta } from "@/game/rune-session";
-import { packCitadels } from "@/game/rooms";
+import { listSessions, hydrateSessions, dumpRooms, dumpRoom, takeRooms, renameSession, lastPlay, dropLoadRoom, loadCitadelGone, loadRoomCap, type RuneSessionMeta } from "@/game/rune-session";
+import { hallN as asHall, packCitadels } from "@/game/rooms";
 import { saveDrive, type Drive } from "@/game/rune-brain";
 import { boltFull, press } from "@/lib/press";
 import { sfxForge } from "@/game/audio";
@@ -113,19 +113,26 @@ export function CitadelHub({
   const [hubReady, setHubReady] = useState(false);
   const [hunt, setHunt] = useState(true);
   function takeHub(rows: RuneSessionMeta[]) {
-    if (!rows.length) return;
     setHub((prev) => {
-      if (!prev.length) return rows;
-      const byId = new Map(rows.map((s) => [s.id, { ...s }]));
+      const incoming = rows.filter((s) => !loadCitadelGone(s.id));
+      if (!incoming.length) return prev.filter((s) => !loadCitadelGone(s.id));
+      if (!prev.length) return incoming;
+      const byId = new Map(incoming.map((s) => [s.id, { ...s }]));
       for (const s of prev) {
+        if (loadCitadelGone(s.id)) continue;
         const n = byId.get(s.id);
         if (!n) {
-          byId.set(s.id, s);
+          if (incoming.some((r) => r.id === s.id)) byId.set(s.id, s);
           continue;
         }
+        const cap = loadRoomCap(s.id);
         const rooms = Math.max(Number(n.rooms) || 0, Number(s.rooms) || 0);
         const hints = (s.hallHints?.length || 0) > (n.hallHints?.length || 0) ? s.hallHints : n.hallHints;
-        byId.set(s.id, { ...n, rooms: rooms || n.rooms, hallHints: hints });
+        byId.set(s.id, {
+          ...n,
+          rooms: cap != null ? Math.min(cap, rooms || n.rooms || cap) : rooms || n.rooms,
+          hallHints: cap != null && hints ? hints.filter((h) => (h.n || h.hall || 0) <= cap) : hints,
+        });
       }
       return [...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0));
     });
@@ -161,6 +168,9 @@ export function CitadelHub({
   const [openId, setOpenId] = useState<string | null>(null);
   const [loadOn, setLoadOn] = useState(false);
   const [loadIdx, setLoadIdx] = useState(0);
+  const [loadStep, setLoadStep] = useState<"citadel" | "room">("citadel");
+  const [loadRoomIdx, setLoadRoomIdx] = useState(0);
+  const [dropArm, setDropArm] = useState(false);
   const [draft, setDraft] = useState("");
   const [naming, setNaming] = useState(false);
   const lastFull = useRef(0);
@@ -335,6 +345,48 @@ export function CitadelHub({
     window.location.assign(path);
   }
 
+  async function dropShown(pack: { root: RuneSessionMeta; rooms: RuneSessionMeta[] }, hall?: number) {
+    if (!pack.root.id) return;
+    if (loadStep === "citadel" && pack.rooms.length > 1) {
+      setLoadStep("room");
+      setLoadRoomIdx(0);
+      setDropArm(false);
+      sfxForge("page");
+      return;
+    }
+    if (!dropArm) {
+      setDropArm(true);
+      sfxForge("page");
+      return;
+    }
+    const n = asHall(hall) || (pack.rooms.length <= 1 ? asHall(pack.rooms[0]?.hall) || 1 : 0);
+    const { rows } = await dropLoadRoom(pack.root.id, n);
+    setHub(rows);
+    setHubReady(true);
+    setDropArm(false);
+    const next = groupCitadels(rows);
+    if (!next.length) {
+      setLoadOn(false);
+      setLoadStep("citadel");
+      setLoadIdx(0);
+      setLoadRoomIdx(0);
+      setPackMsg("dropped");
+      return;
+    }
+    const still = next.find((p) => p.root.id === pack.root.id);
+    if (!still) {
+      setLoadStep("citadel");
+      setLoadIdx(Math.min(loadIdx, next.length - 1));
+      setLoadRoomIdx(0);
+      setPackMsg("dropped");
+      return;
+    }
+    if (still.rooms.length <= 1) setLoadStep("citadel");
+    setLoadIdx(Math.max(0, next.findIndex((p) => p.root.id === still.root.id)));
+    setLoadRoomIdx(0);
+    setPackMsg("dropped");
+  }
+
   function playSession(id: string, deed: "play" | "more" | "room" = "play", hall?: number) {
     sfxForge("page");
     void nav({
@@ -351,6 +403,7 @@ export function CitadelHub({
         stills: false,
         rooms: undefined,
         hall: hall && hall >= 1 ? hall : undefined,
+        forge: undefined,
       },
     });
   }
@@ -415,6 +468,8 @@ export function CitadelHub({
               onPointerUp={(e) => {
                 e.stopPropagation();
                 loadAt.current = Date.now();
+                setLoadStep("citadel");
+                setDropArm(false);
                 setLoadOn(true);
                 sfxForge("page");
               }}
@@ -440,6 +495,8 @@ export function CitadelHub({
               takeHub(listSessions());
               setHunt(false);
               setHubReady(true);
+              setLoadStep("citadel");
+              setDropArm(false);
               setLoadOn(true);
               sfxForge("page");
               void hydrateSessions((rows) => {
@@ -458,36 +515,90 @@ export function CitadelHub({
         <div
           className="fixed inset-0 z-[200] bg-[#07080c]"
           data-load-sheet="1"
+          data-load-step={loadStep}
           data-still-carousel="load"
         >
           {shown.length ? (
-            <StillCarousel
-              kind="load"
-              still={shown[hangStillWrap(shown.length, loadIdx, 0)]?.root.thumb || ""}
-              index={hangStillWrap(shown.length, loadIdx, 0)}
-              count={shown.length}
-              title={shown[hangStillWrap(shown.length, loadIdx, 0)]?.title || "Citadel"}
-              onNext={() => setLoadIdx((i) => hangStillWrap(shown.length, i, 1))}
-              onPrev={() => setLoadIdx((i) => hangStillWrap(shown.length, i, -1))}
-              onLock={() => {
-                const p = shown[hangStillWrap(shown.length, loadIdx, 0)];
-                if (!p) return;
-                playSession(p.root.id);
-              }}
-              onBack={() => setLoadOn(false)}
-              actions={
+            (() => {
+              const pack = shown[hangStillWrap(shown.length, loadIdx, 0)];
+              const rooms = pack?.rooms || [];
+              const roomAt = hangStillWrap(Math.max(1, rooms.length), loadRoomIdx, 0);
+              const room = rooms[roomAt];
+              const roomHall = asHall(room?.hall) || roomAt + 1;
+              const playChip = pack ? (
                 <StillChip
                   data-load-play=""
                   {...press(() => {
-                    const p = shown[hangStillWrap(shown.length, loadIdx, 0)];
-                    if (!p) return;
-                    playSession(p.root.id);
+                    if (loadStep === "room" && rooms.length > 1) {
+                      playSession(pack.root.id, "play", roomHall);
+                      return;
+                    }
+                    playSession(pack.root.id);
                   })}
                 >
                   Play
                 </StillChip>
+              ) : null;
+              if (loadStep === "room" && pack && rooms.length > 1) {
+                return (
+                  <StillCarousel
+                    kind="load"
+                    still={room?.thumb || pack.root.thumb || ""}
+                    index={roomAt}
+                    count={rooms.length}
+                    title={pack.title || "Citadel"}
+                    dropArmed={dropArm}
+                    onNext={() => {
+                      setDropArm(false);
+                      setLoadRoomIdx((i) => hangStillWrap(rooms.length, i, 1));
+                    }}
+                    onPrev={() => {
+                      setDropArm(false);
+                      setLoadRoomIdx((i) => hangStillWrap(rooms.length, i, -1));
+                    }}
+                    onLock={() => playSession(pack.root.id, "play", roomHall)}
+                    onBack={() => {
+                      setDropArm(false);
+                      setLoadStep("citadel");
+                    }}
+                    onDrop={() => void dropShown(pack, roomHall)}
+                    actions={playChip}
+                  />
+                );
               }
-            />
+              return (
+                <StillCarousel
+                  kind="load"
+                  still={pack?.root.thumb || ""}
+                  index={hangStillWrap(shown.length, loadIdx, 0)}
+                  count={shown.length}
+                  title={pack?.title || "Citadel"}
+                  dropArmed={dropArm}
+                  onNext={() => {
+                    setDropArm(false);
+                    setLoadIdx((i) => hangStillWrap(shown.length, i, 1));
+                  }}
+                  onPrev={() => {
+                    setDropArm(false);
+                    setLoadIdx((i) => hangStillWrap(shown.length, i, -1));
+                  }}
+                  onLock={() => {
+                    if (!pack) return;
+                    playSession(pack.root.id);
+                  }}
+                  onBack={() => {
+                    setDropArm(false);
+                    setLoadStep("citadel");
+                    setLoadOn(false);
+                  }}
+                  onDrop={() => {
+                    if (!pack) return;
+                    void dropShown(pack);
+                  }}
+                  actions={playChip}
+                />
+              );
+            })()
           ) : (
             <div className="flex min-h-dvh flex-col items-center justify-center gap-6 px-5">
               <button

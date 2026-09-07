@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { walkHangHallHref } from "./enter-graph.ts";
-import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, HANG_PENDING_KEY, hangBindHall, hangCardHall, hangStillLane, hangStillSwipe, hangStillWrap, hangStripCards, hangStripPick, readHangPending, sheetConfirmHall, swallowOpeningTap, takeHangPending, writeHangPending } from "./hang-ask.ts";
+import { HANG_CONFIRM_ARM_MS, HANG_HALL_FLOOR, HANG_LEFTOVER_SWALLOW_MS, HANG_PENDING_KEY, dropHangPending, hangBindHall, hangCardHall, hangStillLane, hangStillSwipe, hangStillWrap, hangStripCards, hangStripPick, readHangPending, sheetConfirmHall, swallowOpeningTap, takeHangPending, writeHangFloor, writeHangPending } from "./hang-ask.ts";
 
 function clickOn(target: { closest?: (sel: string) => unknown; getAttribute: (k: string) => string | null }) {
   const e = new Event("click", { bubbles: true, cancelable: true });
@@ -52,6 +52,17 @@ describe("hang still carousel", () => {
     assert.match(walkHangHallHref("cit-8", 4), /hall=4/);
     assert.ok(!walkHangHallHref("cit-8", 4).includes("first="));
     assert.equal(walkHangHallHref("cit-8", 0), "");
+    writeHangPending({ id: "art-1", citadel: "cit-2", hall: 3 });
+    dropHangPending("cit-2", 3);
+    assert.equal(readHangPending(), null);
+    writeHangPending({ id: "art-1", citadel: "cit-2", hall: 5 });
+    dropHangPending("cit-2", 3, [[5, 4]]);
+    assert.deepEqual(readHangPending(), { id: "art-1", citadel: "cit-2", hall: 4 });
+    store.set(HANG_HALL_FLOOR, "8");
+    writeHangFloor(2, "set");
+    assert.equal(store.get(HANG_HALL_FLOOR), "2");
+    writeHangFloor(5, "hold");
+    assert.equal(store.get(HANG_HALL_FLOOR), "5");
   });
 });
 
