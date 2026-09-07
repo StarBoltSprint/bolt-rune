@@ -448,8 +448,13 @@ export function prepareBeats(film: Film, duration: number, seed: number, origina
  */
 export const CUE_GAP_MIN = 1.8;
 export const CUE_GAP_AIM = 2.2;
-/** CueFill lead-in — must stay below CUE_GAP_MIN so two L/R bars never overlap. */
-export const HOLD_CUE_APPROACH = 1;
+/**
+ * CueFill lead-in — slightly before Bolt commits the turn so the tick is not late.
+ * Must stay below CUE_GAP_MIN so two L/R bars never overlap.
+ */
+export const HOLD_CUE_APPROACH = 1.2;
+/** In-picture CueFill tail after the turn — must match CueFill hide. */
+export const HOLD_CUE_TAIL = 0.28;
 
 /**
  * Keep plate-local turn/jump beats, but drop CueFill L/R ticks closer than minGap.
@@ -515,6 +520,21 @@ export function cueFillSide(beat: Beat): "left" | "right" | null {
 
 export function cueFillShown(beat: Beat): boolean {
   return cueFillSide(beat) != null;
+}
+
+/**
+ * True only while an L/R CueFill is in-picture (fill window).
+ * Taps outside this window must not score GOOD / GREAT / MISS.
+ */
+export function cueFillLive(beat: Beat | undefined | null, t: number): boolean {
+  if (!beat || !cueFillShown(beat)) return false;
+  const until = beat.at - t;
+  return until <= HOLD_CUE_APPROACH && until >= -beat.win * HOLD_CUE_TAIL;
+}
+
+/** Fill window already left the picture — do not treat leftover taps as a live cue. */
+export function cueFillGone(beat: Beat, t: number): boolean {
+  return cueFillShown(beat) && t > beat.at + beat.win * HOLD_CUE_TAIL;
 }
 
 /**
