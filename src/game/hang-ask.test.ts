@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, swallowOpeningTap } from "./hang-ask.ts";
 
-function clickOn(target: { closest: (sel: string) => unknown; getAttribute: (k: string) => string | null }) {
+function clickOn(target: { closest?: (sel: string) => unknown; getAttribute: (k: string) => string | null }) {
   const e = new Event("click", { bubbles: true, cancelable: true });
   Object.defineProperty(e, "target", { value: target });
   Object.defineProperty(e, "composedPath", { value: () => [target] });
@@ -15,7 +15,7 @@ describe("hang ask leftover tap", () => {
     assert.ok(HANG_LEFTOVER_SWALLOW_MS >= HANG_CONFIRM_ARM_MS);
   });
 
-  it("swallowOpeningTap eats every confirm leftover, but lets room picks through", () => {
+  it("swallowOpeningTap eats leftover Play Sprint and confirm taps", () => {
     const hits: string[] = [];
     const cap: Array<(e: Event) => void> = [];
     const bubble: Array<(e: Event) => void> = [];
@@ -37,18 +37,20 @@ describe("hang ask leftover tap", () => {
     const confirm = {
       kind: "confirm",
       getAttribute: (k: string) => (k === "data-hang-confirm" ? "A" : null),
-      closest: (sel: string) => (sel === "[data-hang-confirm]" ? confirm : null),
+    };
+    const play = {
+      kind: "play",
+      getAttribute: (k: string) => (k === "data-play-sprint" ? "" : null),
     };
     const room = {
       kind: "room",
       getAttribute: () => null,
-      closest: () => null,
     };
     const release = swallowOpeningTap(80, root);
+    root.dispatch(clickOn(play));
+    root.dispatch(clickOn(play));
+    root.dispatch(clickOn(confirm));
     root.dispatch(clickOn(room));
-    assert.deepEqual(hits, ["room"]);
-    root.dispatch(clickOn(confirm));
-    root.dispatch(clickOn(confirm));
     assert.deepEqual(hits, ["room"]);
     release();
     root.dispatch(clickOn(confirm));

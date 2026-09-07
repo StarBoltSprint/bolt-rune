@@ -78,11 +78,11 @@ describe("hang room pick", () => {
     assert.equal(citadelRoomCount({ rooms: 1, hall: 2 }), 2);
   });
 
-  it("Hang A/B always open the sheet; Bot Hang only when more than one hall", () => {
+  it("Hang A/B and Grok Bot Hang always open the sheet before binding", () => {
     assert.equal(hangOpensSheet("A", 1), true);
     assert.equal(hangOpensSheet("B", 1), true);
     assert.equal(hangOpensSheet("A", 3), true);
-    assert.equal(hangOpensSheet("bot", 1), false);
+    assert.equal(hangOpensSheet("bot", 1), true);
     assert.equal(hangOpensSheet("bot", 2), true);
   });
 
