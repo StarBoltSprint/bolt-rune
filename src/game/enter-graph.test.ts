@@ -48,6 +48,10 @@ import { biomeBotStart, createBotForgeHref, lookForgeStart, parseLookForge, vaul
 import { playableClipSrc, stockBiomeLoop } from "./play-clip.ts";
 import { HALL_LOOP } from "./stock-room.ts";
 import {
+  CUE_GAP_AIM,
+  CUE_GAP_MIN,
+  FILM_BY_ID,
+  HOLD_CUE_APPROACH,
   PACE_MAX,
   PACE_MIN,
   PACE_MISS,
@@ -58,6 +62,7 @@ import {
   paceAfterMiss,
   prepareHoldBeats,
   scaleBeats,
+  sparseHoldCues,
   turnBeatsForRun,
 } from "./films.ts";
 
@@ -646,6 +651,9 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     const cue = hold.filter((beat) => cueFillShown(beat));
     assert.equal(cue.length, 2);
     assert.ok(cue.every((beat) => beat.at < 5.5));
+    for (let i = 1; i < cue.length; i++) {
+      assert.ok(cue[i].at - cue[i - 1].at >= CUE_GAP_MIN, "hold CueFill stays ≥1.8s apart");
+    }
     const cooked = {
       id: "sprint" as const,
       name: "Play Sprint",
@@ -676,6 +684,64 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(rewind, /restartHoldChart\(\)/);
     assert.match(rewind, /v\.currentTime = 0/);
     assert.match(stage, /g\.streakMiss = 0/);
+  });
+
+  it("hung Forest QTE is sparse plate-local turns — not a 0.5s metronome, asteroid chart HOLD", () => {
+    assert.equal(CUE_GAP_MIN, 1.8);
+    assert.equal(CUE_GAP_AIM, 2.2);
+    assert.equal(HOLD_CUE_APPROACH, 1);
+    assert.ok(HOLD_CUE_APPROACH < CUE_GAP_MIN, "CueFill lead-in must not overlap the next turn");
+    assert.ok(CUE_GAP_MIN >= 1.5 && CUE_GAP_MIN <= 2.5);
+
+    const packed = sparseHoldCues([
+      b("spam1", 1.0, "left", "l", "←"),
+      b("spam2", 1.5, "right", "r", "→"),
+      b("spam3", 2.0, "left", "l", "←"),
+      b("j", 2.2, "tap", "c", "↑"),
+      b("spam4", 2.5, "right", "r", "→"),
+      b("ok", 3.0, "right", "r", "→"),
+    ]);
+    const packedCue = packed.filter((beat) => cueFillShown(beat));
+    assert.equal(packedCue.length, 2);
+    assert.deepEqual(packedCue.map((beat) => beat.at), [1.0, 3.0]);
+    assert.ok(packedCue[1].at - packedCue[0].at >= CUE_GAP_MIN);
+    assert.ok(packed.some((beat) => beat.label === "↑"), "jump stays in the chart for later");
+
+    for (const secs of [6, 10, 15]) {
+      const cue = prepareHoldBeats(secs, 1).filter((beat) => cueFillShown(beat));
+      assert.ok(cue.length >= 1);
+      assert.ok(cue.every((beat) => beat.kind === "left" || beat.kind === "right"));
+      for (let i = 1; i < cue.length; i++) {
+        const gap = cue[i].at - cue[i - 1].at;
+        assert.ok(gap >= CUE_GAP_MIN, `${secs}s plate CueFill gap ${gap} < ${CUE_GAP_MIN}`);
+        assert.ok(gap > 0.6, `${secs}s plate must never chain ~0.5s`);
+      }
+    }
+
+    const asteroid = FILM_BY_ID.asteroid.beats.map((beat) => beat.at);
+    assert.deepEqual(asteroid, [7.0, 12.3, 16.3, 21.6, 25.6, 30.9, 34.9, 40.2, 44.2, 49.5, 53.5]);
+
+    const here = dirname(fileURLToPath(import.meta.url));
+    const films = readFileSync(join(here, "./films.ts"), "utf8");
+    const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    assert.match(films, /export const CUE_GAP_MIN = 1\.8/);
+    assert.match(films, /sparseHoldCues\(turnBeatsForRun\(\[plate\]\)\)/);
+    assert.doesNotMatch(films, /id: "asteroid"[\s\S]{0,400}prepareHoldBeats/);
+    assert.match(stage, /function skipToHoldCue/);
+    assert.match(stage, /n\.at - afterAt >= CUE_GAP_MIN/);
+    assert.match(stage, /skipToHoldCue\(g, fromAt\)/);
+    assert.match(stage, /HOLD_CUE_APPROACH/);
+    assert.match(stage, /holdDoorRef\.current && \(!g\.beats\[g\.i\] \|\| !cueFillShown\(g\.beats\[g\.i\]\)\)/);
+    assert.match(stage, /holdDoorRef\.current && beat && !cueFillShown\(beat\) \? null : beat/);
+    const cueFill = stage.slice(stage.indexOf("function CueFill"), stage.indexOf("function CutWash"));
+    assert.match(cueFill, /HOLD_CUE_APPROACH/);
+    assert.match(cueFill, /width: 6/);
+    assert.match(cueFill, /height: 34/);
+    assert.match(cueFill, /data-cue-axis="y"/);
+    const resonance = stage.slice(stage.indexOf("function Resonance"), stage.indexOf("function CueFill"));
+    assert.match(resonance, /score/);
+    assert.match(resonance, /pace/);
+    assert.doesNotMatch(resonance, /CueFill/);
   });
 
   it("enter chrome is hung Room N — stale Room 1 Asteroid rift cannot win", () => {

@@ -442,13 +442,42 @@ export function prepareBeats(film: Film, duration: number, seed: number, origina
 }
 
 /**
+ * Hung QTE lock: sparse action windows, never a ~0.5s metronome.
+ * CueFill L/R only at cook-sheet Bolt turn times on THIS plate.
+ * Minimum gap sits in the 1.5–2.5s band (aim ~2.2s).
+ */
+export const CUE_GAP_MIN = 1.8;
+export const CUE_GAP_AIM = 2.2;
+/** CueFill lead-in — must stay below CUE_GAP_MIN so two L/R bars never overlap. */
+export const HOLD_CUE_APPROACH = 1;
+
+/**
+ * Keep plate-local turn/jump beats, but drop CueFill L/R ticks closer than minGap.
+ * Jump / vault stay in the chart for later — they do not occupy the in-flight cue.
+ */
+export function sparseHoldCues(beats: Beat[], minGap = CUE_GAP_MIN): Beat[] {
+  let lastCueAt = Number.NEGATIVE_INFINITY;
+  const out: Beat[] = [];
+  for (const beat of beats) {
+    if (!cueFillShown(beat)) {
+      out.push(beat);
+      continue;
+    }
+    if (beat.at - lastCueAt < minGap) continue;
+    out.push(beat);
+    lastCueAt = beat.at;
+  }
+  return out;
+}
+
+/**
  * Hung Door A/B stay chart for the live plate length.
- * Scaling a 15s cook chart onto a ~6s forge loop packs four CueFill turns
- * into one plate — three unhit misses FILM-FRACTURE stay at the cut.
+ * Cook-sheet turn marks at plate-native times — never scaleBeats a 15s chart
+ * onto a ~6s loop (that packed four CueFill turns into ~0.5–1.3s chains).
  */
 export function prepareHoldBeats(duration: number, seed: number): Beat[] {
   const plate = duration > 1 ? duration : 15;
-  return placeSpots(turnBeatsForRun([plate]), seed);
+  return placeSpots(sparseHoldCues(turnBeatsForRun([plate])), seed);
 }
 
 function mulberry32(seed: number) {

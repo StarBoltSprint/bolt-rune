@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type PointerEvent as PE } from "react";
 import {
+  CUE_GAP_MIN,
   FILM_BY_ID,
   gradeOf,
   cueFillShown,
   cueFillSide,
   cuePictureSpot,
+  HOLD_CUE_APPROACH,
   PACE_MAX,
   PACE_MIN,
   paceAfterMiss,
@@ -307,6 +309,16 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     return prepareBeats(film, duration, seed, original);
   }
 
+  /** One in-flight CueFill at a time — skip jumps and stacked L/R ticks. */
+  function skipToHoldCue(g: G, afterAt = Number.NEGATIVE_INFINITY) {
+    if (!holdDoorRef.current) return;
+    while (g.i < g.beats.length) {
+      const n = g.beats[g.i];
+      if (cueFillShown(n) && n.at - afterAt >= CUE_GAP_MIN) break;
+      g.i += 1;
+    }
+  }
+
   function restartHoldChart() {
     const g = gRef.current;
     g.i = 0;
@@ -315,6 +327,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.hold = 0;
     g.holding = false;
     g.streakMiss = 0;
+    skipToHoldCue(g);
   }
 
   /** Native-loop the hung plate. Seek 0 at the seam — never finish / Film fracture. */
@@ -364,6 +377,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     const seed = (Math.random() * 0x7fffffff) | 0;
     gRef.current = fresh(chartFor(film.chart, seed), seed, film.lives === 1 ? 0 : film.hazards ? 4 : 3, ramp);
     gRef.current.charted = false;
+    skipToHoldCue(gRef.current);
     doneSent.current = false;
     offsetRef.current = 0;
     plateRef.current = 0;
@@ -420,6 +434,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           g.beats = chartFor(a.duration, g.seed);
           g.charted = true;
           g.i = 0;
+          skipToHoldCue(g);
         }
       });
       if (a.readyState >= 2) ready();
@@ -539,6 +554,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         if (v.duration && !g.charted && v.duration > 1) {
           g.beats = chartFor(v.duration, g.seed);
           g.charted = true;
+          g.i = 0;
+          skipToHoldCue(g);
         }
         const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
         if (!hold && list.length > 1 && plateRef.current < list.length - 1 && !advancing.current && v.duration > 1 && Number.isFinite(v.duration)) {
@@ -677,7 +694,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         lastHudAt.current = now;
         lastHudI.current = g.i;
         setHud(nextHud);
-        setNowBeat(beat);
+        setNowBeat(holdDoorRef.current && beat && !cueFillShown(beat) ? null : beat);
       }
       raf.current = requestAnimationFrame(tick);
     };
@@ -920,11 +937,20 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   }
 
   function advance(g: G) {
+    const from = g.beats[g.i];
+    const fromAt = from && cueFillShown(from) ? from.at : Number.NEGATIVE_INFINITY;
     g.i += 1;
     g.resolved = false;
     g.hits = 0;
     g.hold = 0;
     g.holding = false;
+    if (holdDoorRef.current) {
+      skipToHoldCue(g, fromAt);
+      if (g.i >= g.beats.length && holdDoorLoops(holdDoorRef.current)) {
+        restartHoldChart();
+        return;
+      }
+    }
     if (g.i >= g.beats.length) {
       if (holdDoorLoops(holdDoorRef.current)) {
         restartHoldChart();
@@ -1017,12 +1043,14 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     const g = gRef.current;
     if (biomeQteQuiet(holdDoorRef.current, hallPlateNow()) || hallPlateNow()) return;
     if (phaseRef.current !== "run" || g.crashed) return;
+    if (holdDoorRef.current && (!g.beats[g.i] || !cueFillShown(g.beats[g.i]))) return;
     const v = videoRef.current;
     const t = clock();
     const beat = g.beats[g.i];
     if (!beat || g.resolved) return;
     if (Math.abs(t - beat.at) > beat.win) {
-      if (t < beat.at && beat.at - t < APPROACH) {
+      const soon = holdDoorRef.current ? HOLD_CUE_APPROACH : APPROACH;
+      if (t < beat.at && beat.at - t < soon) {
         pop("SOON", "mid", spotOf(beat).x * 100, spotOf(beat).y * 100);
       }
       return;
@@ -1055,13 +1083,15 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     const g = gRef.current;
     if (biomeQteQuiet(holdDoorRef.current, hallPlateNow()) || hallPlateNow()) return;
     if (phaseRef.current !== "run" || g.crashed) return;
+    if (holdDoorRef.current && (!g.beats[g.i] || !cueFillShown(g.beats[g.i]))) return;
     const v = videoRef.current;
     const t = clock();
     const beat = g.beats[g.i];
     if (!beat || g.resolved) return;
     if (beat.kind !== "left" && beat.kind !== "right") return;
     if (Math.abs(t - beat.at) > beat.win) {
-      if (t < beat.at && beat.at - t < APPROACH) pop("SOON", "mid", 50, 72);
+      const soon = holdDoorRef.current ? HOLD_CUE_APPROACH : APPROACH;
+      if (t < beat.at && beat.at - t < soon) pop("SOON", "mid", 50, 72);
       return;
     }
     const want: Lane = beat.kind === "left" ? "l" : "r";
@@ -1526,6 +1556,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
             if (!g.charted) {
               g.beats = chartFor(v?.duration || film.chart, g.seed);
               g.charted = true;
+              skipToHoldCue(g);
             }
             if (v) {
               try {
@@ -1602,6 +1633,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
                 const v = videoRef.current;
                 gRef.current = fresh(chartFor(v?.duration || film.chart, seed), seed, 0, ramp);
                 gRef.current.charted = true;
+                skipToHoldCue(gRef.current);
                 doneSent.current = false;
                 setUsingStill(false);
                 setLive(true);
@@ -1657,8 +1689,8 @@ function CueFill({ beat, t }: { beat?: Beat; t: number }) {
   const side = cueFillSide(beat);
   if (!side) return null;
   const until = beat.at - t;
-  if (until > APPROACH || until < -beat.win * 0.28) return null;
-  const fill = until >= 0 ? Math.max(0, Math.min(1, 1 - until / APPROACH)) : 1;
+  if (until > HOLD_CUE_APPROACH || until < -beat.win * 0.28) return null;
+  const fill = until >= 0 ? Math.max(0, Math.min(1, 1 - until / HOLD_CUE_APPROACH)) : 1;
   const live = Math.abs(t - beat.at) < beat.win * 0.55;
   const spot = cuePictureSpot(beat);
   return (
