@@ -5,12 +5,19 @@ import {
   bindHungRoom,
   doorIdOf,
   doorLetterOf,
+  firstBiomePlate,
   gateFromHung,
+  hallDoorTap,
   hangArtifactOnDoor,
+  hungHallForDoor,
   hydrateRift,
   inferBiome,
+  latestHungHall,
   resolveDoorEnter,
+  resolveHungEnter,
+  shouldHoldBiome,
   sprintHallDoor,
+  stayBiomePlay,
   hallPlateAt,
   stockBiomePlaylist,
   stockTransUrl,
@@ -100,6 +107,47 @@ describe("enter graph · hang any artefact on any door", () => {
     assert.deepEqual(enter1, { kind: "hall", door: "A", hall: 1 });
     const otherDoor = resolveDoorEnter("B", 2, "cit-2", hung);
     assert.deepEqual(otherDoor, { kind: "hall", door: "B", hall: 2 });
+  });
+
+  it("hang hall 2 door A → enter stays biome play, not the living-hall still", () => {
+    const id = "art-h2-stay";
+    const hung = hangArtifactOnDoor(id, "A", { hall: 2, citadel: "cit-2" }, [art(id, "forest")]);
+    const enter = stayBiomePlay(resolveDoorEnter("A", 2, "cit-2", hung));
+    assert.equal(enter.kind, "biome");
+    if (enter.kind !== "biome") return;
+    assert.equal(enter.hall, 2);
+    assert.equal(enter.door, "A");
+    assert.equal(enter.art, id);
+    assert.equal(enter.biome, "forest");
+    assert.match(enter.still, /cook-forest/);
+    assert.notEqual(enter.still, "/films/citadel-tour.jpg");
+    assert.ok(!enter.still.includes("citadel-tour"));
+    assert.equal(enter.clips[0], enter.trans);
+    assert.equal(enter.trans, HALL_LOOP);
+    const biomeClips = enter.clips.filter((u) => !u.includes("citadel"));
+    assert.ok(biomeClips.length >= 1, "biome playlist missing after trans");
+    assert.ok(
+      biomeClips.some((u) => u.includes("forge-forest") || u.includes("/ui/forge.mp4")),
+      `expected forest/stock loop, got ${biomeClips.join(",")}`,
+    );
+    assert.equal(firstBiomePlate(enter.clips) > 0, true);
+    assert.equal(shouldHoldBiome(enter.clips, firstBiomePlate(enter.clips)), true);
+    assert.equal(shouldHoldBiome(enter.clips, enter.clips.length - 1), true);
+    assert.equal(hallDoorTap(0, 0, "A", "A"), "stay");
+    assert.equal(hallDoorTap(200, 0, "B", "A"), "stay");
+    assert.equal(hallDoorTap(1200, 0, "A", "A"), "stay");
+    assert.equal(hallDoorTap(1200, 0, "B", "A"), "enter");
+    const missHall = stayBiomePlay(resolveDoorEnter("A", 1, "cit-2", hung));
+    assert.deepEqual(missHall, { kind: "hall", door: "A", hall: 1 });
+    assert.equal(hungHallForDoor("A", 1, hung), 2);
+    assert.equal(hungHallForDoor("A", 2, hung), 2);
+    assert.equal(latestHungHall(hung), 2);
+    const fromRoom1 = resolveHungEnter("A", 1, "cit-2", hung);
+    assert.equal(fromRoom1.kind, "biome");
+    if (fromRoom1.kind !== "biome") return;
+    assert.equal(fromRoom1.hall, 2);
+    assert.equal(fromRoom1.art, id);
+    assert.equal(stayBiomePlay(fromRoom1).kind, "biome");
   });
 
   it("enter that door resolves to transition then biome play (stock trans, no XAI key)", () => {

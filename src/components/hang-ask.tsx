@@ -71,7 +71,7 @@ export function HangAskSheet({
   rooms: HangRoomPick[];
   hall: number;
   onHall: (n: number) => void;
-  onConfirm: () => void;
+  onConfirm: (hall: number) => void;
   onClose: () => void;
 }) {
   const [armed, setArmed] = useState(false);
@@ -123,7 +123,7 @@ export function HangAskSheet({
           {...vaultHangRoom(hall)}
           className="mt-6 rounded-2xl border border-[#9ef0e4]/50 px-4 py-3 font-display text-2xl text-[#9ef0e4]"
           style={{ touchAction: "manipulation" }}
-          {...press(onConfirm)}
+          {...press(() => onConfirm(hall))}
         >
           Hang {door} · room {hall}
         </button>

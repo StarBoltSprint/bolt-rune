@@ -1,4 +1,5 @@
 import type { HungArtifact, HungRoom } from "./artifacts.ts";
+import { stockBiomeLoop } from "./play-clip.ts";
 import type { RiftGate } from "./rune-session.ts";
 import { doorAtPoint, HALL_LOOP, isHallFilm } from "./stock-room.ts";
 
@@ -228,6 +229,38 @@ export function hydrateRift(
   return next;
 }
 
+/** Latest hang on this letter, preferring the living hall. 0 if none. */
+export function hungHallForDoor(door: DoorLetter, hall: number, arts: HungArtifact[]): number {
+  const ordered = [...arts].filter((a) => a.room?.door === door).sort((p, q) => (q.hungAt || 0) - (p.hungAt || 0));
+  if (ordered.some((a) => a.room && hallMatches(a.room, hall))) return hall;
+  const other = ordered.find((a) => {
+    const n = a.room?.hall || 0;
+    return n >= 1 && n <= 8;
+  });
+  return other?.room?.hall && other.room.hall >= 1 && other.room.hall <= 8 ? other.room.hall : 0;
+}
+
+export function latestHungHall(arts: HungArtifact[]): number {
+  const ordered = [...arts].filter((a) => a.room?.hall).sort((p, q) => (q.hungAt || 0) - (p.hungAt || 0));
+  const n = ordered[0]?.room?.hall || 0;
+  return n >= 1 && n <= 8 ? n : 0;
+}
+
+/** Enter the hung biome even if the living overlay is still on another hall. */
+export function resolveHungEnter(
+  door: DoorLetter,
+  hall: number,
+  citadel: string,
+  arts: HungArtifact[],
+  rift?: { m1?: RiftGate; m2?: RiftGate },
+): DoorEnter {
+  const here = stayBiomePlay(resolveDoorEnter(door, hall, citadel, arts, rift));
+  if (here.kind === "biome") return here;
+  const want = hungHallForDoor(door, hall, arts);
+  if (want && want !== hall) return stayBiomePlay(resolveDoorEnter(door, want, citadel, arts, {}));
+  return here;
+}
+
 export function resolveDoorEnter(
   door: DoorLetter,
   hall: number,
@@ -250,9 +283,63 @@ export function resolveDoorEnter(
     art: gate.art || "",
     biome,
     name: gate.name || biome,
-    still: gate.still || biomeStill(biome),
+    still: gate.still && !isHallFilm(gate.still) ? gate.still : biomeStill(biome),
     trans,
     playlist,
+    clips,
+  };
+}
+
+/** Leftover Door A/B pointer from living-hall enter typically lands inside this window. */
+export const ENTER_LEFTOVER_MS = 1100;
+
+/**
+ * Hall-plate tap during biome enter.
+ * Leftover enter tap and the door we just opened stay on biome — never MISS.
+ * The other door may hand off after the leftover window.
+ */
+export function hallDoorTap(
+  now: number,
+  mountedAt: number,
+  hit: DoorLetter,
+  hold?: DoorLetter | null,
+): "stay" | "enter" {
+  if (now - mountedAt < ENTER_LEFTOVER_MS) return "stay";
+  if (hold && hit === hold) return "stay";
+  return "enter";
+}
+
+export function firstBiomePlate(playlist: Array<string | null | undefined> = []): number {
+  const i = playlist.findIndex((u) => u && !isHallFilm(u));
+  return i < 0 ? 0 : i;
+}
+
+/** After the room→biome trans, keep looping biome plates — do not finish back to the hall. */
+export function shouldHoldBiome(playlist: Array<string | null | undefined> = [], i = 0): boolean {
+  if (!playlist.length) return false;
+  const at = playlist[i];
+  if (at && !isHallFilm(at)) return true;
+  return i >= playlist.length - 1 && playlist.some((u) => u && !isHallFilm(u));
+}
+
+/**
+ * Hung / stock rift handoff: trans (if any) then biome loops that can actually play.
+ * Always keeps a non-hall biome clip so FilmStage does not bounce to the living-hall still.
+ */
+export function stayBiomePlay(enter: DoorEnter): DoorEnter {
+  if (enter.kind !== "biome") return enter;
+  const still = enter.still && !isHallFilm(enter.still) ? enter.still : biomeStill(enter.biome);
+  const trans = enter.trans && /\.mp4(\?|$)/i.test(enter.trans) ? enter.trans : "";
+  const loops = uniq(
+    [...(enter.playlist || []), ...stockBiomePlaylist(enter.biome), stockBiomeLoop(enter.biome)].filter((u) => !isHallFilm(u)),
+  );
+  if (!loops.length) loops.push(stockBiomeLoop(enter.biome));
+  const clips = uniq([trans, ...loops].filter(Boolean));
+  return {
+    ...enter,
+    still,
+    trans,
+    playlist: loops,
     clips,
   };
 }

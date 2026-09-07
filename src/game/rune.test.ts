@@ -372,6 +372,20 @@ describe("Imagine prompt rails", () => {
     assert.match(engine, /HangAskSheet/);
     assert.match(engine, /askLiveHang/);
     assert.doesNotMatch(engine, /onPointerUp=\{\(\) => beginRift\("m1"/);
+    assert.match(engine, /stayBiomePlay/);
+    assert.match(engine, /resolveHungEnter/);
+    assert.match(engine, /hungDoorReady/);
+    assert.match(engine, /goHungHall/);
+    assert.match(engine, /resolveDoorEnter/);
+    assert.match(engine, /sprintHold/);
+    assert.match(engine, /data-biome-stay/);
+    assert.match(engine, /holdDoor=/);
+    assert.match(engine, /if \(!sprintHold\.current\) playing\.current = false/);
+    assert.match(stage, /hallDoorTap/);
+    assert.match(stage, /shouldHoldBiome/);
+    assert.match(stage, /holdBiomePlate/);
+    assert.match(stage, /stockBiomeLoop/);
+    assert.match(stage, /holdDoor/);
   });
 
   it("Grok Bot Forge uses a LOCKed hall still/style, else sealed DEFAULT HALL", () => {

@@ -64,7 +64,18 @@ import { COOK_BUSY_WAIT_MS, COOK_START_ACCEPTED_PCT, cookBusyGiveUpFrost, cookBu
 import { BIOMES, biomePlaylist, riftFilm, riftPrompt, type BiomeId } from "@/game/cook";
 import { FilmStage } from "@/components/film-stage";
 import { dropRoom, hangArtifact, hangOnRoom, isClip, mergeHall, readArtifacts, uniqueClips, ROOM_ONE_STILL, type HungArtifact } from "@/game/artifacts";
-import { gateFromHung, hydrateRift, stockTransUrl } from "@/game/enter-graph";
+import {
+  biomeStill,
+  doorLetterOf,
+  gateFromHung,
+  hydrateRift,
+  latestHungHall,
+  resolveDoorEnter,
+  resolveHungEnter,
+  stayBiomePlay,
+  stockTransUrl,
+  type BiomeName,
+} from "@/game/enter-graph";
 import { hangHall, listHall } from "@/lib/hall";
 import { boltFull } from "@/lib/press";
 import { sfxForge, startBed, unlockAudio, setLiving } from "@/game/audio";
@@ -726,6 +737,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const riftCookTok = useRef(0);
   const [riftBloom, setRiftBloom] = useState<{ still: string; name: string; door: "m1" | "m2"; open: boolean } | null>(null);
   const [sprint, setSprint] = useState<{ film: ReturnType<typeof riftFilm>; door: "m1" | "m2"; name: string } | null>(null);
+  const sprintHold = useRef(false);
   const [hangRoomN, setHangRoomN] = useState(1);
   const hangRoomRef = useRef(1);
   hangRoomRef.current = hangRoomN;
@@ -782,10 +794,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   useEffect(() => {
     if (phase !== "play") return;
+    if (sprintHold.current) return;
     if (playing.current || beatRef.current === "playvid" || beatRef.current === "walk") return;
     const t = window.setTimeout(() => {
       if (phaseRef.current !== "play") return;
-      if (playing.current || beatRef.current === "playvid") return;
+      if (sprintHold.current || playing.current || beatRef.current === "playvid") return;
       if (!film.current && !filmB.current) return;
       holdIdle();
     }, 80);
@@ -1412,6 +1425,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   function goTo(id: string) {
     if (riftPickRef.current || riftDraftRef.current) return;
     if (entering.current) return;
+    if ((id === "m1" || id === "m2") && hungDoorReady(id)) {
+      void goEnter(id);
+      return;
+    }
     if (phaseRef.current === "play") {
       const stock = stockHallNow();
       if (!stock && (playing.current || beatRef.current === "playvid" || beatRef.current === "walk")) {
@@ -2029,6 +2046,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function holdIdle() {
+    if (sprintHold.current) return;
     wrapping.current = false;
     playing.current = false;
     setBeat("idle");
@@ -2397,6 +2415,48 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       src: end || "",
       url: url || undefined,
     });
+  }
+
+  function hungDoorReady(door: "m1" | "m2"): boolean {
+    const enter = resolveHungEnter(doorLetterOf(door), hallHold.current, sid.current, readArtifacts(), riftRef.current);
+    return enter.kind === "biome";
+  }
+
+  async function goHungHall(n: number, idle = true) {
+    if (n < 1 || n > 8) return;
+    if (n === hallHold.current && phaseRef.current === "play") return;
+    rememberSlice(snapHall());
+    let slice = hallsHold.current[n - 1];
+    if (!slice || !(slice.bank || []).length) {
+      const first = pathFirst.current || "m1";
+      const still = slice?.still || plateRef.current || startHold.current || HALL_STILL;
+      slice = {
+        n,
+        still,
+        start: still,
+        plate: still,
+        bank: stockRoomBank(first).map((b) => ({ key: b.key, url: b.url, end: b.end })),
+        refs: slice?.refs || refsHold.current,
+        pins: slice?.pins || pinsRef.current,
+        via: slice?.via,
+        rift: slice?.rift,
+      };
+      hallsHold.current = putSlice(hallsHold.current, slice);
+    }
+    applyHall(slice, false);
+    roomsHold.current = Math.max(roomsHold.current, n, hallsHold.current.length);
+    persist({
+      hall: n,
+      rooms: roomsHold.current,
+      halls: hallsHold.current,
+      plate: plateRef.current,
+      start: startHold.current,
+      phase: "play",
+    });
+    setPhase("play");
+    phaseRef.current = "play";
+    armed.current = true;
+    if (idle && !sprintHold.current) holdIdle();
   }
 
   function destHall(door: "m1" | "m2"): number {
@@ -4379,13 +4439,26 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setEnterAsk(null);
     setTray(false);
     const dest = destHall(pick);
-    const gate = riftRef.current[pick];
+    const arts = readArtifacts();
+    const enter = resolveHungEnter(doorLetterOf(pick), hallHold.current, sid.current, arts, riftRef.current);
     entering.current = true;
     playing.current = true;
     playTok.current += 1;
     try {
-      if (gate) {
-        await playRift(pick, gate);
+      if (enter.kind === "biome") {
+        if (enter.hall !== hallHold.current) await goHungHall(enter.hall, false);
+        const restored = hydrateRift(sid.current, hallHold.current, riftRef.current, arts);
+        riftRef.current = restored;
+        setRift(restored);
+        await playRift(pick, restored[pick] || {
+          biome: enter.biome,
+          name: enter.name,
+          still: enter.still,
+          loop: enter.playlist[0] || enter.still,
+          playlist: enter.playlist,
+          trans: enter.trans,
+          art: enter.art,
+        });
         return;
       }
       if (dest && dest < hallHold.current) {
@@ -4418,7 +4491,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       enterNext(pick);
     } finally {
       entering.current = false;
-      playing.current = false;
+      if (!sprintHold.current) playing.current = false;
     }
   }
 
@@ -4435,6 +4508,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function leaveSprint() {
+    sprintHold.current = false;
     setSprint(null);
     setRiftBloom(null);
     setPhase("play");
@@ -4456,25 +4530,39 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     stopFilm();
     setFilmOn(false);
     sfxForge("enter");
-    const room = plateRef.current || startHold.current || TOUR_PLATE;
-    const liveArt = gate.art ? readArtifacts().find((x) => x.id === gate.art) : null;
+    riftCookTok.current += 1;
+    swallowOpeningTap();
+    const arts = readArtifacts();
+    const liveArt = gate.art ? arts.find((x) => x.id === gate.art) : null;
     const liveGate = liveArt ? { ...gate, ...gateFromHung(liveArt), trans: gate.trans || liveArt.room?.trans } : gate;
-    let trans = liveGate.trans || "";
-    if (!isClip(trans)) {
-      trans = stockTransUrl(door, liveGate.biome as BiomeId);
-      void cookRiftTrans(door, { ...liveGate, trans: "" }, ++riftCookTok.current).then((url) => {
-        if (!url) return;
-        const live = riftRef.current[door];
-        if (!live) return;
-        attachRift(door, { ...live, trans: url });
-      });
-    }
-    const clips = uniqueClips([trans, ...(liveGate.playlist || []), liveGate.loop].filter(Boolean));
+    const restored = { ...riftRef.current, [door]: liveGate };
+    riftRef.current = restored;
+    setRift(restored);
+    const enter = stayBiomePlay(
+      resolveDoorEnter(doorLetterOf(door), hallHold.current, sid.current, arts, restored),
+    );
+    const stay =
+      enter.kind === "biome"
+        ? enter
+        : stayBiomePlay({
+            kind: "biome",
+            door: doorLetterOf(door),
+            hall: hallHold.current,
+            art: liveGate.art || "",
+            biome: (liveGate.biome as BiomeName) || "open",
+            name: liveGate.name,
+            still: liveGate.still,
+            trans: liveGate.trans || stockTransUrl(door, liveGate.biome as BiomeId),
+            playlist: liveGate.playlist || [],
+            clips: uniqueClips([liveGate.trans || "", ...(liveGate.playlist || []), liveGate.loop].filter(Boolean)),
+          });
+    sprintHold.current = true;
+    playing.current = true;
     setRiftBloom(null);
     setSprint({
-      film: riftFilm(liveGate.name, liveGate.still || room, clips.length ? clips : [trans, liveGate.loop]),
+      film: riftFilm(stay.name, stay.still, stay.clips.length ? stay.clips : [stay.trans, stockTransUrl(door)]),
       door,
-      name: liveGate.name,
+      name: stay.name,
     });
   }
 
@@ -4487,25 +4575,29 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function attachRift(door: "m1" | "m2", gate: RiftGate) {
-    const next = { ...riftRef.current, [door]: gate };
-    riftRef.current = next;
-    setRift(next);
-    if (nextHold.current[door]) {
-      const rooms = { ...nextHold.current };
-      delete rooms[door];
-      nextHold.current = rooms;
+    const bindHall = hangRoomRef.current || hallHold.current;
+    const hereHall = bindHall === hallHold.current;
+    const next = hereHall ? { ...riftRef.current, [door]: gate } : { ...riftRef.current };
+    if (hereHall) {
+      riftRef.current = next;
+      setRift(next);
+      if (nextHold.current[door]) {
+        const rooms = { ...nextHold.current };
+        delete rooms[door];
+        nextHold.current = rooms;
+      }
+      persist({ phase: "play", rift: next, next: Object.keys(nextHold.current).length ? nextHold.current : undefined });
     }
-    persist({ phase: "play", rift: next, next: Object.keys(nextHold.current).length ? nextHold.current : undefined });
     try {
       if (gate.art) {
         const wired = hangOnRoom(
           gate.art,
           {
             door: door === "m2" ? "B" : "A",
-            still: gate.still || plateRef.current || ROOM_ONE_STILL,
+            still: gate.still && !isHallFilm(gate.still) ? gate.still : biomeStill((gate.biome as BiomeName) || "open"),
             trans: gate.trans || stockTransUrl(door),
             citadel: sid.current,
-            hall: hangRoomRef.current || hallHold.current,
+            hall: bindHall,
             biome: gate.biome,
           },
           hungArts.length ? hungArts : undefined,
@@ -4536,14 +4628,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setRiftDraft(null);
     setPhase("play");
     phaseRef.current = "play";
-    if (hereRef.current === door) setEnterAsk(door);
+    if (hereHall && hereRef.current === door) setEnterAsk(door);
+    const letter = door === "m2" ? "B" : "A";
     setFrost(
-      gate.trans
-        ? `${gate.name} · door ${door === "m2" ? "B" : "A"} opens`
-        : `${gate.name} · door ${door === "m2" ? "B" : "A"} · tap twice to enter`,
+      hereHall
+        ? gate.trans
+          ? `${gate.name} · door ${letter} opens`
+          : `${gate.name} · door ${letter} · tap twice to enter`
+        : `${gate.name} · hung on room ${bindHall} door ${letter}`,
     );
     sfxForge("enter");
-    holdIdle();
+    if (!sprintHold.current) holdIdle();
   }
 
   function dropRift(door: "m1" | "m2") {
@@ -4606,16 +4701,21 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     window.setTimeout(() => setRiftPick(pick), 60);
   }
 
-  function beginRift(door: "m1" | "m2", gate: RiftGate) {
+  function beginRift(door: "m1" | "m2", gate: RiftGate, hall?: number) {
+    const bindHall = hall || hangRoomRef.current || hallHold.current;
+    hangRoomRef.current = bindHall;
+    setHangRoomN(bindHall);
     riftCookTok.current += 1;
-    attachRift(door, gate);
-    setFrost(`${gate.name} · hung on ${door === "m2" ? "B" : "A"} · opening from the room`);
+    void goHungHall(bindHall, true).then(() => {
+      attachRift(door, gate);
+      setFrost(`${gate.name} · hung on room ${bindHall} ${door === "m2" ? "B" : "A"}`);
+    });
     void cookRiftTrans(door, gate, riftCookTok.current).then((url) => {
       if (!url) return;
       const live = riftRef.current[door];
       if (!live) return;
       attachRift(door, { ...live, trans: url });
-      setFrost(`${gate.name} · door opens from the room`);
+      setFrost(`${gate.name} · door opens from room ${bindHall}`);
     });
   }
 
@@ -4973,9 +5073,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     hallsHold.current = folded;
     roomsHold.current = Math.max(s.rooms || 1, hallsHold.current.length, s.hall || 1);
-    const wantHall = Math.max(1, Math.min(roomsHold.current, (boot?.kind === "session" && boot.hall) || s.hall || 1));
-    hallHold.current = wantHall;
     const artsNow = readArtifacts();
+    let wantHall = Math.max(1, Math.min(roomsHold.current, (boot?.kind === "session" && boot.hall) || s.hall || 1));
+    const hungN = latestHungHall(artsNow);
+    if (hungN) {
+      roomsHold.current = Math.max(roomsHold.current, hungN);
+      const hereHung = resolveHungEnter("A", wantHall, s.id, artsNow, s.rift).kind === "biome" || resolveHungEnter("B", wantHall, s.id, artsNow, s.rift).kind === "biome";
+      if (!hereHung) wantHall = hungN;
+    }
+    hallHold.current = wantHall;
     const restored = hydrateRift(s.id, wantHall, s.rift || {}, artsNow);
     riftRef.current = restored;
     setRift(restored);
@@ -5232,6 +5338,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     pathFirst.current = first;
     roomsHold.current = Math.max(1, roomsHold.current || 1);
     hallHold.current = Math.max(1, hallHold.current || 1);
+    const hungLive = latestHungHall(readArtifacts());
+    if (hungLive) {
+      roomsHold.current = Math.max(roomsHold.current, hungLive);
+      hallHold.current = hungLive;
+    }
     titleHold.current = titleHold.current || "Citadel";
     const doors = plannedObjects(2).map((o) => ({ id: o.id, name: o.name, x: o.x, y: o.y }));
     setWant(2);
@@ -5301,7 +5412,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     window.setTimeout(() => {
       measurePic();
       scanDoors();
-      if (phaseRef.current === "play" && !playing.current) holdIdle();
+      if (phaseRef.current === "play" && !playing.current && !sprintHold.current) holdIdle();
     }, 160);
     sfxForge("enter");
     sheetOf("walk");
@@ -5630,22 +5741,24 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   if (sprint) {
     return (
-      <div data-biome-play="1" data-biome-door={sprint.door} data-biome-name={sprint.name}>
+      <div data-biome-play="1" data-biome-stay="1" data-biome-door={sprint.door} data-biome-name={sprint.name}>
         <FilmStage
           id={sprint.film.id}
           original={false}
           custom={sprint.film}
           ramp={false}
+          holdDoor={sprint.door === "m2" ? "B" : "A"}
           onHallDoor={(letter) => {
-            const id = letter === "B" ? "m2" : "m1";
+            const hold = sprint.door === "m2" ? "B" : "A";
+            if (letter === hold) return;
             leaveSprint();
             window.setTimeout(() => {
-              void goEnter(id);
+              void goEnter(letter === "B" ? "m2" : "m1");
             }, 0);
           }}
           onExit={() => leaveSprint()}
           onDone={() => {
-            /* stay on the grade — Leave calls onExit */
+            /* stay on biome — Leave calls onExit */
           }}
         />
       </div>
@@ -5936,9 +6049,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         hall={hangRoomN}
         onHall={setHangRoomN}
         onClose={() => setHangAsk(null)}
-        onConfirm={() => {
+        onConfirm={(hall) => {
           const door = hangAsk.door === "B" ? "m2" : "m1";
-          beginRift(door, gateFromHung(hangAsk.a));
+          beginRift(door, gateFromHung(hangAsk.a), hall);
           setHangAsk(null);
         }}
       />
@@ -5951,6 +6064,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       <div
         className="relative flex min-h-dvh flex-col overflow-hidden bg-bg px-5 pt-[max(1.4rem,env(safe-area-inset-top))] pb-[max(1.1rem,env(safe-area-inset-bottom))]"
         data-gate="1"
+        data-hall={hallHold.current}
         style={{ touchAction: "manipulation" }}
       >
         <img src={hall} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
@@ -6333,6 +6447,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       data-shots={shots.length}
       data-forged={forged}
       data-here={here}
+      data-hall={hallHold.current}
       data-door-hit={doorHit ? "1" : "0"}
       data-stock-walk={phase === "play" && (beat === "playvid" || beat === "walk") ? "1" : "0"}
       data-marks={pins.length}

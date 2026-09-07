@@ -722,8 +722,8 @@ export function VaultHall() {
           hall={hangHallN}
           onHall={setHangHallN}
           onClose={() => setHangAsk(null)}
-          onConfirm={() => {
-            hangDoor(hangAsk.a, hangAsk.door, undefined, hangHallN);
+          onConfirm={(hall) => {
+            hangDoor(hangAsk.a, hangAsk.door, undefined, hall);
             setHangAsk(null);
           }}
         />

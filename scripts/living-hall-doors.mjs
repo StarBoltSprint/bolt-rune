@@ -517,10 +517,27 @@ async function runBiomeVaultBot(browser, vp) {
         await waitBeat(enterPage, "idle", 8000);
         await btn.first().click({ force: true });
       }
-      await enterPage.waitForTimeout(800);
-      const biomePlay = await enterPage.evaluate(() => Boolean(document.querySelector("[data-biome-play]")));
-      if (!biomePlay) {
-        throw new Error(`${vp.name}: door A enter did not open biome play`);
+      await enterPage.waitForSelector("[data-biome-play]", { timeout: 8000 });
+      await enterPage.waitForTimeout(1400);
+      const stay = await enterPage.evaluate(() => {
+        const play = document.querySelector("[data-biome-play]");
+        const miss = /MISS/i.test(document.body.innerText);
+        const fracture = /Film fracture/i.test(document.body.innerText);
+        const hallIdle = Boolean(document.querySelector("[data-rune=engine][data-phase=play]")) && !play;
+        return {
+          play: Boolean(play),
+          stay: play?.getAttribute("data-biome-stay") === "1",
+          door: play?.getAttribute("data-biome-door") || "",
+          miss,
+          fracture,
+          hallIdle,
+        };
+      });
+      if (!stay.play || !stay.stay || stay.hallIdle) {
+        throw new Error(`${vp.name}: hang hall 2 door A enter did not stay biome ${JSON.stringify(stay)}`);
+      }
+      if (stay.miss || stay.fracture) {
+        throw new Error(`${vp.name}: hall door tap MISS/fracture during biome enter ${JSON.stringify(stay)}`);
       }
       await enterPage.screenshot({ path: `${OUT}/${vp.name}-biome-enter.png`, fullPage: false });
     } finally {
