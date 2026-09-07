@@ -6,7 +6,7 @@ import { vaultHangRoom, vaultHangStart } from "@/game/path-entry";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/lib/cook";
 import { hangHall, listHall } from "@/lib/hall";
-import { bindCitadel, defaultHangRoom, hangOpensSheet, listHangRooms, resolveHangRoom, type HangRoomPick } from "@/game/rooms";
+import { bindCitadel, defaultHangRoom, hangOpensSheet, holdHangRooms, listHangRooms, resolveHangRoom, type HangRoomPick } from "@/game/rooms";
 import { hydrateSessions, lastPlay, listSessions, listStoredHallHints } from "@/game/rune-session";
 import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
 import { HANG_LEFTOVER_SWALLOW_MS, swallowOpeningTap } from "@/game/hang-ask";
@@ -15,6 +15,31 @@ import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { FilmStage } from "@/components/film-stage";
 import { sfxForge } from "@/game/audio";
 import { press } from "@/lib/press";
+
+const HANG_HALL_FLOOR = "bolt-hang-halls-floor";
+
+function readHangFloorPicks(): HangRoomPick[] {
+  try {
+    const n = Math.max(1, Math.min(8, Number(sessionStorage.getItem(HANG_HALL_FLOOR)) || 1));
+    return Array.from({ length: n }, (_, i) => ({
+      hall: i + 1,
+      name: `Room ${i + 1}`,
+      still: "",
+      living: i === 0,
+    }));
+  } catch {
+    return [{ hall: 1, name: "Room 1", still: "", living: true }];
+  }
+}
+
+function writeHangFloor(n: number) {
+  try {
+    const cur = Number(sessionStorage.getItem(HANG_HALL_FLOOR) || 0);
+    sessionStorage.setItem(HANG_HALL_FLOOR, String(Math.max(cur, Math.min(8, n))));
+  } catch {
+    /* */
+  }
+}
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -46,7 +71,7 @@ export function VaultHall() {
   const [pick, setPick] = useState<Record<string, number>>({});
   const [shift, setShift] = useState<{ a: HungArtifact; at: number } | null>(null);
   const [seed, setSeed] = useState("");
-  const [hangRooms, setHangRooms] = useState<HangRoomPick[]>([{ hall: 1, name: "Room 1", still: "", living: true }]);
+  const [hangRooms, setHangRooms] = useState<HangRoomPick[]>(() => (typeof window === "undefined" ? [{ hall: 1, name: "Room 1", still: "", living: true }] : readHangFloorPicks()));
   const [hangHallN, setHangHallN] = useState(1);
   const [hangAsk, setHangAsk] = useState<{ a: HungArtifact; door: "A" | "B"; rooms: HangRoomPick[] } | null>(null);
   const lock = useRef(false);
@@ -58,7 +83,6 @@ export function VaultHall() {
   const hangAskRef = useRef(hangAsk);
   hangAskRef.current = hangAsk;
   const hangRoomsRef = useRef(hangRooms);
-  hangRoomsRef.current = hangRooms;
   const hangGuard = useRef(0);
   const { user, isPending: authPending } = useCurrentUserState();
   const owned = Boolean(user);
@@ -85,9 +109,10 @@ export function VaultHall() {
 
   function refreshHangRooms(arts = hungRef.current) {
     const extra = listStoredHallHints().map((h) => ({ ...h, living: false }));
-    const next = listHangRooms(listSessions(), lastPlay(), arts, extra);
-    const rooms = next.length >= hangRoomsRef.current.length ? next : hangRoomsRef.current;
+    const computed = listHangRooms(listSessions(), lastPlay(), arts, extra, hangRoomsRef.current);
+    const rooms = holdHangRooms(hangRoomsRef.current, computed);
     hangRoomsRef.current = rooms;
+    writeHangFloor(rooms.length);
     setHangRooms(rooms);
     setHangHallN((prev) => (rooms.some((r) => r.hall === prev) ? prev : defaultHangRoom(rooms)));
     return rooms;

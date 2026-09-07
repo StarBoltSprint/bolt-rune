@@ -310,12 +310,16 @@ describe("Imagine prompt rails", () => {
     assert.match(src, /hangOpensSheet/);
     assert.match(src, /listHangRooms/);
     assert.match(src, /await hydrateSessions/);
-    assert.match(src, /next.length >= hangRoomsRef.current.length/);
+    assert.match(src, /holdHangRooms/);
+    assert.match(src, /bolt-hang-halls-floor/);
+    assert.doesNotMatch(src, /hangRoomsRef\.current = hangRooms/);
     assert.match(src, /visibilitychange/);
     assert.match(src, /addEventListener\("storage"/);
     assert.match(src, /addEventListener\("focus"/);
     assert.match(readFileSync(join(here, "./rooms.ts"), "utf8"), /livingLoadPacks/);
     assert.match(readFileSync(join(here, "./rooms.ts"), "utf8"), /loadHangHallCount/);
+    assert.match(readFileSync(join(here, "./rooms.ts"), "utf8"), /export function holdHangRooms/);
+    assert.match(readFileSync(join(here, "./rune-session.ts"), "utf8"), /n < floor/);
     assert.match(readFileSync(join(here, "./rune-session.ts"), "utf8"), /hold = false/);
     assert.match(src, /resolveHangRoom/);
     assert.match(src, /vaultHangRoom\(/);

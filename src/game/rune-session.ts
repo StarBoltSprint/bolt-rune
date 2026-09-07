@@ -1,4 +1,5 @@
 import type { RuneNode, WalkSecs } from "@/game/rune";
+import { livingLoadPacks, loadHangHallCount } from "@/game/rooms.ts";
 import { dropCitadel, getCitadel, getGuestCitadel, listCitadels, listGuestCitadels, putCitadel, putGuestCitadel } from "@/lib/citadel-cloud";
 
 const DB = "bolt-rune-sessions";
@@ -866,7 +867,7 @@ function mergeMeta(list: RuneSessionMeta[]) {
       from: newer.from || older.from,
       via: newer.via || older.via,
       title: newer.title || older.title,
-      rooms: keepRooms(older.rooms, roomCap(newer)),
+      rooms: keepRooms(roomCap(older), roomCap(newer)),
       hall: newer.hall || older.hall,
       hallHints: keepHallMeta(older.hallHints, newer.hallHints),
     });
@@ -913,10 +914,25 @@ async function scanIdbMeta(): Promise<RuneSessionMeta[]> {
 
 export async function hydrateSessions(onList?: (rows: RuneSessionMeta[]) => void): Promise<RuneSessionMeta[]> {
   askPersist();
+  let floor = loadHangHallCount(livingLoadPacks(listSessions()));
   const emit = (rows: RuneSessionMeta[]) => {
-    if (rows.length) onList?.(rows);
+    if (!rows.length) return;
+    const n = loadHangHallCount(livingLoadPacks(rows));
+    if (n < floor) {
+      // Cloud / lastPlay rooms=2 must not replace the full Load hall set.
+      onList?.(listSessions());
+      return;
+    }
+    floor = Math.max(floor, n);
+    onList?.(rows);
   };
-  emit(listSessions());
+  try {
+    const stored = readStore().map((s) => metaOf(s));
+    if (stored.length) emit(mergeMeta(stored));
+    else emit(listSessions());
+  } catch {
+    emit(listSessions());
+  }
   const take = async (p: Promise<RuneSessionMeta[]>, ms: number, hold = false) => {
     let settled = false;
     const pending = p

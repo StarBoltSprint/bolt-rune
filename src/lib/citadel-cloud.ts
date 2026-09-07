@@ -312,7 +312,7 @@ async function fetchCitadelList(userId: string): Promise<RuneSessionMeta[]> {
     const sql = await getSql();
     const rows = await sql<Row>`
       select id, name, updated, phase, want, walks, thumb, rooms, hall, from_id, via, title,
-        case when coalesce(rooms, 1) <= 1 then body else null end as body
+        body
       from citadels
       where user_id = ${userId}
       order by updated desc

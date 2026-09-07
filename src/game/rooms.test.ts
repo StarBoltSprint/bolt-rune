@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bindCitadel, citadelRoomCount, defaultHangRoom, hangOpensSheet, isBiomeArtefactMeta, listHangRooms, livingLoadPacks, loadHangHallCount, packCitadels, resolveHangRoom } from "./rooms.ts";
+import { bindCitadel, citadelRoomCount, defaultHangRoom, hangOpensSheet, holdHangRooms, isBiomeArtefactMeta, listHangRooms, livingLoadPacks, loadHangHallCount, packCitadels, resolveHangRoom } from "./rooms.ts";
 import type { RuneSessionMeta } from "./rune-session.ts";
 
 function cit(rooms: number, hall = 1, id = "cit-1"): RuneSessionMeta {
@@ -282,6 +282,33 @@ describe("hang room pick", () => {
     const rooms = listHangRooms([two, ...extras], { id: "cit-1", hall: 2, rooms: 2 });
     assert.equal(rooms.length, 8);
     assert.ok(rooms.some((r) => r.citadel && r.citadel !== "cit-1"));
+  });
+
+  it("late 2-room hydrate pass does not overwrite an 8-room Hang list", () => {
+    const full = listHangRooms([cit(8, 2)], { id: "cit-1", hall: 2 });
+    assert.deepEqual(
+      full.map((r) => r.hall),
+      [1, 2, 3, 4, 5, 6, 7, 8],
+    );
+    const narrow = listHangRooms([cit(2, 2)], { id: "cit-1", hall: 2, rooms: 2 });
+    assert.deepEqual(
+      narrow.map((r) => r.hall),
+      [1, 2],
+    );
+    const held = holdHangRooms(full, narrow);
+    assert.deepEqual(
+      held.map((r) => r.hall),
+      [1, 2, 3, 4, 5, 6, 7, 8],
+    );
+    const again = listHangRooms([cit(2, 2)], { id: "cit-1", hall: 2, rooms: 2 }, [], [], full);
+    assert.deepEqual(
+      again.map((r) => r.hall),
+      [1, 2, 3, 4, 5, 6, 7, 8],
+    );
+    assert.equal(
+      again.some((r) => /forest|luxuriant/i.test(r.name)),
+      false,
+    );
   });
 
   it("a new 1-room Load save appears on the Hang sheet without replacing older halls", () => {

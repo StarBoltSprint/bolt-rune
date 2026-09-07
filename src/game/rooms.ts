@@ -261,6 +261,31 @@ function nextFreeHall(seen: Set<number>): number {
   return 0;
 }
 
+/**
+ * Hang list is monotonic for a Vault visit: a later 2-room hydrate/lastPlay
+ * pass must not replace an already-shown full Load hall set.
+ */
+export function holdHangRooms(prev: HangRoomPick[] = [], next: HangRoomPick[] = []): HangRoomPick[] {
+  const older = prev.filter((r) => hallN(r.hall));
+  const newer = next.filter((r) => hallN(r.hall));
+  if (!older.length) return newer.length ? newer : next;
+  if (newer.length > older.length) return newer;
+  const byHall = new Map<number, HangRoomPick>();
+  for (const r of older) byHall.set(r.hall, r);
+  for (const r of newer) {
+    const cur = byHall.get(r.hall);
+    byHall.set(r.hall, {
+      hall: r.hall,
+      name: r.name || cur?.name || `Room ${r.hall}`,
+      still: r.still || cur?.still || "",
+      living: Boolean(r.living || cur?.living),
+      citadel: r.citadel || cur?.citadel,
+      bindHall: r.bindHall ?? cur?.bindHall,
+    });
+  }
+  return [...byHall.values()].sort((a, b) => a.hall - b.hall);
+}
+
 /** Hang A/B and Grok Bot Hang always confirm a room before binding a door. */
 export function hangOpensSheet(kind: "A" | "B" | "bot", roomCount: number): boolean {
   void kind;
@@ -310,6 +335,7 @@ export function listHangRooms(
   last: LastPlayHint = null,
   arts?: Array<{ room?: { hall?: number; still?: string } | null; still?: string }>,
   extra?: HangRoomPick[],
+  held?: HangRoomPick[],
 ): HangRoomPick[] {
   const living = livingHangRows(rows);
   const hint = hangLastHint(rows, last);
@@ -416,7 +442,7 @@ export function listHangRooms(
   );
   for (let i = 1; i <= cap; i++) put(i, roomStill(i, undefined, arts));
   if (!rooms.length) rooms.push({ hall: 1, name: "Room 1", still: "", living: true });
-  return rooms.sort((a, b) => a.hall - b.hall);
+  return holdHangRooms(held, rooms.sort((a, b) => a.hall - b.hall));
 }
 
 export function defaultHangRoom(rooms: HangRoomPick[]): number {
