@@ -1924,6 +1924,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if (hid.readyState >= 2 && breathSeamSameClip(url, slotSrc(hid))) cue();
       else hid.addEventListener("loadeddata", cue, { once: true });
     }
+    if (wrapping.current && hid && url && !breathSeamSameClip(url, slotSrc(hid))) {
+      wrapping.current = false;
+    }
     if (
       wrapping.current &&
       hid &&

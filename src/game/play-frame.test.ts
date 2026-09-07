@@ -547,7 +547,7 @@ describe("hold arrival breath — no idle-spawn / m1 / m2 teleport", () => {
     assert.match(prefetch, /if \(filmLoop\.current\) return;/);
     assert.match(src, /resumeHeldBreath\(/);
     assert.match(src, /visibilitychange/);
-    assert.match(src, /Never holdIdle at spawn/);
+    assert.match(src, /never holdIdle at spawn/);
     assert.match(src, /addEventListener\("pause"/);
     assert.match(enterBreath, /holdBreathUrl\(/);
     assert.match(enterBreath, /stockSprite\.current = false/);
