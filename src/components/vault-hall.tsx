@@ -8,7 +8,8 @@ import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/
 import { hangHall, listHall } from "@/lib/hall";
 import { bindCitadel, defaultHangRoom, hangOpensSheet, listHangRooms, resolveHangRoom, type HangRoomPick } from "@/game/rooms";
 import { hydrateSessions, lastPlay, listSessions, listStoredHallHints } from "@/game/rune-session";
-import { HangAskSheet, HangRoomStrip, swallowOpeningTap } from "@/components/hang-ask";
+import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
+import { swallowOpeningTap } from "@/game/hang-ask";
 import { HallMark } from "@/components/hall-mark";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { FilmStage } from "@/components/film-stage";

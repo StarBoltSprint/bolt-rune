@@ -1,26 +1,35 @@
-/** Ghost click after Hang A/B typically lands 300–400ms later. Keep confirm off that tap. */
-export const HANG_CONFIRM_ARM_MS = 800;
-/** Swallow outlasts confirm mount so a late leftover cannot bind the door. */
+/** Hang A leftover click typically lands 300–400ms later. Confirm stays off that tap. */
+export const HANG_CONFIRM_ARM_MS = 1100;
+/** Swallow confirm taps for the same window so a late leftover cannot bind. */
 export const HANG_LEFTOVER_SWALLOW_MS = 1100;
 
 const SWALLOW = ["click", "pointerup", "touchend", "mouseup"] as const;
 
 /**
- * Eat the leftover click / pointerup from the Hang A tap so it cannot
- * retarget onto the confirm button after the sheet mounts.
+ * Eat leftover Hang A/B taps that retarget onto the confirm button
+ * after the sheet mounts. Room picks still go through.
  */
 type TapTarget = {
   addEventListener: (type: string, fn: (e: Event) => void, cap?: boolean) => void;
   removeEventListener: (type: string, fn: (e: Event) => void, cap?: boolean) => void;
 };
 
+function hitsConfirm(e: Event): boolean {
+  const path = typeof e.composedPath === "function" ? e.composedPath() : [];
+  for (const node of path) {
+    if (node && typeof (node as Element).getAttribute === "function" && (node as Element).getAttribute("data-hang-confirm") != null) {
+      return true;
+    }
+  }
+  const t = e.target as Element | null;
+  return Boolean(t && typeof t.closest === "function" && t.closest("[data-hang-confirm]"));
+}
+
 export function swallowOpeningTap(ms = HANG_LEFTOVER_SWALLOW_MS, target?: TapTarget | null): () => void {
   const root = target ?? (typeof document !== "undefined" ? document : null);
   if (!root) return () => {};
-  const seen = new Set<string>();
   const stop = (e: Event) => {
-    if (seen.has(e.type)) return;
-    seen.add(e.type);
+    if (!hitsConfirm(e)) return;
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
