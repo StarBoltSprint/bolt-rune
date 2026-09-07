@@ -73,6 +73,7 @@ import {
   latestHungHall,
   resolveDoorEnter,
   resolveHungEnter,
+  hungPlayChrome,
   stayBiomePlay,
   stockTransUrl,
   type BiomeName,
@@ -737,7 +738,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   riftDraftRef.current = riftDraft;
   const riftCookTok = useRef(0);
   const [riftBloom, setRiftBloom] = useState<{ still: string; name: string; door: "m1" | "m2"; open: boolean } | null>(null);
-  const [sprint, setSprint] = useState<{ film: ReturnType<typeof riftFilm>; door: "m1" | "m2"; name: string } | null>(null);
+  const [sprint, setSprint] = useState<{ film: ReturnType<typeof riftFilm>; door: "m1" | "m2"; name: string; hall: number } | null>(null);
   const sprintHold = useRef(false);
   const [hangRoomN, setHangRoomN] = useState(1);
   const hangRoomRef = useRef(1);
@@ -4550,7 +4551,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     riftRef.current = restored;
     setRift(restored);
     const enter = stayBiomePlay(
-      resolveDoorEnter(doorLetterOf(door), hallHold.current, sid.current, arts, restored),
+      resolveHungEnter(doorLetterOf(door), hallHold.current, sid.current, arts, restored),
     );
     const stay =
       enter.kind === "biome"
@@ -4558,7 +4559,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         : stayBiomePlay({
             kind: "biome",
             door: doorLetterOf(door),
-            hall: hallHold.current,
+            hall: hangRoomRef.current || hallHold.current,
             art: liveGate.art || "",
             biome: (liveGate.biome as BiomeName) || "open",
             name: liveGate.name,
@@ -4567,13 +4568,19 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             playlist: liveGate.playlist || [],
             clips: uniqueClips([liveGate.trans || "", ...(liveGate.playlist || []), liveGate.loop].filter(Boolean)),
           });
+    const hall = stay.kind === "biome" ? stay.hall : hangRoomRef.current || hallHold.current;
+    hangRoomRef.current = hall;
+    setHangRoomN(hall);
+    setLiveHall(hall);
     sprintHold.current = true;
     playing.current = true;
     setRiftBloom(null);
+    const letter = door === "m2" ? "B" : "A";
     setSprint({
-      film: riftFilm(stay.name, stay.still, stay.clips),
+      film: riftFilm(stay.name, stay.still, stay.clips, hall, letter),
       door,
       name: stay.name,
+      hall,
     });
   }
 
@@ -4588,6 +4595,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   function attachRift(door: "m1" | "m2", gate: RiftGate, hallWant?: number) {
     const bindHall = Math.max(1, Math.min(8, hallN(hallWant) || hangRoomRef.current || hallHold.current || 1));
     hangRoomRef.current = bindHall;
+    setHangRoomN(bindHall);
     const hereHall = bindHall === hallHold.current;
     const next = { ...riftRef.current, [door]: gate };
     riftRef.current = next;
@@ -4600,7 +4608,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     persist({
       phase: "play",
       rift: next,
-      hall: hallHold.current,
+      hall: bindHall,
       rooms: roomsHold.current,
       halls: hallsHold.current,
       next: Object.keys(nextHold.current).length ? nextHold.current : undefined,
@@ -4729,6 +4737,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const bindHall = livingHangHall(rooms, hall || hangRoomRef.current || hallHold.current);
     hangRoomRef.current = bindHall;
     setHangRoomN(bindHall);
+    setLiveHall(bindHall);
     setRiftPick(null);
     setHangAsk(null);
     riftCookTok.current += 1;
@@ -5778,7 +5787,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   if (sprint) {
     return (
-      <div data-biome-play="1" data-biome-stay="1" data-biome-door={sprint.door} data-biome-name={sprint.name}>
+      <div data-biome-play="1" data-biome-stay="1" data-biome-door={sprint.door} data-biome-name={sprint.name} data-biome-hall={sprint.hall}>
         <FilmStage
           id={sprint.film.id}
           original={false}
@@ -6457,6 +6466,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     seed: refsMap.current.get("seed"),
     room: refsMap.current.get("room"),
   });
+  const livingChrome = rift.m1 || rift.m2 ? hungPlayChrome(hangRoomN, rift.m1 ? "A" : "B") : null;
 
   return (
     <div
@@ -6706,6 +6716,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           </div>
         ) : null}
       </div>
+      {phase === "play" && (rift.m1 || rift.m2) ? (
+        <p
+          className="pointer-events-none absolute left-4 right-4 top-[max(0.75rem,env(safe-area-inset-top))] z-[70] text-center font-mono text-[11px] uppercase tracking-[0.22em] text-white/70"
+          data-living-hall={hangRoomN}
+          data-living-door={rift.m1 ? "A" : "B"}
+        >
+          {livingChrome ? `${livingChrome.keeper} ${livingChrome.name}` : ""}
+        </p>
+      ) : null}
       {phase === "play" || beat === "cook" || beat === "playvid" ? null : (
       <button
         type="button"

@@ -295,8 +295,8 @@ export const ENTER_LEFTOVER_MS = 1100;
 
 /**
  * Hall-plate tap during biome enter.
- * Leftover enter tap and the door we just opened stay on biome — never MISS.
- * The other door may hand off after the leftover window.
+ * Leftover enter tap and any door while we hold a hung biome stay on biome —
+ * never QTE-MISS or fracture back to the hall.
  */
 export function hallDoorTap(
   now: number,
@@ -304,9 +304,25 @@ export function hallDoorTap(
   hit: DoorLetter,
   hold?: DoorLetter | null,
 ): "stay" | "enter" {
+  if (hold) return "stay";
   if (now - mountedAt < ENTER_LEFTOVER_MS) return "stay";
-  if (hold && hit === hold) return "stay";
+  void hit;
   return "enter";
+}
+
+/** Hung biome stay — leftover / door taps must never score MISS. */
+export function biomeQteQuiet(holdDoor?: string | null): boolean {
+  return Boolean(holdDoor);
+}
+
+/** Living-hall / FilmStage overlay after Hang Room N — never stuck on Room 1. */
+export function hungPlayChrome(hall?: number | string | null, door?: string | null): { keeper: string; name: string } {
+  const n = Math.max(1, Math.min(8, Math.round(Number(hall) || 1)));
+  const letter = door === "B" || door === "m2" || door === "b" ? "B" : "A";
+  return {
+    keeper: `Room ${n} • Door ${letter}`,
+    name: "Play Sprint",
+  };
 }
 
 export function firstBiomePlate(playlist: Array<string | null | undefined> = []): number {

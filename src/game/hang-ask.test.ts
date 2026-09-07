@@ -81,5 +81,11 @@ describe("hang ask leftover tap", () => {
     assert.match(engine, /goHungHall/);
     assert.match(engine, /hungDoorReady/);
     assert.match(engine, /resolveHungEnter/);
+    assert.match(engine, /hungPlayChrome/);
+    assert.match(engine, /data-living-hall=/);
+    assert.match(engine, /riftFilm\(stay\.name, stay\.still, stay\.clips, hall, letter\)/);
+    assert.match(engine, /setLiveHall\(bindHall\)/);
+    assert.match(vault, /Room \$\{roomN\} • Door \$\{hungOn\} Play Sprint/);
+    assert.match(vault, /holdDoor=\{live\.room\?\.door === "B" \? "B"/);
   });
 });

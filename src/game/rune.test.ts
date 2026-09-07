@@ -385,7 +385,10 @@ describe("Imagine prompt rails", () => {
     assert.match(engine, /data-biome-stay/);
     assert.match(engine, /holdDoor=/);
     assert.match(engine, /if \(!sprintHold\.current\) playing\.current = false/);
-    assert.match(engine, /riftFilm\(stay\.name, stay\.still, stay\.clips\)/);
+    assert.match(engine, /riftFilm\(stay\.name, stay\.still, stay\.clips, hall, letter\)/);
+    assert.match(engine, /hungPlayChrome/);
+    assert.match(engine, /data-living-hall=/);
+    assert.match(engine, /data-biome-hall=/);
     assert.doesNotMatch(engine, /stockTransUrl\(door\)\]/);
     assert.match(stage, /hallDoorTap/);
     assert.match(stage, /shouldHoldBiome/);
@@ -393,6 +396,20 @@ describe("Imagine prompt rails", () => {
     assert.match(stage, /stockBiomeLoop/);
     assert.match(stage, /holdDoor/);
     assert.match(stage, /isLivingHallLoop/);
+    assert.match(stage, /biomeQteQuiet/);
+    assert.match(stage, /data-qte=/);
+    assert.match(stage, /data-biome-quiet=/);
+    assert.match(stage, /function chartFor/);
+    assert.match(stage, /if \(biomeQteQuiet\(holdDoorRef\.current\)\) return \[\]/);
+    assert.match(engine, /<button\n\s+type="button"/);
+    assert.doesNotMatch(engine, /<button>\s*\n\s*type=/);
+    assert.match(stage, /<HazardLayer\n\s+beats=/);
+    assert.match(stage, /<Marks\n\s+beats=/);
+    assert.doesNotMatch(stage, /<HazardLayer>\s*\n/);
+    assert.doesNotMatch(stage, /<Marks>\s*\n/);
+    const vault = src;
+    assert.match(vault, /holdDoor=\{live\.room\?\.door === "B" \? "B"/);
+    assert.match(vault, /Room \$\{roomN\} • Door \$\{hungOn\} Play Sprint/);
   });
 
   it("Grok Bot Forge uses a LOCKed hall still/style, else sealed DEFAULT HALL", () => {

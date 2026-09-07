@@ -1,6 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
+  biomeQteQuiet,
   biomeStill,
   bindHungRoom,
   doorIdOf,
@@ -19,6 +23,7 @@ import {
   sprintHallDoor,
   stayBiomePlay,
   hallPlateAt,
+  hungPlayChrome,
   stockBiomePlaylist,
   stockTransUrl,
 } from "./enter-graph.ts";
@@ -138,7 +143,8 @@ describe("enter graph · hang any artefact on any door", () => {
     assert.equal(hallDoorTap(0, 0, "A", "A"), "stay");
     assert.equal(hallDoorTap(200, 0, "B", "A"), "stay");
     assert.equal(hallDoorTap(1200, 0, "A", "A"), "stay");
-    assert.equal(hallDoorTap(1200, 0, "B", "A"), "enter");
+    assert.equal(hallDoorTap(1200, 0, "B", "A"), "stay");
+    assert.equal(hallDoorTap(1200, 0, "B"), "enter");
     const missHall = stayBiomePlay(resolveDoorEnter("A", 1, "cit-2", hung));
     assert.deepEqual(missHall, { kind: "hall", door: "A", hall: 1 });
     assert.equal(hungHallForDoor("A", 1, hung), 2);
@@ -228,5 +234,50 @@ describe("enter graph · hang any artefact on any door", () => {
     assert.deepEqual(vaultHangRoom("3"), { "data-hang-room": 3 });
     assert.deepEqual(vaultHangRoom(null), { "data-hang-room": 1 });
     assert.equal(parseLookForge(createBotForgeHref("m1")), "bot");
+  });
+});
+
+describe("hung biome play · Room N chrome and quiet QTE", () => {
+  it("Hang Room 2 titles Room 2 • Door A Play Sprint, not Room 1", () => {
+    assert.deepEqual(hungPlayChrome(2, "A"), { keeper: "Room 2 • Door A", name: "Play Sprint" });
+    assert.deepEqual(hungPlayChrome(1, "B"), { keeper: "Room 1 • Door B", name: "Play Sprint" });
+    assert.notDeepEqual(hungPlayChrome(2, "A"), hungPlayChrome(1, "A"));
+    const here = dirname(fileURLToPath(import.meta.url));
+    const cook = readFileSync(join(here, "./cook.ts"), "utf8");
+    assert.match(cook, /hungPlayChrome\(hall, door\)/);
+    assert.match(cook, /quietBiomeFilm/);
+    assert.match(cook, /name: chrome\.name/);
+    assert.match(cook, /keeper: chrome\.keeper/);
+  });
+
+  it("stay play on hall 2 drops hall loops and keeps Room 2 chrome", () => {
+    const hung = hangArtifactOnDoor("art-title-2", "A", { hall: 2, citadel: "cit-2" }, [art("art-title-2", "forest")]);
+    const enter = stayBiomePlay(resolveDoorEnter("A", 2, "cit-2", hung));
+    assert.equal(enter.kind, "biome");
+    if (enter.kind !== "biome") return;
+    const chrome = hungPlayChrome(enter.hall, enter.door);
+    assert.equal(enter.hall, 2);
+    assert.deepEqual(chrome, { keeper: "Room 2 • Door A", name: "Play Sprint" });
+    assert.ok(!enter.clips.some((u) => u.includes("citadel") || u.includes("/ui/forge.mp4") || u.includes("/ui/citadel")));
+    assert.ok(!enter.still.includes("citadel-tour"));
+    const here = dirname(fileURLToPath(import.meta.url));
+    const arts = readFileSync(join(here, "./artifacts.ts"), "utf8");
+    assert.match(arts, /hungPlayChrome\(room\.hall \|\| 1, room\.door\)/);
+    assert.match(arts, /quietBiomeFilm/);
+    assert.match(arts, /isLivingHallLoop/);
+  });
+
+  it("biome hold is QTE-quiet — leftover door taps stay and never MISS", () => {
+    assert.equal(biomeQteQuiet("A"), true);
+    assert.equal(biomeQteQuiet("B"), true);
+    assert.equal(biomeQteQuiet(null), false);
+    assert.equal(biomeQteQuiet(undefined), false);
+    assert.equal(hallDoorTap(40000, 0, "A", "A"), "stay");
+    assert.equal(hallDoorTap(40000, 0, "B", "A"), "stay");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    assert.match(stage, /if \(biomeQteQuiet\(holdDoorRef\.current\)\) return \[\]/);
+    assert.match(stage, /if \(biomeQteQuiet\(holdDoorRef\.current\) \|\| hallPlateNow\(\)\)/);
+    assert.doesNotMatch(stage, /g\.beats = prepareBeats\(film, a\.duration/);
   });
 });
