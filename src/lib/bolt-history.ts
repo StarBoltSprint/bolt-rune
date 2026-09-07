@@ -69,29 +69,35 @@ function hrefFor(loc: BoltLoc): string {
   else if (loc.gate === "rifts") u.hash = "forge";
   else if (loc.gate === "world") u.hash = loc.biome ? `forge/world/${loc.biome}` : "forge/world";
   else if (loc.gate === "studio") u.hash = loc.biome ? `forge/studio/${loc.biome}` : "forge/studio";
+  else if (loc.gate === "cook") u.hash = loc.biome ? `forge/cook/${loc.biome}` : "forge/cook";
   else if (loc.gate) u.hash = `forge/${loc.gate}`;
   else u.hash = "forge";
   return `${u.pathname}${u.search}${u.hash}`;
 }
 
+export function parseBoltHash(h: string): BoltLoc | null {
+  const raw = String(h || "").replace(/^#/, "");
+  if (!raw) return { screen: "title" };
+  if (raw === "artifacts") return { screen: "title", page: 0 };
+  if (raw === "runes") return { screen: "title", page: 1 };
+  if (raw === "how") return { screen: "how" };
+  if (raw === "play") return { screen: "play" };
+  if (raw === "result") return { screen: "result" };
+  if (raw === "forge" || raw === "forge/0" || /^forge\/\d+$/.test(raw)) return { screen: "cook", gate: "rifts", page: 0 };
+  const world = /^forge\/world(?:\/([\w-]+))?$/.exec(raw);
+  if (world) return { screen: "cook", gate: "world", page: 0, biome: world[1] };
+  const studio = /^forge\/studio(?:\/([\w-]+))?$/.exec(raw);
+  if (studio) return { screen: "cook", gate: "studio", page: 0, biome: studio[1] };
+  const cook = /^forge\/cook(?:\/([\w-]+))?$/.exec(raw);
+  if (cook) return { screen: "cook", gate: "cook", page: 0, biome: cook[1] };
+  if (raw === "forge/howl") return { screen: "cook", gate: "howl", page: 0 };
+  if (raw === "forge/rune") return { screen: "cook", gate: "rune", page: 1 };
+  return null;
+}
+
 export function locFromHash(): BoltLoc | null {
   if (typeof window === "undefined") return null;
-  const h = window.location.hash.replace(/^#/, "");
-  if (!h) return { screen: "title" };
-  if (h === "artifacts") return { screen: "title", page: 0 };
-  if (h === "runes") return { screen: "title", page: 1 };
-  if (h === "how") return { screen: "how" };
-  if (h === "play") return { screen: "play" };
-  if (h === "result") return { screen: "result" };
-  if (h === "forge" || h === "forge/0" || /^forge\/\d+$/.test(h)) return { screen: "cook", gate: "rifts", page: 0 };
-  const world = /^forge\/world(?:\/([\w-]+))?$/.exec(h);
-  if (world) return { screen: "cook", gate: "world", page: 0, biome: world[1] };
-  const studio = /^forge\/studio(?:\/([\w-]+))?$/.exec(h);
-  if (studio) return { screen: "cook", gate: "studio", page: 0, biome: studio[1] };
-  if (h === "forge/howl") return { screen: "cook", gate: "howl", page: 0 };
-  if (h === "forge/rune") return { screen: "cook", gate: "rune", page: 1 };
-  if (h === "forge/cook") return { screen: "cook", gate: "cook", page: 0 };
-  return null;
+  return parseBoltHash(window.location.hash.replace(/^#/, ""));
 }
 
 export function sameBolt(a: BoltLoc | null, b: BoltLoc | null): boolean {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Flame, Mic, PenLine } from "lucide-react";
 import { ACTS, BIOMES, biomePlaylist, biomeSprintFilm, cookFilm, hasRuneFilm, readClipSpec, runeLoop, runeStill, stockBiomeFilm, worldOf, type BiomeId } from "@/game/cook";
 import { biomeBotStart } from "@/game/path-entry";
+import { clearCookReady, cookOverlayForging, readCookReady, resolveCookStudioMount, writeCookReady } from "@/game/cook-ready";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { ENGINE } from "@/game/laws";
 import { startCookPlate, pollCookPlate, cookStatus, startCookStill, freeRuneSlot } from "@/lib/cook";
@@ -49,21 +50,63 @@ function asBiome(id: string | undefined): BiomeId | null {
   return BIOMES.some((b) => b.id === id) ? (id as BiomeId) : null;
 }
 
-function bootCook(): { gate: Gate; shift: number; biome: BiomeId; picked: BiomeId | null } {
-  if (typeof window === "undefined") {
-    return { gate: "rifts", shift: 0, biome: "asteroid", picked: "asteroid" };
-  }
+function bootCook(): {
+  gate: Gate;
+  shift: number;
+  biome: BiomeId;
+  picked: BiomeId | null;
+  plates: Plate[];
+  watch: string | null;
+  pct: number;
+  frost: string;
+  ready: boolean;
+} {
+  const empty = {
+    gate: "rifts" as Gate,
+    shift: 0,
+    biome: "asteroid" as BiomeId,
+    picked: "asteroid" as BiomeId | null,
+    plates: emptyPlates(),
+    watch: null as string | null,
+    pct: 0,
+    frost: "",
+    ready: false,
+  };
+  if (typeof window === "undefined") return empty;
   const loc = locFromHash() ?? readBolt();
+  const snap = readCookReady();
+  const snapBiome = asBiome(snap?.biome);
   if (loc?.screen === "cook") {
-    const gate = (loc.gate as Gate) ?? "rifts";
-    const biome = asBiome(loc.biome) ?? "asteroid";
+    const rawGate = (loc.gate as Gate) ?? "rifts";
+    const mount = resolveCookStudioMount({ gate: rawGate, readyUrls: snap?.urls });
+    const biome = asBiome(loc.biome) ?? snapBiome ?? "asteroid";
     const i = RAIL.indexOf(biome);
     const shift = i > 0 ? i : 0;
+    const gate = mount.gate as Gate;
     const picked =
       gate === "world" || gate === "studio" || gate === "cook" || gate === "rifts" ? biome : null;
-    return { gate, shift, biome, picked };
+    const urls = snap?.urls || [];
+    const plates = emptyPlates();
+    if (mount.ready && urls[0]) plates[0] = { status: "ready", url: urls[0] };
+    const frost =
+      mount.ready
+        ? snap?.frost || "MP4 ready · touch the path to enter"
+        : gate === "rifts"
+          ? `${BIOMES.find((b) => b.id === (picked ?? biome))?.name ?? "rift"} fills the Forge. Touch it again to enter.`
+          : "";
+    return {
+      gate,
+      shift,
+      biome,
+      picked,
+      plates,
+      watch: mount.ready ? snap?.watch || urls[0] || null : null,
+      pct: mount.ready ? 100 : 0,
+      frost,
+      ready: mount.ready,
+    };
   }
-  return { gate: "rifts", shift: 0, biome: "asteroid", picked: "asteroid" };
+  return empty;
 }
 
 function emptyPlates(): Plate[] {
@@ -114,18 +157,19 @@ export function CookStudio({
   const [customStill, setCustomStill] = useState<string | null>(null);
   const customWorldRef = useRef(boot.gate === "howl" || boot.gate === "rune");
   const [frost, setFrost] = useState<string>(() => {
+    if (boot.frost) return boot.frost;
     if (boot.gate === "rifts") {
       const name = BIOMES.find((b) => b.id === (boot.picked ?? boot.biome))?.name ?? "rift";
       return `${name} fills the Forge. Touch it again to enter.`;
     }
     return "";
   });
-  const [pct, setPct] = useState(0);
+  const [pct, setPct] = useState(boot.pct);
   const [frameHint, setFrameHint] = useState("");
   const [howl, setHowl] = useState(false);
-  const [plates, setPlates] = useState<Plate[]>(emptyPlates());
+  const [plates, setPlates] = useState<Plate[]>(boot.plates);
   const [busy, setBusy] = useState(false);
-  const [watch, setWatch] = useState<string | null>(null);
+  const [watch, setWatch] = useState<string | null>(boot.watch);
   const watchI = useRef(-1);
   const lock = useRef(false);
   const platesRef = useRef(plates);
@@ -175,9 +219,16 @@ export function CookStudio({
     const onPop = () => {
       const loc = readBolt();
       if (!loc || loc.screen !== "cook") return;
-      const nextGate = (loc.gate as Gate) ?? "rifts";
-      const nextBiome = asBiome(loc.biome);
-      lock.current = nextGate === "cook";
+      const rawGate = (loc.gate as Gate) ?? "rifts";
+      const snap = readCookReady();
+      const liveUrls = [
+        ...(snap?.urls || []),
+        ...platesRef.current.map((p) => p.url).filter((u): u is string => Boolean(u)),
+      ];
+      const mount = resolveCookStudioMount({ gate: rawGate, readyUrls: liveUrls });
+      const nextGate = mount.gate as Gate;
+      const nextBiome = asBiome(loc.biome) ?? asBiome(snap?.biome);
+      lock.current = false;
       window.clearTimeout(autoCook.current);
       if (nextGate !== "howl") {
         try {
@@ -212,7 +263,16 @@ export function CookStudio({
         setWriteOn(false);
       }
       if (nextGate === "world" || nextGate === "studio") setFrost("");
-      else if (nextGate === "cook") setFrost("The path is lighting.");
+      else if (nextGate === "cook" && mount.ready) {
+        if (snap?.urls?.[0] && !platesRef.current.some((p) => p.status === "ready")) {
+          const next = emptyPlates();
+          next[0] = { status: "ready", url: snap.urls[0] };
+          setPlates(next);
+          setWatch(snap.watch || snap.urls[0]);
+        }
+        setPct(100);
+        setFrost(snap?.frost || "MP4 ready · touch the path to enter");
+      } else if (nextGate === "cook") setFrost("The path is lighting.");
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -547,6 +607,7 @@ export function CookStudio({
     }
     if (lock.current) return;
     lock.current = true;
+    clearCookReady();
     sfxForge("cook");
     window.clearTimeout(autoCook.current);
     stopHowl();
@@ -666,6 +727,13 @@ export function CookStudio({
             pace.n = 100;
             setPct(100);
             setFrost("MP4 ready · touch the path to enter");
+            writeCookReady({
+              biome: cookBiome,
+              urls: got,
+              watch: polled.url,
+              still: stillUrl || still,
+              frost: "MP4 ready · touch the path to enter",
+            });
             landed = true;
             break;
           }
@@ -1086,8 +1154,11 @@ export function CookStudio({
         </>
       )}
 
-      {gate === "cook" && (
-        <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center">
+      {gate === "cook" && cookOverlayForging({ busy, cookingIndex: cooking }) && (
+        <div
+          className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center"
+          data-biome-cook="forging"
+        >
           <p className="font-display text-[5.8rem] leading-none text-ice drop-shadow-[0_10px_28px_rgba(0,0,0,0.8)]">
             {pct}%
           </p>
@@ -1096,6 +1167,23 @@ export function CookStudio({
           </p>
           <div className="mt-6 h-[2px] w-40 overflow-hidden bg-white/15">
             <div className="h-full bg-ice" style={{ width: `${Math.max(2, pct)}%` }} />
+          </div>
+        </div>
+      )}
+      {gate === "cook" && !cookOverlayForging({ busy, cookingIndex: cooking }) && readyN > 0 && (
+        <div
+          className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center"
+          data-biome-cook="ready"
+          data-cook-ready={readyN}
+        >
+          <p className="font-display text-[5.8rem] leading-none text-ice drop-shadow-[0_10px_28px_rgba(0,0,0,0.8)]">
+            100%
+          </p>
+          <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.28em] text-ice/80">
+            {frost || "MP4 ready · touch the path to enter"}
+          </p>
+          <div className="mt-6 h-[2px] w-40 overflow-hidden bg-white/15">
+            <div className="h-full bg-ice" style={{ width: "100%" }} />
           </div>
         </div>
       )}

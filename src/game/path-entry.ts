@@ -53,17 +53,49 @@ export function shouldAutoStartBotForge(input: {
 }
 
 const lookForgeAutoClaimed = new Set<string>();
+const LOOK_FORGE_AUTO_KEY = "bolt-look-forge-auto-v1";
 
-/** Once per page load (and per test key). Prevents auto-start loops / Strict remounts. */
+function autoBag(): string[] {
+  try {
+    if (typeof sessionStorage === "undefined") return [...lookForgeAutoClaimed];
+    const raw = sessionStorage.getItem(LOOK_FORGE_AUTO_KEY) || "";
+    return [...new Set([...lookForgeAutoClaimed, ...raw.split("\n").filter(Boolean)])];
+  } catch {
+    return [...lookForgeAutoClaimed];
+  }
+}
+
+function writeAutoBag(keys: string[]) {
+  lookForgeAutoClaimed.clear();
+  for (const k of keys) lookForgeAutoClaimed.add(k);
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      if (keys.length) sessionStorage.setItem(LOOK_FORGE_AUTO_KEY, keys.join("\n"));
+      else sessionStorage.removeItem(LOOK_FORGE_AUTO_KEY);
+    }
+  } catch {
+    /* */
+  }
+}
+
+/** Once per page load (and per test key). Survives SPA remounts in this tab. */
 export function claimLookForgeAuto(key = "load"): boolean {
-  if (lookForgeAutoClaimed.has(key)) return false;
-  lookForgeAutoClaimed.add(key);
+  const bag = autoBag();
+  if (bag.includes(key)) {
+    lookForgeAutoClaimed.add(key);
+    return false;
+  }
+  writeAutoBag([...bag, key]);
   return true;
 }
 
 export function resetLookForgeAuto(key?: string) {
-  if (key) lookForgeAutoClaimed.delete(key);
-  else lookForgeAutoClaimed.clear();
+  if (!key) {
+    lookForgeAutoClaimed.clear();
+    writeAutoBag([]);
+    return;
+  }
+  writeAutoBag(autoBag().filter((k) => k !== key));
 }
 
 export type BoltForgeHook = {
