@@ -37,6 +37,57 @@ export function isHallPlayStill(u?: string | null): boolean {
   return s.startsWith("/films/") || s.startsWith("http") || s.startsWith("blob:");
 }
 
+/** stockRoomBank idle/walk — HALL_LOOP + HALL_STILL, not an arrival last-frame. */
+export function isStockHallClip(clip?: { url?: string | null; end?: string | null } | null): boolean {
+  if (!clip?.url) return false;
+  return isHallFilm(clip.url) && (!clip.end || isHallFilm(clip.end));
+}
+
+/**
+ * After grabRuneFrame / shotEnd, keep `landed`.
+ * Stock idle-m1/m2 must not overwrite latest / pose / still with HALL_STILL.
+ */
+export function arrivalEndStill(
+  landed?: string | null,
+  home?: { url?: string | null; end?: string | null } | null,
+): string {
+  const end = (landed || "").trim();
+  if (!end) return (home?.end || "").trim();
+  if (!home?.url || isStockHallClip(home)) return end;
+  if (isHallFilm(home.end) || isBoltSilhouette(home.end)) return end;
+  return (home.end || end).trim();
+}
+
+/**
+ * First real last-frame still that may seed Imagine / @ref for the next A↔B walk.
+ * Stock hall stills and Bolt silhouettes are not seeds.
+ */
+export function walkLastFrameSeed(...candidates: (string | null | undefined)[]): string {
+  for (const u of candidates) {
+    const s = (u || "").trim();
+    if (!s || isBoltSilhouette(s) || isHallFilm(s)) continue;
+    if (s.startsWith("data:") || s.startsWith("blob:") || s.startsWith("http") || s.startsWith("/films/") || s.startsWith("/api/")) {
+      return s;
+    }
+  }
+  return "";
+}
+
+/**
+ * Reuse a bank walk only when it already continues this last-frame seed.
+ * Stock HALL_LOOP cannot start from an arrival still — next walk must Imagine from the seed.
+ */
+export function walkClipHoldsSeed(
+  clip?: { url?: string | null; end?: string | null } | null,
+  seed?: string | null,
+): boolean {
+  if (!clip?.url) return false;
+  const next = walkLastFrameSeed(seed);
+  if (!next) return true;
+  if (isStockHallClip(clip)) return false;
+  return true;
+}
+
 /** Sealed pack identity labels only. Face labels pack to the rear body — never bolt-face.jpg. */
 export function packIdentityStill(label: string): string | null {
   const n = label.toLowerCase().trim();

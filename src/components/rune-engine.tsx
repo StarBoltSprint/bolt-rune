@@ -115,15 +115,19 @@ import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
 import { playableClipSrc } from "@/game/play-clip";
 import {
+  arrivalEndStill,
   cookHasWalks,
   hallStillOf,
   isBoltSilhouette,
   isHallPlayStill,
+  isStockHallClip,
   livingPlayFrame,
   packIdentityStill,
   playCoverStill,
   playStillOrHall,
   seedMayBankIdle,
+  walkClipHoldsSeed,
+  walkLastFrameSeed,
   type LivingPlayFrame,
   type PlayFrameKind,
 } from "@/game/play-frame";
@@ -1710,10 +1714,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function breathStill(node: string, via?: string) {
     const from = via || cameFrom.current;
-    const end = (c?: { url: string; end: string } | null) => idleTrusted(c)?.end || "";
+    const end = (c?: { url: string; end: string } | null) => walkLastFrameSeed(c?.end || "");
     return (
       (from ? end(bank.current.get(`idle-${node}←${from}`)) : "") ||
       end(bank.current.get(`idle-${node}`)) ||
+      walkLastFrameSeed(refsMap.current.get(`pose-${node}`), lastLanded(node)) ||
       ""
     );
   }
@@ -2128,11 +2133,20 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (hereRef.current === "spawn" && frame.still && !isBoltSilhouette(frame.still)) {
       lockHall(frame.still);
     }
-    if (idle?.url) {
+    const breathUrl =
+      idle?.url ||
+      (hereRef.current !== "spawn"
+        ? bank.current.get(`idle-${hereRef.current}`)?.url || bank.current.get("idle-spawn")?.url || ""
+        : "") ||
+      "";
+    /* Arrival breath must loop (kickPlay / filmLoop). Frozen end-of-walk still is FAIL. */
+    if (breathUrl) {
+      if (isHallFilm(breathUrl) && hereRef.current !== "spawn") stockSprite.current = true;
+      setPose(null);
       filmLoop.current = true;
       setLoopOn(true);
       setPlayFrameKind("breath");
-      kickPlay(idle.url, true, true);
+      kickPlay(breathUrl, true, true);
       return;
     }
     if (hereRef.current === "spawn" && frame.url && frame.playFrame === "breath") {
@@ -2205,15 +2219,22 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       return;
     }
     walkingTo.current = id;
+    const seed = walkLastFrameSeed(
+      breathStill(at),
+      startFromPrev(at),
+      refsMap.current.get(`pose-${at}`),
+      lastLive.current,
+      lastPose.current,
+    );
     let clip = clipFor(at, id);
-    if (!clip) {
+    if (!clip || !walkClipHoldsSeed(clip, seed)) {
       const stock = stockDoorWalk(at, id);
-      if (stock) {
-        clip = stock;
+      if (stock && !seed) {
+        clip = clip || stock;
         bank.current.set(`${at}→${id}`, stock);
       } else {
         setFrost(`cook · ${at} → ${id}`);
-        clip = await forgeWalkNow(at, id);
+        clip = (await forgeWalkNow(at, id)) || clip;
       }
     }
     if (!clip) {
@@ -2254,7 +2275,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       await Promise.race([
         sameLoop
           ? replayWalk(clip.url, wait)
-          : playFilm(clip.url, wait, lastLive.current || plateRef.current, clip.end, true, breathUrl),
+          : playFilm(clip.url, wait, seed || lastLive.current || plateRef.current, clip.end, true, breathUrl),
         sleep(wait),
       ]);
     }
@@ -2262,18 +2283,45 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if (walkingTo.current === id) walkingTo.current = "";
       return;
     }
-    setPose(null);
     setHere(id);
     hereRef.current = id;
     cameFrom.current = at;
     bolt.current = { x: to.x, y: to.y };
     walkFace.current = standFace(id);
+    const stampDoorEnd = (end: string) => {
+      const keep = walkLastFrameSeed(end, lastPose.current, refsMap.current.get(`pose-${id}`)) || end;
+      if (!keep) return;
+      bank.current.set(`${at}→${id}`, { url: clip.url, end: keep });
+      const via = at === "spawn" ? "start" : at;
+      bank.current.set(`${at}←${via}→${id}`, { url: clip.url, end: keep });
+      refsMap.current.set(`pose-${id}`, keep);
+      if (walkLastFrameSeed(keep)) {
+        lastLive.current = keep;
+        lastPose.current = keep;
+      }
+      const idleHave = bank.current.get(`idle-${id}`);
+      if (idleHave?.url) {
+        bank.current.set(`idle-${id}←${at}`, { url: idleHave.url, end: walkLastFrameSeed(keep, idleHave.end) || idleHave.end });
+        if (isStockHallClip(idleHave) && walkLastFrameSeed(keep)) {
+          bank.current.set(`idle-${id}`, { url: idleHave.url, end: keep });
+        }
+      }
+    };
+    stampDoorEnd(clip.end || lastLive.current || plateRef.current || "");
+    /* Do not await shotEnd here — that freezes the last walk frame. Loop breath first. */
+    if (!isHallFilm(clip.url)) {
+      void shotEnd(clip.url, clip.end || lastLive.current || plateRef.current || "").then((landed) => {
+        if (hereRef.current !== id) return;
+        stampDoorEnd(landed);
+      });
+    }
+    setPose(null);
     setLit(null);
     playing.current = false;
     idleArmed.current = true;
     walkingTo.current = "";
     markLivePlay(sid.current, id, hallKeep.current || undefined);
-    persist({ phase: "play", here: id, cameFrom: at, plate: plateRef.current });
+    persist({ phase: "play", here: id, cameFrom: at, plate: walkLastFrameSeed(lastLive.current, plateRef.current) || plateRef.current });
     const next = queued.current;
     queued.current = null;
     if (id === "m1" || id === "m2") {
@@ -2820,7 +2868,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setLoadPct(8);
     setFrost(`cook · ${from} → ${to}`);
     sfxForge("cook");
-    const fromStill = breathStill(from) || startFromPrev(from) || nodeStill(from) || hallKeep.current || startHold.current;
+    const fromStill =
+      walkLastFrameSeed(breathStill(from), startFromPrev(from), nodeStill(from), lastLive.current, lastPose.current) ||
+      breathStill(from) ||
+      startFromPrev(from) ||
+      nodeStill(from) ||
+      hallKeep.current ||
+      startHold.current;
     if (!fromStill) {
       liveForge.current = false;
       setBeat("idle");
@@ -3577,7 +3631,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   async function cookIdleAt(node: string, still: string, fromFilm?: string, via?: string) {
     const key = via ? `idle-${node}←${via}` : `idle-${node}`;
     if (!liveForge.current) return still;
-    if (bank.current.has(key)) return bank.current.get(key)?.end || still;
+    const have = bank.current.get(key);
+    if (have && !isStockHallClip(have)) return have.end || still;
     setNowClip({ kind: "idle", id: key, node, camera: "lock", morph: false });
     setBeat("cook");
     beatRef.current = "cook";
@@ -3591,7 +3646,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     let url: string | null = null;
     let fromExtend = false;
     // Never extend a walk. Imagine keeps walking back to spawn.
-    if (idleUrl && (!fromFilm || fromFilm === idleUrl)) {
+    // Never extend stock hall loop (spawn breath) — cook from the arrival last frame.
+    if (idleUrl && !isHallFilm(idleUrl) && (!fromFilm || fromFilm === idleUrl)) {
       setFrost(`breath continues · ${node}`);
       url = await cookExtend(idleUrl, breathPrompt(extra), `breath ${node}`);
       fromExtend = Boolean(url);
@@ -3760,11 +3816,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       const from = g.nodes.find((n) => n.id === clip.from) ?? SPAWN;
       const to = g.nodes.find((n) => n.id === clip.to) ?? SPAWN;
       const fromStill =
-        breathStill(clip.from, clip.via === "start" ? undefined : clip.via) ||
-        pose.get(`${clip.from}←${clip.via}`) ||
+        walkLastFrameSeed(
+          latest.get(clip.from),
+          pose.get(`${clip.from}←${clip.via}`),
+          breathStill(clip.from, clip.via === "start" ? undefined : clip.via),
+          still,
+        ) ||
         latest.get(clip.from) ||
+        pose.get(`${clip.from}←${clip.via}`) ||
         still;
-      const home = breathStill(clip.to) || bank.current.get(`idle-${clip.to}`)?.end || "";
+      const homeClip = bank.current.get(`idle-${clip.to}`);
+      const home = walkLastFrameSeed(breathStill(clip.to), homeClip?.end);
       const kit = home && home !== fromStill ? [home] : [];
       setFrost(`video ${i + 1}/${walks.length} · ${clip.from} → ${clip.to}`);
       sfxForge("cook");
@@ -3856,9 +3918,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setFrost("shot · last frame");
       sfxForge("enter");
       await sleep(SHOT_MS);
-      const hadHome = Boolean(bank.current.get(`idle-${clip.to}`)?.url);
+      const hadHome = Boolean(homeClip?.url) && !isStockHallClip(homeClip);
       if (hadHome) {
-        const homeEnd = home || bank.current.get(`idle-${clip.to}`)?.end || landed;
+        const homeEnd = arrivalEndStill(landed, homeClip);
         latest.set(clip.to, homeEnd);
         pose.set(`${clip.to}←${clip.from}`, homeEnd);
         still = homeEnd;
