@@ -99,8 +99,8 @@ import {
 } from "@/game/rune-session";
 import { BootScreen } from "@/components/citadel-hub";
 import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
-import { sheetConfirmHall, swallowOpeningTap } from "@/game/hang-ask";
-import { confirmHangHall, defaultHangRoom, hallN, listHangRooms, liveSlice, livingHangHall, putSlice, seedHalls, type HangRoomPick } from "@/game/rooms";
+import { hangBindHall, swallowOpeningTap } from "@/game/hang-ask";
+import { defaultHangRoom, hallN, listHangRooms, liveSlice, livingHangHall, putSlice, seedHalls, type HangRoomPick } from "@/game/rooms";
 import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
 import { playableClipSrc } from "@/game/play-clip";
@@ -2431,36 +2431,49 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   async function goHungHall(n: number, idle = true) {
     if (n < 1 || n > 8) return;
-    if (n === hallHold.current && phaseRef.current === "play") {
-      setLiveHall(n);
+    const bind = hangBindHall(n);
+    if (!bind) return;
+    if (bind === hallHold.current && phaseRef.current === "play" && (bank.current.size || hallsHold.current.find((h) => h.n === bind)?.bank?.length)) {
+      setLiveHall(bind);
+      hangRoomRef.current = bind;
+      setHangRoomN(bind);
       return;
     }
     rememberSlice(snapHall());
-    /* Index in hallsHold is not hall N — Room 3 is n=3, not hallsHold[2].n
-       when that slot still holds last-hung 8. */
-    let slice = hallsHold.current.find((h) => h.n === n) || hallsHold.current[n - 1];
-    if (slice && slice.n !== n) slice = { ...slice, n };
-    if (!slice || !(slice.bank || []).length) {
+    /* Hall N is h.n === N — never hallsHold[n-1] (last-hung 8 at index 2). */
+    let slice = hallsHold.current.find((h) => h.n === bind);
+    const live = hallsHold.current.find((h) => h.n === hallHold.current);
+    if (!slice) {
       const first = pathFirst.current || "m1";
-      const still = slice?.still || plateRef.current || startHold.current || HALL_STILL;
+      const walks = (live?.bank || []).length ? live!.bank : stockRoomBank(first).map((b) => ({ key: b.key, url: b.url, end: b.end }));
+      const still = live?.still || live?.plate || plateRef.current || startHold.current || HALL_STILL;
       slice = {
-        n,
+        n: bind,
         still,
         start: still,
         plate: still,
-        bank: stockRoomBank(first).map((b) => ({ key: b.key, url: b.url, end: b.end })),
-        refs: slice?.refs || refsHold.current,
-        pins: slice?.pins || pinsRef.current,
-        via: slice?.via,
-        rift: slice?.rift,
+        bank: walks.map((b) => ({ ...b })),
+        refs: live?.refs || refsHold.current,
+        pins: live?.pins || pinsRef.current,
+        via: live?.via,
       };
-      hallsHold.current = putSlice(hallsHold.current, slice);
     }
-    applyHall({ ...slice, n }, false);
-    setLiveHall(n);
-    roomsHold.current = Math.max(roomsHold.current, n, hallsHold.current.length);
+    if (!(slice.bank || []).length) {
+      const first = pathFirst.current || "m1";
+      slice = {
+        ...slice,
+        n: bind,
+        bank: stockRoomBank(first).map((b) => ({ key: b.key, url: b.url, end: b.end })),
+      };
+    }
+    hallsHold.current = putSlice(hallsHold.current, { ...slice, n: bind });
+    applyHall({ ...slice, n: bind }, false);
+    hangRoomRef.current = bind;
+    setHangRoomN(bind);
+    setLiveHall(bind);
+    roomsHold.current = Math.max(roomsHold.current, bind, hallsHold.current.length);
     persist({
-      hall: n,
+      hall: bind,
       rooms: roomsHold.current,
       halls: hallsHold.current,
       plate: plateRef.current,
@@ -4596,7 +4609,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function attachRift(door: "m1" | "m2", gate: RiftGate, hallWant?: number) {
-    const bindHall = sheetConfirmHall(hallWant, hangRoomRef.current) || Math.max(1, Math.min(8, hallN(hallWant) || hangRoomRef.current || hallHold.current || 1));
+    const bindHall = hangBindHall(hallWant);
+    if (!bindHall) return;
     hangRoomRef.current = bindHall;
     setHangRoomN(bindHall);
     const hereHall = bindHall === hallHold.current;
@@ -4608,6 +4622,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       delete rooms[door];
       nextHold.current = rooms;
     }
+    const here = hallsHold.current.find((h) => h.n === bindHall);
+    if (here) hallsHold.current = putSlice(hallsHold.current, { ...here, n: bindHall, rift: next });
     persist({
       phase: "play",
       rift: next,
@@ -4617,7 +4633,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       next: Object.keys(nextHold.current).length ? nextHold.current : undefined,
     });
     try {
-      const film = riftFilm(gate.name, gate.still, (gate.playlist?.length ? gate.playlist : [gate.loop]).filter(Boolean));
+      const film = riftFilm(gate.name, gate.still, (gate.playlist?.length ? gate.playlist : [gate.loop]).filter(Boolean), bindHall, door === "m2" ? "B" : "A");
       let from = hungArts.length ? hungArts : readArtifacts();
       let artId = gate.art;
       if (!artId) {
@@ -4664,12 +4680,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     phaseRef.current = "play";
     if (hereHall && hereRef.current === door) setEnterAsk(door);
     const letter = door === "m2" ? "B" : "A";
+    const chrome = hungPlayChrome(bindHall, letter);
     setFrost(
       hereHall
         ? gate.trans
-          ? `${gate.name} · room ${bindHall} · door ${letter} opens`
-          : `${gate.name} · room ${bindHall} · door ${letter} · tap to enter`
-        : `${gate.name} · hung on room ${bindHall} door ${letter}`,
+          ? `${chrome.keeper} · opens`
+          : `${chrome.keeper} · tap to enter`
+        : `${chrome.keeper} · hung`,
     );
     sfxForge("enter");
     if (!sprintHold.current) holdIdle();
@@ -4736,26 +4753,31 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function beginRift(door: "m1" | "m2", gate: RiftGate, hall?: number) {
-    const rooms = liveHangRooms.length ? liveHangRooms : livingHangRooms();
-    const bindHall = sheetConfirmHall(hall, hangRoomRef.current) || confirmHangHall(rooms, hall ?? hangRoomRef.current);
+    const bindHall = hangBindHall(hall);
+    if (!bindHall) return;
     hangRoomRef.current = bindHall;
     setHangRoomN(bindHall);
     setLiveHall(bindHall);
     setRiftPick(null);
     setHangAsk(null);
     riftCookTok.current += 1;
+    /* Write the artefact bind first so applyHall / hydrateRift see hall N. */
+    attachRift(door, gate, bindHall);
     void goHungHall(bindHall, true).then(() => {
       if (hallHold.current !== bindHall) return goHungHall(bindHall, false);
     }).then(() => {
       attachRift(door, gate, bindHall);
-      setFrost(`${gate.name} · hung on room ${bindHall} ${door === "m2" ? "B" : "A"}`);
+      const letter = door === "m2" ? "B" : "A";
+      const chrome = hungPlayChrome(bindHall, letter);
+      setFrost(`${chrome.keeper} · ${gate.name}`);
     });
     void cookRiftTrans(door, gate, riftCookTok.current).then((url) => {
       if (!url) return;
       const live = riftRef.current[door];
       if (!live) return;
       attachRift(door, { ...live, trans: url }, bindHall);
-      setFrost(`${gate.name} · door opens from room ${bindHall}`);
+      const letter = door === "m2" ? "B" : "A";
+      setFrost(`${hungPlayChrome(bindHall, letter).keeper} · door opens`);
     });
   }
 
@@ -5762,6 +5784,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function askLiveHang(a: HungArtifact, door: "A" | "B") {
+    if (hangAsk) return;
     swallowOpeningTap();
     const rooms = livingHangRooms();
     setLiveHangRooms(rooms);
@@ -5799,6 +5822,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           original={false}
           custom={sprint.film}
           ramp={false}
+          holdHall={sprint.hall}
           holdDoor={sprint.door === "m2" ? "B" : "A"}
           onHallDoor={() => {
             /* hung enter stays on biome — Leave exits */
@@ -6098,8 +6122,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         onClose={() => setHangAsk(null)}
         onConfirm={(hall) => {
           const door = hangAsk.door === "B" ? "m2" : "m1";
-          const rooms = liveHangRooms.length ? liveHangRooms : livingHangRooms();
-          beginRift(door, gateFromHung(hangAsk.a), sheetConfirmHall(hall, hangRoomRef.current) || confirmHangHall(rooms, hall));
+          beginRift(door, gateFromHung(hangAsk.a), hangBindHall(hall));
           setHangAsk(null);
         }}
       />
@@ -6473,16 +6496,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     room: refsMap.current.get("room"),
   });
   const hungDoor = rift.m1 ? "A" : rift.m2 ? "B" : null;
+  const boundArt = [...hungArts]
+    .filter((a) => a.room?.door === hungDoor && hangBindHall(a.room?.hall))
+    .sort((p, q) => (q.hungAt || 0) - (p.hungAt || 0))[0];
   const chromeHall =
-    hallN(hangRoomN) ||
-    hallN(liveHall) ||
-    hallN(
-      [...hungArts]
-        .filter((a) => a.room?.door === hungDoor && hallN(a.room?.hall))
-        .sort((p, q) => (q.hungAt || 0) - (p.hungAt || 0))[0]?.room?.hall,
-    ) ||
-    1;
-  const livingChrome = hungDoor ? hungPlayChrome(chromeHall, hungDoor) : null;
+    hangBindHall(boundArt?.room?.hall) || hangBindHall(hangRoomN) || hangBindHall(liveHall) || 1;
+  const chromeDoor = doorLetterOf(boundArt?.room?.door || hungDoor || "A");
+  const livingChrome = hungDoor ? hungPlayChrome(chromeHall, chromeDoor) : null;
 
   return (
     <div
@@ -6736,7 +6756,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         <p
           className="pointer-events-none absolute left-4 right-4 top-[max(0.75rem,env(safe-area-inset-top))] z-[70] text-center font-mono text-[11px] uppercase tracking-[0.22em] text-white/70"
           data-living-hall={chromeHall}
-          data-living-door={rift.m1 ? "A" : "B"}
+          data-living-door={chromeDoor}
         >
           {livingChrome ? `${livingChrome.keeper} ${livingChrome.name}` : ""}
         </p>

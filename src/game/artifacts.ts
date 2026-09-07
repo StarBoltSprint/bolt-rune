@@ -58,12 +58,13 @@ export function mergeHall(hall: HungArtifact[], local: HungArtifact[]): HungArti
     const pN = uniqueClips(prev.playlist || []).length;
     const newer = (a.hungAt || 0) >= (prev.hungAt || 0);
     const keep = aN > pN || (aN === pN && newer) ? a : prev;
+    const room = newer ? (a.room !== undefined ? a.room : prev.room) : prev.room !== undefined ? prev.room : a.room;
     byId.set(a.id, {
       ...keep,
       playlist: uniqueClips([...(prev.playlist || []), ...(a.playlist || [])]),
       still: keep.still || prev.still || a.still,
       grade: a.grade || prev.grade,
-      room: a.room || prev.room || keep.room,
+      room,
     });
   }
   return [...byId.values()].sort((a, b) => (b.hungAt || 0) - (a.hungAt || 0)).slice(0, 24);
@@ -97,12 +98,16 @@ export function filmOf(a: HungArtifact, all?: HungArtifact[]): Film {
   const name = a.name || other?.name || "Artifact";
   const prompt = a.prompt || other?.prompt;
   if (room?.door) {
-    const chrome = hungPlayChrome(room.hall || 1, room.door);
-    return quietBiomeFilm({
-      ...biomeSprintFilm(chrome.name, still || clips[0] || "", clips, prompt || name),
-      name: chrome.name,
-      keeper: chrome.keeper,
-    });
+    const hall = Number(room.hall);
+    if (hall >= 1 && hall <= 8) {
+      const chrome = hungPlayChrome(hall, room.door);
+      return quietBiomeFilm({
+        ...biomeSprintFilm(chrome.name, still || clips[0] || "", clips, prompt || name),
+        name: chrome.name,
+        keeper: chrome.keeper,
+        line: name !== chrome.name ? name : chrome.name,
+      });
+    }
   }
   return cookFilm(name, still, clips.length ? clips : raw, prompt);
 }

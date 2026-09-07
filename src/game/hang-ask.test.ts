@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, hangCardHall, hangStripCards, hangStripPick, sheetConfirmHall, swallowOpeningTap } from "./hang-ask.ts";
+import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, hangBindHall, hangCardHall, hangStripCards, hangStripPick, sheetConfirmHall, swallowOpeningTap } from "./hang-ask.ts";
 
 function clickOn(target: { closest?: (sel: string) => unknown; getAttribute: (k: string) => string | null }) {
   const e = new Event("click", { bubbles: true, cancelable: true });
@@ -125,6 +125,10 @@ describe("hang ask leftover tap", () => {
     assert.equal(sheetConfirmHall("3", 8), 3);
     assert.notEqual(sheetConfirmHall(3, 8), 8);
     assert.equal(sheetConfirmHall(undefined, 8), 8);
+    assert.equal(hangBindHall(3), 3);
+    assert.equal(hangBindHall("7"), 7);
+    assert.equal(hangBindHall(undefined), 0);
+    assert.notEqual(hangBindHall(undefined), 8);
   });
 
   it("strip card index is not hall N — tap index 2 binds Room 3, not 8", () => {
@@ -160,7 +164,7 @@ describe("hang ask leftover tap", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
     assert.match(src, /onConfirm: \(hall: number\) => void/);
-    assert.match(src, /onConfirm\(sheetConfirmHall\(pickedRef\.current, hall\)\)/);
+    assert.match(src, /onConfirm\(hangBindHall\(picked\) \|\| hangBindHall\(pickedRef\.current\)\)/);
     assert.match(src, /const \[picked, setPicked\]/);
     assert.match(src, /choseRef\.current/);
     assert.match(src, /if \(choseRef\.current\) return/);
@@ -173,17 +177,16 @@ describe("hang ask leftover tap", () => {
     assert.doesNotMatch(src, /pickedRef\.current = picked;/);
     const vault = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
     assert.match(vault, /onConfirm=\{\(hall\) => \{/);
-    assert.match(vault, /hangDoor\(hangAsk\.a, hangAsk\.door, undefined, hall\)/);
-    assert.match(vault, /sheetConfirmHall\(hallWant, hangHallRef\.current\)/);
-    assert.match(vault, /confirmHangHall\(rooms, hallWant/);
-    assert.match(vault, /const bindHall = hall/);
+    assert.match(vault, /hangDoor\(hangAsk\.a, hangAsk\.door, undefined, hangBindHall\(hall\)\)/);
+    assert.match(vault, /hangBindHall\(hallWant\)/);
+    assert.match(vault, /const bindHall = hangBindHall\(hallWant\)/);
     assert.doesNotMatch(vault, /const bindHall = pick\?\.bindHall \|\| hall/);
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     assert.match(engine, /onConfirm=\{\(hall\) => \{/);
-    assert.match(engine, /beginRift\(door, gateFromHung\(hangAsk\.a\), sheetConfirmHall\(hall, hangRoomRef\.current\) \|\| confirmHangHall\(rooms, hall\)\)/);
+    assert.match(engine, /beginRift\(door, gateFromHung\(hangAsk\.a\), hangBindHall\(hall\)\)/);
     assert.match(engine, /pickHangHall/);
     assert.match(engine, /livingHangHall/);
-    assert.match(engine, /confirmHangHall/);
+    assert.match(engine, /hangBindHall/);
     assert.match(engine, /listHangRooms\(/);
     assert.match(engine, /liveHangRooms/);
     assert.match(engine, /const \[liveHall, setLiveHall\]/);
@@ -195,9 +198,8 @@ describe("hang ask leftover tap", () => {
     assert.match(engine, /data-living-hall=/);
     assert.match(engine, /riftFilm\(stay\.name, stay\.still, stay\.clips, hall, letter\)/);
     assert.match(engine, /setLiveHall\(bindHall\)/);
-    assert.match(engine, /confirmHangHall\(rooms, hall \?\? hangRoomRef\.current\)/);
     assert.match(engine, /chromeHall/);
-    assert.match(vault, /Room \$\{roomN\} • Door \$\{hungOn\} Play Sprint/);
+    assert.match(vault, /vaultHangCaption\(head\.room\)/);
     assert.match(vault, /holdDoor=\{live\.room\?\.door === "B" \? "B"/);
   });
 
@@ -205,26 +207,27 @@ describe("hang ask leftover tap", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
     assert.match(src, /do not overwrite a tapped Room N/);
-    assert.match(src, /onConfirm\(sheetConfirmHall\(pickedRef\.current, hall\)\)/);
+    assert.match(src, /onConfirm\(hangBindHall\(picked\) \|\| hangBindHall\(pickedRef\.current\)\)/);
     assert.match(src, /hangCardHall/);
     assert.match(src, /onPointerDown/);
     const vault = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
     const hangDoor = vault.slice(vault.indexOf("function hangDoor"), vault.indexOf("function botHang"));
-    assert.match(hangDoor, /sheetConfirmHall\(hallWant, hangHallRef\.current\)/);
-    assert.match(hangDoor, /confirmHangHall\(rooms, hallWant/);
+    assert.match(hangDoor, /hangBindHall\(hallWant\)/);
     assert.doesNotMatch(hangDoor, /resolveHangRoom\(rooms, hallWant/);
-    assert.match(hangDoor, /const bindHall = hall;/);
+    assert.match(hangDoor, /const bindHall = hangBindHall\(hallWant\)/);
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
-    assert.match(engine, /sheetConfirmHall\(hall/);
-    assert.match(engine, /confirmHangHall\(rooms, hall\)/);
+    assert.match(engine, /hangBindHall\(hall\)/);
     assert.match(engine, /goHungHall\(bindHall/);
-    assert.match(engine, /hallsHold\.current\.find\(\(h\) => h\.n === n\)/);
-    assert.match(engine, /applyHall\(\{ \.\.\.slice, n \}, false\)/);
+    const goHung = engine.slice(engine.indexOf("async function goHungHall"), engine.indexOf("function destHall"));
+    assert.match(goHung, /hallsHold\.current\.find\(\(h\) => h\.n === bind\)/);
+    assert.doesNotMatch(goHung, /hallsHold\.current\[n - 1\]/);
+    assert.match(engine, /applyHall\(\{ \.\.\.slice, n: bind \}, false\)/);
     assert.match(engine, /attachRift\(door, gate, bindHall\)/);
     assert.match(engine, /hungPlayChrome\(chromeHall/);
     assert.match(engine, /if \(hangAsk\) return/);
     const swallow = readFileSync(join(here, "./hang-ask.ts"), "utf8");
     assert.match(swallow, /hitsHangPick/);
+    assert.match(swallow, /hitsHangOpen/);
     assert.match(swallow, /if \(hitsHangPick\(e\)\) return/);
   });
 });

@@ -454,9 +454,15 @@ export function riftFilm(
   door?: "A" | "B" | "m1" | "m2",
 ): Film {
   const film = biomeSprintFilm(name, still, urls, name);
-  if (!hall) return film;
-  const chrome = hungPlayChrome(hall, door);
-  return quietBiomeFilm({ ...film, name: chrome.name, keeper: chrome.keeper, line: name || chrome.name });
+  const n = typeof hall === "number" && hall >= 1 && hall <= 8 ? Math.round(hall) : 0;
+  if (!n) return film;
+  const chrome = hungPlayChrome(n, door || "A");
+  return quietBiomeFilm({
+    ...film,
+    name: chrome.name,
+    keeper: chrome.keeper,
+    line: name && name !== chrome.name ? name : chrome.name,
+  });
 }
 
 export function cookFilm(name: string, still: string, urls: string[], prompt?: string): Film {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { vaultHangRoom } from "@/game/path-entry";
-import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, hangCardHall, hangStripCards, hangStripPick, sheetConfirmHall, swallowOpeningTap } from "@/game/hang-ask";
+import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, hangBindHall, hangCardHall, hangStripCards, hangStripPick, swallowOpeningTap } from "@/game/hang-ask";
 import { type HangRoomPick } from "@/game/rooms";
 import { press } from "@/lib/press";
 
@@ -153,7 +153,7 @@ export function HangAskSheet({
           {...vaultHangRoom(picked)}
           className="mt-6 rounded-2xl border border-[#9ef0e4]/50 px-4 py-3 font-display text-2xl text-[#9ef0e4]"
           style={{ touchAction: "manipulation" }}
-          {...press(() => onConfirm(sheetConfirmHall(pickedRef.current, hall)))}
+          {...press(() => onConfirm(hangBindHall(picked) || hangBindHall(pickedRef.current)))}
         >
           Hang {door} · room {picked}
         </button>

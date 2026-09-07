@@ -320,14 +320,24 @@ export function biomeQteQuiet(holdDoor?: string | null): boolean {
   return Boolean(holdDoor);
 }
 
-/** Living-hall / FilmStage overlay after Hang Room N — never stuck on Room 1. */
+/** Living-hall / FilmStage overlay after Hang Room N — never stuck on Room 1. Door letter is never blank. */
 export function hungPlayChrome(hall?: number | string | null, door?: string | null): { keeper: string; name: string } {
-  const n = Math.max(1, Math.min(8, Math.round(Number(hall) || 1)));
-  const letter = door === "B" || door === "m2" || door === "b" ? "B" : "A";
+  const raw = typeof hall === "number" ? hall : Number(hall);
+  const n = Number.isFinite(raw) ? Math.max(1, Math.min(8, Math.round(raw))) : 1;
+  const letter = doorLetterOf(door || "A");
   return {
     keeper: `Room ${n} • Door ${letter}`,
     name: "Play Sprint",
   };
+}
+
+/** Vault card / unhang line — Room N • Door A Play Sprint from the bound artefact. */
+export function vaultHangCaption(room?: { hall?: number; door?: string | null } | null): string {
+  if (!room?.door) return "not on a door";
+  const raw = typeof room.hall === "number" ? room.hall : Number(room.hall);
+  if (!Number.isFinite(raw) || raw < 1 || raw > 8) return "not on a door";
+  const chrome = hungPlayChrome(raw, room.door);
+  return `${chrome.keeper} ${chrome.name}`;
 }
 
 export function firstBiomePlate(playlist: Array<string | null | undefined> = []): number {
