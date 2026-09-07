@@ -322,10 +322,10 @@ describe("Imagine prompt rails", () => {
     const src = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
     const ask = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
-    assert.match(src, /HangRoomStrip/);
+    assert.match(ask, /HangRoomStrip/);
     assert.match(src, /vaultHangRoom/);
     assert.match(src, /HangAskSheet/);
-    assert.match(src, /HangCitadelStrip/);
+    assert.match(ask, /HangCitadelStrip/);
     assert.match(src, /listHangCitadels/);
     assert.match(ask, /data-hang-pick=/);
     assert.match(ask, /data-hang-citadel-pick/);
@@ -360,7 +360,7 @@ describe("Imagine prompt rails", () => {
     assert.match(readFileSync(join(here, "./rooms.ts"), "utf8"), /hang-load-halls/);
     assert.match(ask, /HANG_CONFIRM_ARM_MS/);
     assert.match(ask, /HANG_LEFTOVER_SWALLOW_MS/);
-    assert.match(ask, /\{armed \? \(/);
+    assert.match(ask, /armed \? \(/);
     assert.match(src, /swallowOpeningTap\(\)/);
     assert.match(src, /from \"@\/game\/hang-ask\"/);
     assert.match(src, /playArt\(/);

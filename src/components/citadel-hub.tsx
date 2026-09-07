@@ -2,11 +2,11 @@ import { TOUR_PLATE, createPathHref } from "@/game/rune";
 import { listSessions, hydrateSessions, dumpRooms, dumpRoom, takeRooms, renameSession, lastPlay, type RuneSessionMeta } from "@/game/rune-session";
 import { packCitadels } from "@/game/rooms";
 import { saveDrive, type Drive } from "@/game/rune-brain";
-import { boltFull } from "@/lib/press";
+import { boltFull, press } from "@/lib/press";
 import { sfxForge } from "@/game/audio";
 import { HallMark } from "@/components/hall-mark";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { StillCarousel } from "@/components/hang-ask";
+import { StillCarousel, StillChip } from "@/components/hang-ask";
 import { hangStillWrap } from "@/game/hang-ask";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
@@ -466,6 +466,7 @@ export function CitadelHub({
               still={shown[hangStillWrap(shown.length, loadIdx, 0)]?.root.thumb || ""}
               index={hangStillWrap(shown.length, loadIdx, 0)}
               count={shown.length}
+              title={shown[hangStillWrap(shown.length, loadIdx, 0)]?.title || "Citadel"}
               onNext={() => setLoadIdx((i) => hangStillWrap(shown.length, i, 1))}
               onPrev={() => setLoadIdx((i) => hangStillWrap(shown.length, i, -1))}
               onLock={() => {
@@ -474,6 +475,18 @@ export function CitadelHub({
                 playSession(p.root.id);
               }}
               onBack={() => setLoadOn(false)}
+              actions={
+                <StillChip
+                  data-load-play=""
+                  {...press(() => {
+                    const p = shown[hangStillWrap(shown.length, loadIdx, 0)];
+                    if (!p) return;
+                    playSession(p.root.id);
+                  })}
+                >
+                  Play
+                </StillChip>
+              }
             />
           ) : (
             <div className="flex min-h-dvh flex-col items-center justify-center gap-6 px-5">
