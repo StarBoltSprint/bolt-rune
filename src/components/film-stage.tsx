@@ -18,6 +18,8 @@ import { press } from "@/lib/press";
 import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
 import { HazardLayer } from "@/components/hazard-layer";
+import { doorLetterOf, sprintHallDoor } from "@/game/enter-graph";
+import { doorAtPoint, isHallFilm } from "@/game/stock-room";
 
 export type RunResult = {
   score: number;
@@ -52,6 +54,7 @@ type Props = {
   onExit: () => void;
   onDone: (result: RunResult) => void;
   onCook?: (seed: { frame: string; path: "main" | "river" | "thicket"; dusk: boolean; hunter: number; crashed: boolean; grade: Grade }) => void;
+  onHallDoor?: (door: "A" | "B") => void;
 };
 
 type G = {
@@ -147,7 +150,7 @@ function nearSpot(nx: number, ny: number, spot: Spot, box: DOMRect) {
   return dx * dx + dy * dy <= 110 * 110;
 }
 
-export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit, onDone }: Props) {
+export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit, onDone, onHallDoor }: Props) {
   const film = custom ?? FILM_BY_ID[id];
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const aRef = useRef<HTMLVideoElement | null>(null);
@@ -159,6 +162,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   const offsetRef = useRef(0);
   const plateRef = useRef(0);
   const platesRef = useRef<string[]>([]);
+  const hallFlagsRef = useRef<boolean[]>([]);
   const advancing = useRef(false);
   const laneRef = useRef<0 | 1>(0);
   const swapLock = useRef(0);
@@ -170,6 +174,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   const doneSent = useRef(false);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+  const onHallDoorRef = useRef(onHallDoor);
+  onHallDoorRef.current = onHallDoor;
 
   const [live, setLive] = useState(false);
   const [phase, setPhase] = useState<Phase>(custom || film.pad === "arrows" || film.id === "sprint" ? "run" : "arm");
@@ -285,6 +291,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     swapLock.current = 0;
     const list = uniqueClips(film.playlist || []).map(localizeClip);
     platesRef.current = list.slice();
+    hallFlagsRef.current = list.map((u) => isHallFilm(u));
     const first = list[0] || (original ? film.origin : portrait ? film.portrait : film.local);
     if (isClip(first)) setSrc(first);
     const pic = [film.portraitStill, film.still].find((u) => u && (/\.(jpe?g|png|webp)(\?|$)/i.test(u) || u.startsWith("data:image")));
@@ -506,7 +513,10 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         if (beat.kind === "hold" && g.hold >= beat.holdMs && Math.abs(t - beat.at) < beat.win) {
           judge(g, beat, Math.abs(t - beat.at));
         } else if (late && !advancing.current) {
-          if (t - beat.at > 1.35) {
+          if (hallPlateNow()) {
+            g.resolved = true;
+            advance(g);
+          } else if (t - beat.at > 1.35) {
             g.resolved = true;
             advance(g);
           } else {
@@ -774,8 +784,38 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     }
   }
 
+  function hallPlateNow() {
+    const orig = uniqueClips(film.playlist || []);
+    const list = platesRef.current.length ? platesRef.current : orig;
+    const i = plateRef.current;
+    const v = videoRef.current;
+    return Boolean(
+      hallFlagsRef.current[i] ||
+        isHallFilm(list[i]) ||
+        isHallFilm(orig[i]) ||
+        isHallFilm(v?.getAttribute("data-url")) ||
+        isHallFilm(v?.currentSrc) ||
+        isHallFilm(v?.getAttribute("src")) ||
+        sprintHallDoor(list[i] || orig[i] || v?.getAttribute("data-url"), 0.22, 0.42),
+    );
+  }
+
+  function tryHallDoor(clientX: number, clientY: number) {
+    if (!hallPlateNow()) return false;
+    const box = wrapRef.current?.getBoundingClientRect();
+    if (!box) return Boolean(onHallDoorRef.current);
+    const nx = (clientX - box.left) / box.width;
+    const ny = (clientY - box.top) / box.height;
+    const hit = doorAtPoint(nx, ny);
+    if ((hit === "m1" || hit === "m2") && onHallDoorRef.current) {
+      onHallDoorRef.current(doorLetterOf(hit));
+    }
+    return true;
+  }
+
   function tryHit(nx?: number, ny?: number, swipe?: Lane) {
     const g = gRef.current;
+    if (hallPlateNow()) return;
     if (phaseRef.current !== "run" || g.crashed) return;
     const v = videoRef.current;
     const t = clock();
@@ -814,6 +854,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
 
   function hitArrow(lane: Lane) {
     const g = gRef.current;
+    if (hallPlateNow()) return;
     if (phaseRef.current !== "run" || g.crashed) return;
     const v = videoRef.current;
     const t = clock();
@@ -909,6 +950,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.holding = false;
     const start = swipe.current;
     swipe.current = null;
+    if (tryHallDoor(e.clientX, e.clientY)) return;
     const beat = g.beats[g.i];
     const box = wrapRef.current?.getBoundingClientRect();
     if (!box || !beat || !start) return;

@@ -126,3 +126,11 @@ export type VaultHangKind = "A" | "B" | "bot";
 export function vaultHangStart(kind: VaultHangKind): { dataHang: VaultHangKind; sealed: boolean } {
   return kind === "bot" ? { dataHang: "bot", sealed: true } : { dataHang: kind, sealed: false };
 }
+
+/** `data-hang-room` — bot may pass a hall number; humans pick in Vault first. */
+export function vaultHangRoom(hall?: number | string | null): { "data-hang-room": number } {
+  const n = typeof hall === "number" && hall >= 1 && hall <= 8 ? Math.round(hall) : 0;
+  const fromStr = typeof hall === "string" && /^\d$/.test(hall) ? Number(hall) : 0;
+  const dest = n || (fromStr >= 1 && fromStr <= 8 ? fromStr : 1);
+  return { "data-hang-room": dest };
+}

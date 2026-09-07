@@ -323,24 +323,55 @@ async function runStockTaps(browser, vp) {
   }
 }
 
-async function seedForest(page) {
-  await page.addInitScript(() => {
-    const art = {
-      id: "art-forest-smoke",
-      name: "Forest",
-      still: "/films/cook-forest.jpg",
-      playlist: ["/films/forge-forest.mp4", "/films/forge-forest-moss.mp4"],
-      prompt: "forest",
-      hungAt: Date.now(),
-      grade: null,
-    };
-    try {
-      localStorage.setItem("bolt-artifacts-v1", JSON.stringify([art]));
-      sessionStorage.setItem("bolt-artifacts-mem-v1", JSON.stringify([art]));
-    } catch {
-      /* */
-    }
-  });
+async function seedForest(page, rooms = 2, living = 1) {
+  await page.addInitScript(
+    ({ rooms, living }) => {
+      const art = {
+        id: "art-forest-smoke",
+        name: "Forest",
+        still: "/films/cook-forest.jpg",
+        playlist: ["/films/forge-forest.mp4", "/films/forge-forest-moss.mp4"],
+        prompt: "forest",
+        hungAt: Date.now(),
+        grade: null,
+      };
+      const cit = {
+        id: "cit-smoke-hang",
+        name: "Twin halls",
+        title: "Twin halls",
+        updated: Date.now(),
+        phase: "play",
+        want: 2,
+        walks: 0,
+        thumb: "/refs/hall-doors.jpg",
+        rooms,
+        hall: living,
+      };
+      try {
+        localStorage.setItem("bolt-artifacts-v1", JSON.stringify([art]));
+        sessionStorage.setItem("bolt-artifacts-mem-v1", JSON.stringify([art]));
+        localStorage.setItem("bolt-rune-catalog-v1", JSON.stringify([cit]));
+        sessionStorage.setItem("bolt-rune-catalog-v1", JSON.stringify([cit]));
+        localStorage.setItem("bolt-last-play", JSON.stringify({ id: cit.id, title: cit.title, hall: living, rooms }));
+        sessionStorage.setItem("bolt-last-play", JSON.stringify({ id: cit.id, title: cit.title, hall: living, rooms }));
+        const stored = {
+          ...cit,
+          halls: Array.from({ length: rooms }, (_, i) => ({
+            n: i + 1,
+            still: "/refs/hall-doors.jpg",
+            bank: [],
+            refs: [],
+            pins: [],
+          })),
+        };
+        localStorage.setItem("bolt-rune-store-v1", JSON.stringify([stored]));
+        sessionStorage.setItem("bolt-rune-mem-v1", JSON.stringify([stored]));
+      } catch {
+        /* */
+      }
+    },
+    { rooms, living },
+  );
 }
 
 async function runBiomeVaultBot(browser, vp) {
@@ -373,20 +404,35 @@ async function runBiomeVaultBot(browser, vp) {
 
     await page.goto(`${BASE}/vault`, { waitUntil: "domcontentloaded", timeout: 45000 });
     await page.waitForSelector("[data-hang-bot=bot]", { timeout: 15000 });
+    await page.waitForSelector("[data-hang-rooms]", { timeout: 15000 });
+    await page.waitForSelector("[data-hang-pick]", { timeout: 8000 });
     await page.waitForSelector("[data-hang=A]", { timeout: 15000 });
     await page.waitForSelector("[data-hang=B]", { timeout: 8000 });
+    const picks = await page.locator("[data-hang-pick]").count();
+    if (picks < 2) throw new Error(`${vp.name}: Vault room pick missing halls (${picks})`);
+    const pickHere = await page.locator("[data-hang-pick][aria-pressed=true]").first().getAttribute("data-hang-pick");
+    if (pickHere !== "1") throw new Error(`${vp.name}: default hang room should be living hall 1 (${pickHere})`);
     picker = false;
     page.once("filechooser", () => {
       picker = true;
     });
-    await page.locator("[data-hang-bot=bot]").first().click();
-    await page.waitForTimeout(400);
+    const botHangBtn = page.locator("[data-hang-bot=bot]").first();
+    await botHangBtn.dispatchEvent("pointerup");
+    await botHangBtn.click();
+    await page.waitForFunction(() => /room \d+\s*[·.]\s*door/i.test(document.body.innerText), { timeout: 5000 }).catch(() => {});
     if (picker) throw new Error(`${vp.name}: Grok Bot Hang opened a file picker`);
-    const hungBot = await page.evaluate(() => /room \d+ · door/i.test(document.body.innerText));
-    if (!hungBot) throw new Error(`${vp.name}: Grok Bot Hang did not bind a door`);
+    const hungBot = await page.evaluate(() => /room \d+\s*[·.]\s*door/i.test(document.body.innerText));
+    if (!hungBot) {
+      const dump = await page.evaluate(() => document.body.innerText.slice(0, 800));
+      throw new Error(`${vp.name}: Grok Bot Hang did not bind a door ${JSON.stringify(dump)}`);
+    }
 
     await page.locator("button", { hasText: "Unhang" }).first().click().catch(() => {});
     await page.waitForTimeout(200);
+    await page.locator("[data-hang-pick='2']").first().click();
+    await page.waitForTimeout(80);
+    const pickTwo = await page.locator("[data-hang-pick='2']").first().getAttribute("aria-pressed");
+    if (pickTwo !== "true") throw new Error(`${vp.name}: picking hall 2 did not select it`);
     if (await page.locator("[data-hang=A]").count()) {
       await page.locator("[data-hang=A]").first().click();
     } else {
@@ -394,9 +440,15 @@ async function runBiomeVaultBot(browser, vp) {
       await page.waitForSelector("[data-hang=A]", { timeout: 8000 });
       await page.locator("[data-hang=A]").first().click();
     }
-    await page.waitForTimeout(400);
-    const hungA = await page.evaluate(() => /door A/i.test(document.body.innerText));
-    if (!hungA) throw new Error(`${vp.name}: human Hang A did not bind door A`);
+    await page.waitForSelector("[data-hang-ask=A]", { timeout: 8000 });
+    await page.locator("[data-hang-ask] [data-hang-pick='2']").first().click();
+    await page.locator("[data-hang-confirm]").first().click();
+    await page.waitForFunction(() => /room 2\s*[·.]\s*door A/i.test(document.body.innerText), { timeout: 5000 }).catch(() => {});
+    const hungA = await page.evaluate(() => /room 2\s*[·.]\s*door A/i.test(document.body.innerText));
+    if (!hungA) {
+      const dump = await page.evaluate(() => document.body.innerText.slice(0, 800));
+      throw new Error(`${vp.name}: human Hang A did not bind hall 2 door A ${JSON.stringify(dump)}`);
+    }
     await page.screenshot({ path: `${OUT}/${vp.name}-vault-hang.png`, fullPage: false });
 
     const enterPage = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
@@ -412,7 +464,7 @@ async function runBiomeVaultBot(browser, vp) {
               door: "A",
               still: "/films/cook-forest.jpg",
               trans: "/ui/citadel.mp4?v=aaa",
-              hall: 1,
+              hall: 2,
               biome: "forest",
             };
             localStorage.setItem("bolt-artifacts-v1", JSON.stringify([head]));
@@ -422,7 +474,7 @@ async function runBiomeVaultBot(browser, vp) {
           /* */
         }
       });
-      await enterPage.goto(`${BASE}/rune?first=m1&drive=engine&rooms=1&hall=1&stills=0`, {
+      await enterPage.goto(`${BASE}/rune?first=m1&drive=engine&rooms=2&hall=2&stills=0`, {
         waitUntil: "domcontentloaded",
         timeout: 45000,
       });

@@ -10,10 +10,11 @@ import {
   hydrateRift,
   inferBiome,
   resolveDoorEnter,
+  sprintHallDoor,
   stockBiomePlaylist,
   stockTransUrl,
 } from "./enter-graph.ts";
-import { biomeBotStart, createBotForgeHref, lookForgeStart, parseLookForge, vaultHangStart } from "./path-entry.ts";
+import { biomeBotStart, createBotForgeHref, lookForgeStart, parseLookForge, vaultHangRoom, vaultHangStart } from "./path-entry.ts";
 import { HALL_LOOP } from "./stock-room.ts";
 
 function art(id: string, biome = "forest") {
@@ -29,6 +30,13 @@ function art(id: string, biome = "forest") {
 }
 
 describe("enter graph · hang any artefact on any door", () => {
+  it("hall trans in a sprint maps door taps to A/B, not a gesture miss", () => {
+    assert.equal(sprintHallDoor(HALL_LOOP, 0.22, 0.42), "A");
+    assert.equal(sprintHallDoor("/ui/citadel.mp4?v=aaa", 0.72, 0.4), "B");
+    assert.equal(sprintHallDoor("/films/forge-forest.mp4", 0.22, 0.42), null);
+    assert.equal(sprintHallDoor("/films/citadel-tour.jpg?v=sharp", 0.7, 0.4), "B");
+  });
+
   it("maps A/B to living-hall m1/m2", () => {
     assert.equal(doorIdOf("A"), "m1");
     assert.equal(doorIdOf("B"), "m2");
@@ -69,6 +77,24 @@ describe("enter graph · hang any artefact on any door", () => {
         assert.equal(bound.hall, hall);
       }
     }
+  });
+
+  it("hang artifact on hall 2 door A → enter resolves for hall 2, not hall 1", () => {
+    const id = "art-h2-a";
+    const hung = hangArtifactOnDoor(id, "A", { hall: 2, citadel: "cit-2" }, [art(id, "canyon")]);
+    const enter2 = resolveDoorEnter("A", 2, "cit-2", hung);
+    assert.equal(enter2.kind, "biome");
+    if (enter2.kind !== "biome") return;
+    assert.equal(enter2.door, "A");
+    assert.equal(enter2.hall, 2);
+    assert.equal(enter2.art, id);
+    assert.equal(enter2.biome, "canyon");
+    assert.equal(enter2.trans, HALL_LOOP);
+    assert.ok(enter2.clips[0] === enter2.trans);
+    const enter1 = resolveDoorEnter("A", 1, "cit-2", hung);
+    assert.deepEqual(enter1, { kind: "hall", door: "A", hall: 1 });
+    const otherDoor = resolveDoorEnter("B", 2, "cit-2", hung);
+    assert.deepEqual(otherDoor, { kind: "hall", door: "B", hall: 2 });
   });
 
   it("enter that door resolves to transition then biome play (stock trans, no XAI key)", () => {
@@ -143,6 +169,9 @@ describe("enter graph · hang any artefact on any door", () => {
     assert.deepEqual(vaultHangStart("bot"), { dataHang: "bot", sealed: true });
     assert.deepEqual(vaultHangStart("A"), { dataHang: "A", sealed: false });
     assert.deepEqual(vaultHangStart("B"), { dataHang: "B", sealed: false });
+    assert.deepEqual(vaultHangRoom(2), { "data-hang-room": 2 });
+    assert.deepEqual(vaultHangRoom("3"), { "data-hang-room": 3 });
+    assert.deepEqual(vaultHangRoom(null), { "data-hang-room": 1 });
     assert.equal(parseLookForge(createBotForgeHref("m1")), "bot");
   });
 });

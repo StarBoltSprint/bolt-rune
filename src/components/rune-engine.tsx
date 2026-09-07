@@ -55,6 +55,7 @@ import {
   lookHallLocked,
   parseLookForge,
   shouldAutoStartBotForge,
+  vaultHangRoom,
   type BoltForgeHook,
 } from "@/game/path-entry";
 import { freeRuneSlot, grabRuneFrame, pollCookPlate, startCookStill, startRuneExtend, startRuneFilm, startRuneStill, cacheClip, cacheStill } from "@/lib/cook";
@@ -76,13 +77,14 @@ import {
   markLivePlay,
   peekLivePlay,
   clearLivePlay,
+  listStoredHallHints,
   type RuneSession,
   type RuneSessionMeta,
   type CitadelStart,
   type RiftGate,
 } from "@/game/rune-session";
 import { BootScreen } from "@/components/citadel-hub";
-import { hallN, liveSlice, putSlice, seedHalls } from "@/game/rooms";
+import { defaultHangRoom, hallN, listHangRooms, liveSlice, putSlice, seedHalls } from "@/game/rooms";
 import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
 import {
@@ -707,6 +709,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const riftCookTok = useRef(0);
   const [riftBloom, setRiftBloom] = useState<{ still: string; name: string; door: "m1" | "m2"; open: boolean } | null>(null);
   const [sprint, setSprint] = useState<{ film: ReturnType<typeof riftFilm>; door: "m1" | "m2"; name: string } | null>(null);
+  const [hangRoomN, setHangRoomN] = useState(1);
+  const hangRoomRef = useRef(1);
+  hangRoomRef.current = hangRoomN;
   const [hungArts, setHungArts] = useState<HungArtifact[]>(() => (typeof window === "undefined" ? [] : readArtifacts()));
   const [doorHit, setDoorHit] = useState<{ m1: DoorHit; m2: DoorHit } | null>(() => STOCK_HITS);
   const doorHitRef = useRef<{ m1: DoorHit; m2: DoorHit } | null>(STOCK_HITS);
@@ -4455,7 +4460,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             still: gate.still || plateRef.current || ROOM_ONE_STILL,
             trans: gate.trans || stockTransUrl(door),
             citadel: sid.current,
-            hall: hallHold.current,
+            hall: hangRoomRef.current || hallHold.current,
             biome: gate.biome,
           },
           hungArts.length ? hungArts : undefined,
@@ -5516,6 +5521,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }, [phase]);
 
   useEffect(() => {
+    if (!riftPick) return;
+    const extra = listStoredHallHints().map((h) => ({ ...h, living: h.hall === hallHold.current }));
+    const rooms = listHangRooms(listSessions(), { hall: hallHold.current }, hungArts, extra);
+    setHangRoomN((prev) => (rooms.some((r) => r.hall === prev) ? prev : defaultHangRoom(rooms)));
+  }, [riftPick, hungArts]);
+
+  useEffect(() => {
     const api: BoltForgeHook = {
       startBot: () => startBotForgeRef.current(),
     };
@@ -5533,6 +5545,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           original={false}
           custom={sprint.film}
           ramp={false}
+          onHallDoor={(letter) => {
+            const id = letter === "B" ? "m2" : "m1";
+            leaveSprint();
+            window.setTimeout(() => {
+              void goEnter(id);
+            }, 0);
+          }}
           onExit={() => leaveSprint()}
           onDone={() => {
             /* stay on the grade — Leave calls onExit */
@@ -5709,8 +5728,37 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             ? onDoor
               ? `${onDoor.name} lives behind this door`
               : "hang your artefact · then forge a 6s opening"
-            : `room ${hallHold.current} · hang on A or B, then a transition film`}
+            : `room ${hangRoomN} · hang on A or B, then a transition film`}
         </p>
+        <div className="relative z-10 mt-4 flex gap-2 overflow-x-auto pb-1" data-hang-rooms="">
+          {listHangRooms(listSessions(), { hall: hallHold.current }, hung, listStoredHallHints().map((h) => ({ ...h, living: h.hall === hallHold.current }))).map((r) => {
+            const on = hangRoomN === r.hall;
+            return (
+              <button
+                key={r.hall}
+                type="button"
+                data-hang-pick={r.hall}
+                {...vaultHangRoom(r.hall)}
+                aria-pressed={on}
+                className={`min-w-[4.2rem] overflow-hidden rounded-2xl border bg-black/40 text-left ${
+                  on ? "border-[#9ef0e4]/50" : "border-white/15"
+                }`}
+                style={{ touchAction: "manipulation" }}
+                onPointerUp={() => setHangRoomN(r.hall)}
+              >
+                {r.still ? (
+                  <img src={thumbSrc(r.still)} alt="" className="h-12 w-full object-cover" />
+                ) : (
+                  <div className="h-12 w-full bg-[linear-gradient(180deg,rgba(158,240,228,0.12),rgba(7,8,12,0.7))]" />
+                )}
+                <span className={`block px-2 py-1 font-mono text-[9px] uppercase tracking-[0.14em] ${on ? "text-[#9ef0e4]" : "text-white/50"}`}>
+                  {r.hall}
+                  {r.hall === hallHold.current ? " · here" : ""}
+                </span>
+              </button>
+            );
+          })}
+        </div>
         <div className="relative z-10 mt-6 mb-4 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
           {hungBlock}
           <div className="flex flex-col gap-2">

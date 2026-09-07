@@ -1,6 +1,6 @@
 import type { HungArtifact, HungRoom } from "./artifacts.ts";
 import type { RiftGate } from "./rune-session.ts";
-import { HALL_LOOP } from "./stock-room.ts";
+import { doorAtPoint, HALL_LOOP, isHallFilm } from "./stock-room.ts";
 
 export type DoorLetter = "A" | "B";
 export type DoorId = "m1" | "m2";
@@ -61,6 +61,15 @@ export function doorIdOf(letter: DoorLetter): DoorId {
 
 export function doorLetterOf(id: DoorId | "a" | "b" | DoorLetter): DoorLetter {
   return id === "m2" || id === "B" || id === "b" ? "B" : "A";
+}
+
+/** Hall trans in a sprint — door tap enters, it is not a gesture miss. */
+export function sprintHallDoor(url: string | null | undefined, nx: number, ny: number): DoorLetter | null {
+  if (!isHallFilm(url)) return null;
+  const hit = doorAtPoint(nx, ny);
+  if (hit === "m1") return "A";
+  if (hit === "m2") return "B";
+  return null;
 }
 
 export function biomeStill(id: BiomeName) {

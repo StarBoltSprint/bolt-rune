@@ -1,4 +1,4 @@
-import { lastPlay, listSessions, type HallSlice, type RuneSession, type RuneSessionMeta } from "@/game/rune-session";
+import type { HallSlice, RuneSession, RuneSessionMeta } from "./rune-session.ts";
 
 export type CitadelPack = {
   root: RuneSessionMeta;
@@ -62,7 +62,7 @@ export function putSlice(list: HallSlice[], slice: HallSlice): HallSlice[] {
   return next.slice(0, 8);
 }
 
-export function rootOf(id: string, rows: RuneSessionMeta[] = listSessions()): string {
+export function rootOf(id: string, rows: RuneSessionMeta[] = []): string {
   const byId = new Map(rows.map((s) => [s.id, s]));
   let cur = id;
   const seen = new Set<string>();
@@ -107,7 +107,7 @@ function asHalls(root: RuneSessionMeta, count: number): RuneSessionMeta[] {
 }
 
 /** Every hall in the citadel — halls[] first, leftover child sessions only as a fallback. */
-export function packCitadels(list: RuneSessionMeta[] = listSessions()): CitadelPack[] {
+export function packCitadels(list: RuneSessionMeta[] = []): CitadelPack[] {
   const { byId, kids, nested } = kidsOf(list);
   const roots = list.filter((s) => !nested.has(s.id));
   const shown = roots.length ? roots : list;
@@ -127,11 +127,21 @@ export function packCitadels(list: RuneSessionMeta[] = listSessions()): CitadelP
     .sort((a, b) => b.updated - a.updated);
 }
 
+export type HangRoomPick = {
+  hall: number;
+  name: string;
+  still: string;
+  living: boolean;
+};
+
+export type LastPlayHint = { id?: string; hall?: number; rooms?: number } | null;
+
 /** The citadel and hall Hang A/B should bind — last Play, not whoever is first in the catalog. */
-export function bindCitadel(): { citadel: string; hall: number; title: string } {
-  const rows = listSessions();
+export function bindCitadel(
+  rows: RuneSessionMeta[] = [],
+  last: LastPlayHint = null,
+): { citadel: string; hall: number; title: string } {
   if (!rows.length) return { citadel: "", hall: 1, title: "" };
-  const last = lastPlay();
   const hit = rows.find((s) => s.id === last?.id) || rows[0];
   const packs = packCitadels(rows);
   const pack = packs.find((p) => p.root.id === hit.id || p.rooms.some((r) => r.id === hit.id)) || packs[0];
@@ -141,4 +151,69 @@ export function bindCitadel(): { citadel: string; hall: number; title: string } 
     hall,
     title: pack?.title || hit.title || hit.name || "",
   };
+}
+
+function roomStill(
+  hall: number,
+  meta?: Pick<RuneSessionMeta, "thumb" | "name">,
+  arts?: Array<{ room?: { hall?: number; still?: string } | null; still?: string }>,
+) {
+  const art = (arts || []).find((a) => hallN(a.room?.hall) === hall);
+  return art?.room?.still || art?.still || meta?.thumb || "";
+}
+
+/** Halls that exist in the living citadel — picker source for Hang A/B. */
+export function listHangRooms(
+  rows: RuneSessionMeta[] = [],
+  last: LastPlayHint = null,
+  arts?: Array<{ room?: { hall?: number; still?: string } | null; still?: string }>,
+  extra?: HangRoomPick[],
+): HangRoomPick[] {
+  const cit = bindCitadel(rows, last);
+  const packs = packCitadels(rows);
+  const pack = packs.find((p) => p.root.id === cit.citadel) || packs[0];
+  const raw: Array<Pick<RuneSessionMeta, "hall" | "name" | "thumb">> = pack?.rooms?.length
+    ? pack.rooms
+    : [{ hall: 1, name: pack?.title || "Room 1", thumb: pack?.root.thumb || "" }];
+  const living = cit.hall || 1;
+  const seen = new Set<number>();
+  const rooms: HangRoomPick[] = [];
+  const put = (hall: number, name: string, still: string) => {
+    if (hall < 1 || hall > 8 || seen.has(hall)) return;
+    seen.add(hall);
+    rooms.push({ hall, name: name || `Room ${hall}`, still, living: hall === living });
+  };
+  raw.forEach((r, i) => {
+    const hall = hallN(r.hall) || i + 1;
+    put(hall, r.name && r.name !== pack?.root.name ? r.name : `Room ${hall}`, roomStill(hall, r, arts));
+  });
+  for (const e of extra || []) put(e.hall, e.name, e.still || roomStill(e.hall, undefined, arts));
+  for (const a of arts || []) {
+    const hall = hallN(a.room?.hall);
+    if (hall) put(hall, `Room ${hall}`, a.room?.still || a.still || "");
+  }
+  const lastRooms = Math.max(1, Math.min(8, last?.rooms || 0));
+  if (last?.rooms) {
+    for (let i = 1; i <= lastRooms; i++) put(i, `Room ${i}`, roomStill(i, undefined, arts));
+  }
+  const lastN = hallN(last?.hall);
+  if (lastN) put(lastN, `Room ${lastN}`, roomStill(lastN, undefined, arts));
+  if (!rooms.length) rooms.push({ hall: 1, name: "Room 1", still: "", living: true });
+  return rooms.sort((a, b) => a.hall - b.hall);
+}
+
+export function defaultHangRoom(rooms: HangRoomPick[]): number {
+  return rooms.find((r) => r.living)?.hall || rooms[0]?.hall || 1;
+}
+
+/**
+ * Bot: one room → that hall. Many rooms → explicit `data-hang-room` / hall number,
+ * else the living hall (or hall 1).
+ */
+export function resolveHangRoom(rooms: HangRoomPick[], want?: number | string | null): number {
+  const list = rooms.length ? rooms : [{ hall: 1, name: "Room 1", still: "", living: true }];
+  if (list.length === 1) return list[0]!.hall;
+  const n = hallN(typeof want === "number" ? want : want == null || want === "" ? 0 : want);
+  if (n && list.some((r) => r.hall === n)) return n;
+  return defaultHangRoom(list);
 }
