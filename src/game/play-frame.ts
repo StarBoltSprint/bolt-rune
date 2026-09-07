@@ -88,6 +88,22 @@ export function walkClipHoldsSeed(
   return true;
 }
 
+/**
+ * Visible door breath — a looping idle clip, not the walk and not stock HALL_LOOP.
+ * Stock idle-* is the same spawn loop as the walk; play must not treat it as breath.
+ */
+export function doorBreathPlayable(
+  idle?: { url?: string | null; end?: string | null } | null,
+  walkUrl?: string | null,
+): boolean {
+  const url = (idle?.url || "").trim();
+  if (!url) return false;
+  if (isBoltSilhouette(url) || isBoltSilhouette(idle?.end)) return false;
+  if (isHallFilm(url) || isStockHallClip(idle)) return false;
+  if (walkUrl && url === walkUrl) return false;
+  return true;
+}
+
 /** Sealed pack identity labels only. Face labels pack to the rear body — never bolt-face.jpg. */
 export function packIdentityStill(label: string): string | null {
   const n = label.toLowerCase().trim();

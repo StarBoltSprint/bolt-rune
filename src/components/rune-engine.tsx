@@ -126,6 +126,7 @@ import {
   playCoverStill,
   playStillOrHall,
   seedMayBankIdle,
+  doorBreathPlayable,
   walkClipHoldsSeed,
   walkLastFrameSeed,
   type LivingPlayFrame,
@@ -2133,13 +2134,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (hereRef.current === "spawn" && frame.still && !isBoltSilhouette(frame.still)) {
       lockHall(frame.still);
     }
-    const breathUrl =
-      idle?.url ||
-      (hereRef.current !== "spawn"
-        ? bank.current.get(`idle-${hereRef.current}`)?.url || bank.current.get("idle-spawn")?.url || ""
-        : "") ||
-      "";
-    /* Arrival breath must loop (kickPlay / filmLoop). Frozen end-of-walk still is FAIL. */
+    const walkHere = clipFor(cameFrom.current, hereRef.current)?.url || "";
+    const breathUrl = doorBreathPlayable(idle, walkHere)
+      ? idle!.url
+      : hereRef.current === "spawn"
+        ? idle?.url || frame.url || ""
+        : "";
+    /* Arrival breath must loop a real idle-* clip (not the walk, not stock HALL_LOOP). */
     if (breathUrl) {
       if (isHallFilm(breathUrl) && hereRef.current !== "spawn") stockSprite.current = true;
       setPose(null);
@@ -2262,7 +2263,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     markLivePlay(sid.current, at, plateRef.current || lastLive.current || clip.end || "");
     sfxForge("page");
     const nextIdle = idleFor(id, at);
-    const breathUrl = nextIdle?.url && nextIdle.url !== clip.url ? nextIdle.url : null;
+    const breathUrl = doorBreathPlayable(nextIdle, clip.url) ? nextIdle!.url : null;
     const wait = (clampWalk(walkSecsRef.current) + 4) * 1000;
     if (stock) {
       stockSprite.current = true;
@@ -2308,11 +2309,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       }
     };
     stampDoorEnd(clip.end || lastLive.current || plateRef.current || "");
-    /* Do not await shotEnd here — that freezes the last walk frame. Loop breath first. */
-    if (!isHallFilm(clip.url)) {
-      void shotEnd(clip.url, clip.end || lastLive.current || plateRef.current || "").then((landed) => {
+    let landed = walkLastFrameSeed(clip.end, lastLive.current, refsMap.current.get(`pose-${id}`), lastPose.current) || clip.end || lastLive.current || plateRef.current || "";
+    const haveBreath = doorBreathPlayable(idleFor(id, at), clip.url);
+    if (!haveBreath && !isHallFilm(clip.url)) {
+      landed = await shotEnd(clip.url, landed || lastLive.current || plateRef.current || "");
+      stampDoorEnd(landed);
+    } else if (!isHallFilm(clip.url)) {
+      void shotEnd(clip.url, clip.end || lastLive.current || plateRef.current || "").then((got) => {
         if (hereRef.current !== id) return;
-        stampDoorEnd(landed);
+        stampDoorEnd(got);
       });
     }
     setPose(null);
@@ -2345,20 +2350,35 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setBeat("idle");
     beatRef.current = "idle";
     setFrost("tap a door");
-    const idle = idleFor(id);
+    const shown = await enterDoorBreath(id, at, clip.url, landed);
+    if (!shown) holdIdle();
+  }
+
+  /** Cook idle-* from landed still when bank has no visible door breath, then kickPlay loop. */
+  async function enterDoorBreath(node: string, via: string, walkUrl: string, landed: string) {
+    let idle = idleFor(node, via) || bank.current.get(`idle-${node}`);
+    if (!doorBreathPlayable(idle, walkUrl)) {
+      const seed = walkLastFrameSeed(landed, lastLive.current, refsMap.current.get(`pose-${node}`)) || landed;
+      if (!seed) return false;
+      await cookIdleAt(node, seed, walkUrl, via, true);
+      idle = idleFor(node, via) || bank.current.get(`idle-${node}`);
+    }
+    if (!doorBreathPlayable(idle, walkUrl) || !idle?.url) return false;
+    filmLoop.current = true;
+    setLoopOn(true);
+    setPlayFrameKind("breath");
+    setPose(null);
     const hid = hidFilm();
-    if (idle?.url && idle.url !== clip.url && hid && slotSrc(hid) === idle.url && filmHasPaint(hid)) {
-      filmLoop.current = true;
-      setLoopOn(true);
-      seekBreath(hid);
-      void hid.play().catch(() => {});
+    if (hid && slotSrc(hid) === idle.url && filmHasPaint(hid)) {
+      cueBreath(hid, idle.url);
       if (hid !== visFilm()) showIncoming();
       setFilmOn(true);
       setCoverFade(true);
-      prefetchFrom(id);
-    } else {
-      holdIdle();
+      prefetchFrom(node);
+      return true;
     }
+    kickPlay(idle.url, true, true);
+    return true;
   }
 
   async function saveFilms() {
@@ -3628,34 +3648,55 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     return boltKit([extra, refsMap.current.get("bolt"), refsMap.current.get("m1"), refsMap.current.get("m2")]);
   }
 
-  async function cookIdleAt(node: string, still: string, fromFilm?: string, via?: string) {
+  async function cookIdleAt(node: string, still: string, fromFilm?: string, via?: string, playArrival = false) {
     const key = via ? `idle-${node}←${via}` : `idle-${node}`;
-    if (!liveForge.current) return still;
+    if (!liveForge.current && !playArrival) return still;
     const have = bank.current.get(key);
-    if (have && !isStockHallClip(have)) return have.end || still;
-    setNowClip({ kind: "idle", id: key, node, camera: "lock", morph: false });
-    setBeat("cook");
-    beatRef.current = "cook";
-    setFilmUrl(null);
-    setLoadName(`still · ${node}`);
-    setLoadPct(8);
-    setFrost(`still · ${node} breathes`);
+    if (have && doorBreathPlayable(have, fromFilm)) return have.end || still;
+    const owned = !liveForge.current && playArrival;
+    if (owned) liveForge.current = true;
+    try {
+    if (playArrival) {
+      setFrost(`breath · ${node}`);
+    } else {
+      setNowClip({ kind: "idle", id: key, node, camera: "lock", morph: false });
+      setBeat("cook");
+      beatRef.current = "cook";
+      setFilmUrl(null);
+      setLoadName(`still · ${node}`);
+      setLoadPct(8);
+      setFrost(`still · ${node} breathes`);
+    }
     sfxForge("cook");
     const extra = `${gazeLaw(node)} ${stillLaws()}`.trim();
     const idleUrl = bank.current.get(`idle-${node}`)?.url || idleFor(node)?.url || "";
     let url: string | null = null;
     let fromExtend = false;
-    // Never extend a walk. Imagine keeps walking back to spawn.
-    // Never extend stock hall loop (spawn breath) — cook from the arrival last frame.
-    if (idleUrl && !isHallFilm(idleUrl) && (!fromFilm || fromFilm === idleUrl)) {
+    // Never extend a walk. Imagine moonwalks. Breath is cookFilm from landed
+    // still, or extend only from an existing idleUrl (not hall loop, not the walk).
+    const canExtend = Boolean(idleUrl) && !isHallFilm(idleUrl) && idleUrl !== fromFilm && doorBreathPlayable({ url: idleUrl }, fromFilm);
+    if (canExtend && (!fromFilm || fromFilm === idleUrl)) {
       setFrost(`breath continues · ${node}`);
       url = await cookExtend(idleUrl, breathPrompt(extra), `breath ${node}`);
       fromExtend = Boolean(url);
     }
-    if (!url) url = await cookFilm(still, idlePrompt(extra), [], `still ${node}`, 6);
-    if (!url) url = await cookFilm(still, idlePrompt(extra), [], `retry still ${node}`, 6);
-    if (!url || !liveForge.current) return still;
+    if (!url) url = await cookFilm(still, idlePrompt(extra), [], `still ${node}`, 6, playArrival);
+    if (!url) url = await cookFilm(still, idlePrompt(extra), [], `retry still ${node}`, 6, playArrival);
+    if (!url || (!liveForge.current && !playArrival)) return still;
     setLoadPct(100);
+    if (playArrival) {
+      bank.current.set(key, { url, end: still });
+      bank.current.set(`idle-${node}`, { url, end: still });
+      persist({ phase: "play", plate: still });
+      syncWalks();
+      const snapped = shotEnd(url, still);
+      void snapped.then((frame) => {
+        if (!frame) return;
+        bank.current.set(key, { url, end: frame });
+        bank.current.set(`idle-${node}`, { url, end: frame });
+      });
+      return still;
+    }
     setFilmUrl(url);
     setBeat("playvid");
     beatRef.current = "playvid";
@@ -3665,7 +3706,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (!liveForge.current) return still;
     const frame = await snapped;
     bank.current.set(key, { url, end: frame });
-    if (!bank.current.has(`idle-${node}`)) bank.current.set(`idle-${node}`, { url, end: frame });
+    bank.current.set(`idle-${node}`, { url, end: frame });
     persist({ phase: "forge", plate: frame });
     syncWalks();
     setPose(frame);
@@ -3675,6 +3716,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     sfxForge("enter");
     await sleep(SHOT_MS);
     return frame;
+    } finally {
+      if (owned) liveForge.current = false;
+    }
   }
 
   async function cookWalks(g: RuneGraph, resume = false) {

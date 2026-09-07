@@ -18,6 +18,7 @@ import {
   playCoverStill,
   playStillOrHall,
   seedMayBankIdle,
+  doorBreathPlayable,
   walkClipHoldsSeed,
   walkClips,
   walkLastFrameSeed,
@@ -222,6 +223,15 @@ describe("A↔B last-frame seed chain", () => {
     assert.equal(walkClipHoldsSeed(stockIdle, ""), true);
   });
 
+  it("stock idle-* is not a visible door breath — play must not stitch walk→HALL_LOOP", () => {
+    assert.equal(doorBreathPlayable(stockIdle, HALL_LOOP), false);
+    assert.equal(doorBreathPlayable(stockIdle, WALK), false);
+    assert.equal(doorBreathPlayable({ url: WALK, end: landed }, WALK), false);
+    assert.equal(doorBreathPlayable(cookedBreath, WALK), true);
+    assert.equal(doorBreathPlayable({ url: BREATH, end: landed }, WALK), true);
+    assert.equal(doorBreathPlayable(null, WALK), false);
+  });
+
   it("engine keeps latest/pose/breathEnd on grabRuneFrame landed — stock idle cannot overwrite", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
@@ -234,24 +244,30 @@ describe("A↔B last-frame seed chain", () => {
     assert.match(cookWalks, /latest\.set\(clip\.to, breathEnd\)/);
     assert.doesNotMatch(cookWalks, /const hadHome = Boolean\(bank\.current\.get\(`idle-\$\{clip\.to\}`\)\?\.url\);/);
     const cookIdle = src.slice(src.indexOf("async function cookIdleAt"), src.indexOf("async function cookWalks"));
-    assert.match(cookIdle, /isStockHallClip\(have\)/);
-    assert.match(cookIdle, /Never extend stock hall loop/);
+    assert.match(cookIdle, /Never extend a walk/);
+    assert.match(cookIdle, /canExtend/);
+    assert.match(cookIdle, /playArrival/);
+    assert.match(cookIdle, /bank\.current\.set\(`idle-\$\{node\}`, \{ url, end: still \}\)/);
+    assert.match(cookIdle, /bank\.current\.set\(`idle-\$\{node\}`, \{ url, end: frame \}\)/);
+    assert.doesNotMatch(cookIdle, /if \(!bank\.current\.has\(`idle-\$\{node\}`\)\)/);
     const playWalk = src.slice(src.indexOf("async function playWalk"), src.indexOf("async function saveFilms"));
     assert.match(playWalk, /stockDoorWalk\(at, id\)/);
     assert.match(playWalk, /walkLastFrameSeed\(/);
     assert.match(playWalk, /walkClipHoldsSeed\(/);
+    assert.match(playWalk, /doorBreathPlayable\(/);
+    assert.match(playWalk, /enterDoorBreath\(/);
     assert.match(playWalk, /shotEnd\(clip\.url/);
     assert.match(playWalk, /pose-\$\{id\}/);
-    assert.match(playWalk, /idle-\$\{id\}←\$\{at\}/);
-    assert.match(playWalk, /Do not await shotEnd here/);
-    assert.match(playWalk, /void shotEnd\(/);
     assert.match(playWalk, /setPose\(null\)/);
     assert.doesNotMatch(playWalk, /setPose\(walkLastFrameSeed/);
+    const enterBreath = src.slice(src.indexOf("async function enterDoorBreath"), src.indexOf("async function saveFilms"));
+    assert.match(enterBreath, /cookIdleAt\(node, seed, walkUrl, via, true\)/);
+    assert.match(enterBreath, /kickPlay\(idle\.url, true, true\)/);
+    assert.match(enterBreath, /cueBreath\(hid, idle\.url\)/);
     const holdIdle = src.slice(src.indexOf("function holdIdle"), src.indexOf("async function playEnterThenIdle"));
-    assert.match(holdIdle, /Arrival breath must loop/);
+    assert.match(holdIdle, /doorBreathPlayable\(idle, walkHere\)/);
     assert.match(holdIdle, /kickPlay\(breathUrl, true, true\)/);
     assert.match(holdIdle, /filmLoop\.current = true/);
-    assert.doesNotMatch(holdIdle, /Frozen end-of-walk still is FAIL[\s\S]*freezeVis\(true\)[\s\S]*kickPlay/);
     assert.doesNotMatch(holdIdle, /stickCover\(arrival\)/);
     const forgeNow = src.slice(src.indexOf("async function forgeWalkNow"), src.indexOf("async function recookWalk"));
     assert.match(forgeNow, /walkLastFrameSeed\(/);
