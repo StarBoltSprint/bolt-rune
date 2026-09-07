@@ -562,7 +562,7 @@ export function VaultHall() {
             window.location.assign("/");
           }}
           actions={
-            <div data-vault-actions="" className="sticky bottom-0 flex w-full flex-col items-center gap-2">
+            <div data-vault-actions="" className="sticky bottom-0 flex w-full flex-col items-center gap-1.5">
               <p
                 className={`font-mono text-[9px] uppercase tracking-[0.16em] ${vaultHungOn ? "text-[#9ef0e4]" : "text-white/40"}`}
                 data-hang-bound={vaultHungOn || undefined}

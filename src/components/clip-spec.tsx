@@ -35,21 +35,21 @@ export function ClipSpecBar({ disabled, compact }: { disabled?: boolean; compact
         data-clip-spec="card"
         data-clip-secs={spec.secs}
         data-clip-res={spec.res}
-        className="flex w-full flex-col items-center gap-1.5"
+        className="flex w-full flex-col items-center gap-1"
         style={{ touchAction: "manipulation" }}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-white/40">
+        <p className="sr-only">
           Next continue / shift · {spec.secs}s · {spec.res}p
         </p>
-        <div className="flex flex-wrap justify-center gap-1.5">
+        <div className="flex flex-wrap justify-center gap-1">
           {SECS.map((s) => (
             <button
               key={s}
               type="button"
               disabled={disabled}
               data-clip-secs-pick={s}
-              className={`inline-flex min-h-8 items-center justify-center rounded-full border px-2.5 font-mono text-[10px] uppercase tracking-[0.14em] disabled:opacity-40 ${
+              className={`inline-flex min-h-7 items-center justify-center rounded-full border px-2 font-mono text-[10px] uppercase tracking-[0.12em] disabled:opacity-40 ${
                 spec.secs === s
                   ? "border-[#e4c37a]/55 bg-[#e4c37a]/20 text-[#f0d48a]"
                   : "border-white/18 bg-black/45 text-white/60"
@@ -67,7 +67,7 @@ export function ClipSpecBar({ disabled, compact }: { disabled?: boolean; compact
               type="button"
               disabled={disabled}
               data-clip-res-pick={r}
-              className={`inline-flex min-h-8 items-center justify-center rounded-full border px-2.5 font-mono text-[10px] uppercase tracking-[0.14em] disabled:opacity-40 ${
+              className={`inline-flex min-h-7 items-center justify-center rounded-full border px-2 font-mono text-[10px] uppercase tracking-[0.12em] disabled:opacity-40 ${
                 spec.res === r
                   ? "border-[#9ef0e4]/50 bg-[#9ef0e4]/18 text-[#9ef0e4]"
                   : "border-white/18 bg-black/45 text-white/60"
