@@ -38,6 +38,7 @@ import {
 import { biomeBotStart, createBotForgeHref, lookForgeStart, parseLookForge, vaultHangRoom, vaultHangStart } from "./path-entry.ts";
 import { playableClipSrc, stockBiomeLoop } from "./play-clip.ts";
 import { HALL_LOOP } from "./stock-room.ts";
+import { cuePictureSpot, cueSide, jumpMarks, turnBeatsForRun } from "./films.ts";
 
 function art(id: string, biome = "forest") {
   return {
@@ -616,17 +617,56 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(arts, /quietBiomeFilm\(/);
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
     assert.match(stage, /data-qte=\{holdDoor \? "play"/);
-    assert.match(stage, /holdDoor \? <CueFill/);
+    assert.match(stage, /holdDoor && <CueFill/);
     assert.match(stage, /data-cue-fill=\{side\}/);
-    assert.match(stage, /width: 52/);
-    assert.match(stage, /height: 10/);
+    assert.match(stage, /data-cue-axis="y"/);
+    assert.match(stage, /width: 6/);
+    assert.match(stage, /height: 34/);
+    assert.match(stage, /height: `\$\{fill \* 100\}%`/);
+    assert.match(stage, /cuePictureSpot\(beat\)/);
+    assert.doesNotMatch(stage, /width: 52/);
+    assert.doesNotMatch(stage, /height: 10/);
+    assert.doesNotMatch(stage, /holdDoor \? <CueFill/);
     assert.match(stage, /<Resonance value=\{hud\.resonance\} score=\{hud\.score\} pace=\{hud\.pace\} \/>/);
     assert.match(stage, /film\.pad === "arrows" && !holdDoor && <CutWash/);
     assert.match(stage, /film\.pad !== "arrows" && !holdDoor/);
     assert.doesNotMatch(stage, /[^!]holdDoor && <CutWash/);
     assert.doesNotMatch(stage, /film\.pad !== "arrows" \|\| holdDoor/);
     assert.match(films, /function jumpMarks/);
+    assert.match(films, /function cuePictureSpot/);
     assert.match(stage, /hud\.score/);
     assert.match(stage, /hud\.pace/);
+  });
+
+  it("SmiR cues are narrow vertical ticks at the turn / vault in picture, not Resonance HUD strips", () => {
+    const beats = turnBeatsForRun([15]);
+    const left = beats.find((b) => cueSide(b) === "left");
+    const right = beats.find((b) => cueSide(b) === "right");
+    const jump = beats.find((b) => cueSide(b) === "center" || b.label === "↑");
+    assert.ok(left && right && jump);
+    const L = cuePictureSpot(left);
+    const R = cuePictureSpot(right);
+    const J = cuePictureSpot(jump);
+    assert.equal(cueSide(left), "left");
+    assert.equal(cueSide(right), "right");
+    assert.equal(cueSide(jump), "center");
+    assert.ok(L.x <= 0.26, "left tick sits in the left turn lane");
+    assert.ok(R.x >= 0.74, "right tick sits in the right turn lane");
+    assert.equal(J.x, 0.5);
+    assert.ok(L.y >= 0.44 && L.y <= 0.66);
+    assert.ok(R.y >= 0.44 && R.y <= 0.66);
+    assert.ok(J.y >= 0.44 && J.y <= 0.66, "vault tick stays in picture, not the HUD row");
+    assert.ok(J.y < 0.7);
+    assert.deepEqual(jumpMarks(15), [7.6]);
+    assert.ok(!beats.some((b) => (b.spot?.y ?? 0) > 0.7), "no authored spots in the Resonance row");
+
+    const here = dirname(fileURLToPath(import.meta.url));
+    const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    const resonance = stage.slice(stage.indexOf("function Resonance"), stage.indexOf("function CueFill"));
+    assert.doesNotMatch(resonance, /CueFill/);
+    assert.match(stage, /data-cue-axis="y"/);
+    assert.match(stage, /left: `\$\{spot\.x \* 100\}%`/);
+    assert.match(stage, /top: `\$\{spot\.y \* 100\}%`/);
+    assert.doesNotMatch(stage, /mb-2 h-\[10px\]/);
   });
 });
