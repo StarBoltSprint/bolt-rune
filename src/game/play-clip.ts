@@ -72,9 +72,11 @@ export function playableClipSrc(u?: string | null): string {
   return "";
 }
 
-export function stockBiomeLoop(biome?: string | null): string {
-  const id = String(biome || "asteroid").replace(/[^a-z]/g, "").slice(0, 16) || "asteroid";
-  return `/films/forge-${id}.mp4`;
+/** Same-origin loop that is actually shipped (sprint `forge-*.mp4` are not in this tree). */
+export const STOCK_PLAYABLE_LOOP = "/ui/forge.mp4";
+
+export function stockBiomeLoop(_biome?: string | null): string {
+  return STOCK_PLAYABLE_LOOP;
 }
 
 /**

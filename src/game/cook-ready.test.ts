@@ -98,8 +98,9 @@ describe("biome cook READY remount", () => {
     assert.match(src, /^\/api\/clip\?u=/);
     assert.doesNotMatch(src, /^https:\/\/imgen/);
     assert.equal(biomeReadySrc([], "asteroid"), stockBiomeLoop("asteroid"));
-    assert.equal(biomeReadySrc(["/films/cook-asteroid.jpg"], "asteroid"), "/films/forge-asteroid.mp4");
+    assert.equal(biomeReadySrc(["/films/cook-asteroid.jpg"], "asteroid"), "/ui/forge.mp4");
     assert.equal(biomeReadySrc(["/films/forge-asteroid.mp4"], "asteroid"), "/films/forge-asteroid.mp4");
+    assert.equal(stockBiomeLoop("asteroid"), "/ui/forge.mp4");
   });
 
   it("artifacts remount keeps #forge/cook instead of forcing rifts", () => {
