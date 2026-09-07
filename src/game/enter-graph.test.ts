@@ -37,6 +37,7 @@ import {
   stockBiomePlaylist,
   stockTransUrl,
   vaultHangCaption,
+  walkHangHallHref,
   walkHungHref,
 } from "./enter-graph.ts";
 import { biomeBotStart, createBotForgeHref, lookForgeStart, parseLookForge, vaultHangRoom, vaultHangStart } from "./path-entry.ts";
@@ -408,6 +409,10 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(walkHungHref({ hall: 4, door: "A", citadel: "cit-8" }), /session=cit-8/);
     assert.match(walkHungHref({ hall: 4, door: "A", citadel: "cit-8" }), /hall=4/);
     assert.equal(walkHungHref({ hall: 4 }), "");
+    assert.match(walkHangHallHref("cit-8", 4), /session=cit-8/);
+    assert.match(walkHangHallHref("cit-8", 4), /hall=4/);
+    assert.ok(!walkHangHallHref("cit-8", 4).includes("first="));
+    assert.equal(walkHangHallHref("cit-8", 0), "");
     assert.notEqual(walkHungHref({ hall: 3, door: "A" }), walkHungHref({ hall: 8, door: "A" }));
     const here = dirname(fileURLToPath(import.meta.url));
     const cook = readFileSync(join(here, "./cook.ts"), "utf8");

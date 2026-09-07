@@ -5,6 +5,83 @@ export const HANG_CONFIRM_ARM_MS = 1100;
 /** Swallow leftover Play Sprint / confirm taps for the same window. */
 export const HANG_LEFTOVER_SWALLOW_MS = 1100;
 
+/** Pending Hang after citadel + room lock — door A/B is chosen in the living hall. */
+export const HANG_PENDING_KEY = "bolt-hang-pending-v1";
+
+export type HangPending = {
+  id: string;
+  citadel: string;
+  hall: number;
+};
+
+export function writeHangPending(p: HangPending | null): void {
+  try {
+    if (typeof sessionStorage === "undefined") return;
+    if (!p?.id || !hallN(p.hall)) {
+      sessionStorage.removeItem(HANG_PENDING_KEY);
+      return;
+    }
+    sessionStorage.setItem(
+      HANG_PENDING_KEY,
+      JSON.stringify({
+        id: String(p.id).slice(0, 80),
+        citadel: String(p.citadel || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48),
+        hall: hallN(p.hall),
+      }),
+    );
+  } catch {
+    /* */
+  }
+}
+
+export function readHangPending(): HangPending | null {
+  try {
+    if (typeof sessionStorage === "undefined") return null;
+    const raw = sessionStorage.getItem(HANG_PENDING_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as HangPending;
+    const hall = hallN(p?.hall);
+    const id = String(p?.id || "").slice(0, 80);
+    if (!id || !hall) return null;
+    return {
+      id,
+      citadel: String(p.citadel || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48),
+      hall,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function takeHangPending(): HangPending | null {
+  const p = readHangPending();
+  writeHangPending(null);
+  return p;
+}
+
+/** Wrap carousel index. Swipe left (+1) is next. */
+export function hangStillWrap(count: number, index: number, delta: number): number {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  if (n <= 0) return 0;
+  const i = Math.floor(Number(index) || 0);
+  const d = Math.trunc(Number(delta) || 0);
+  return ((i + d) % n + n) % n;
+}
+
+/** Picture centre locks. Left/right edges are back — not next/prev. */
+export function hangStillLane(nx: number): "back" | "lock" {
+  if (!Number.isFinite(nx)) return "lock";
+  if (nx < 0.22 || nx > 0.78) return "back";
+  return "lock";
+}
+
+/** Horizontal swipe: −1 prev, +1 next, 0 tap. */
+export function hangStillSwipe(dx: number, dy: number, slop = 56): -1 | 0 | 1 {
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return 0;
+  if (Math.abs(dx) < slop || Math.abs(dx) <= Math.abs(dy)) return 0;
+  return dx < 0 ? 1 : -1;
+}
+
 /** Hall N painted on a Hang sheet card — never an index or last-hung hall. */
 export function hangCardHall(n?: number | string | null): number {
   return hallN(typeof n === "number" ? n : n == null || n === "" ? 0 : n);
