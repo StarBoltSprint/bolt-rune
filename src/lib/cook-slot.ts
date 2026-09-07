@@ -60,8 +60,11 @@ export function slotStatus(slot: CookSlot, now: number) {
 }
 
 /** xAI body → capacity. Local inflight is "held", never this. */
-export function classifyImagineRaw(raw: string): "capacity" | "timeout" | "echo-off" | null {
+export function classifyImagineRaw(raw: string): "capacity" | "timeout" | "echo-off" | "clip-too-large" | null {
   const t = String(raw || "").toLowerCase();
+  if (t.includes("52428800") || t.includes("clip-too-large") || t.includes("clip too large") || /exceeds?\s+maximum\s+size/.test(t) || /video.{0,40}too large/.test(t)) {
+    return "clip-too-large";
+  }
   if (t.includes("overload") || t.includes("unavailable") || t.includes("429") || t.includes("capacity") || t.includes("rate limit")) {
     return "capacity";
   }
