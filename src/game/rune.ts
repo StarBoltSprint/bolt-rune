@@ -393,34 +393,40 @@ export const STAND_LOCK =
 export const AAA_LOCK =
   "LOOK: Unreal 5 AAA, Nanite, Lumen, photoreal PBR. Not 2D, cartoon, anime, illustration. Skin AAA. Camera stays the wide locked hall.";
 
-/** Snow-white 3/4 face on black. Never a Forge tray chip. Never an Imagine @ref. */
+/** Face-front crop. Never a Forge tray chip. Never an Imagine @ref — face stills turn walk cooks. */
 export const BOLT_FACE = "/refs/bolt-face.jpg";
-/** Sealed Imagine identity still: rear/stand, snow-white coat on black. */
-export const BOLT_BODY = "/refs/bolt-white.jpg";
+/** Sealed Imagine identity still: rear full-body, snow-white coat on black. Scale lock. */
+export const BOLT_BODY = "/refs/bolt-body.jpg";
 
-const TAINTED_BOLT = new Set(["/refs/bolt-face.jpg", "/refs/bolt-body.jpg", "/refs/bolt.jpg"]);
+const TAINTED_BOLT = new Set(["/refs/bolt-face.jpg", "/refs/bolt.jpg"]);
 const TAINTED_BOLT_FILE = new Set([
   "bolt-face.jpg",
   "bolt-face.jpeg",
   "bolt-face.png",
   "bolt-face.webp",
-  "bolt-body.jpg",
-  "bolt-body.jpeg",
-  "bolt-body.png",
-  "bolt-body.webp",
   "bolt.jpg",
   "bolt.jpeg",
   "bolt.png",
   "bolt.webp",
 ]);
+const OTHER_BOLT_STILL = /^(bolt)(-white|-face|-body)?\.(jpg|jpeg|png|webp)$/i;
 
-/** Roux / cream / old body crops — never send to Imagine, even if the file was replaced. */
+/** Roux / cream / face-front crops — never send to Imagine, even if the file was replaced. */
 export function isTaintedBolt(u?: string | null): boolean {
   if (!u) return false;
   const path = (u.split("?")[0] || u).toLowerCase();
   if (TAINTED_BOLT.has(path)) return true;
   const base = path.split("/").pop() || path;
   return TAINTED_BOLT_FILE.has(base);
+}
+
+/** Extra bolt stills (tiny white chip, face, old crops). Identity kit is rear body only. */
+export function isOtherBoltStill(u?: string | null): boolean {
+  if (!u) return false;
+  const path = (u.split("?")[0] || u).toLowerCase();
+  if (path === BOLT_BODY) return false;
+  const base = path.split("/").pop() || path;
+  return OTHER_BOLT_STILL.test(base);
 }
 
 export function dropTaintedBolt(urls: (string | null | undefined)[] = []): string[] {
@@ -433,20 +439,20 @@ export function isForgeFaceChip(id?: string | null, name?: string | null): boole
   return a === "bolt-face" || a === "face" || b === "bolt-face" || b === "face";
 }
 
-/** Forge tray identity chips: body only — never the face crop. */
+/** Forge tray identity chips: rear body only — never the face crop. */
 export function forgeTrayRefs<T extends { id: string; name?: string; src?: string }>(refs: T[]): T[] {
-  return refs.filter((r) => !isForgeFaceChip(r.id, r.name) && !isTaintedBolt(r.src));
+  return refs.filter((r) => !isForgeFaceChip(r.id, r.name) && !isTaintedBolt(r.src) && !isOtherBoltStill(r.src));
 }
 
 export const BOLT_ID =
   "ONE dog: StarBoltSprint. White Swiss Shepherd only — never a classic German Shepherd. FULL snow-white coat ONLY — zero tan, ginger, saddle, mask. TEXT COAT WINS over any tinted ref. No wolf, no fox, no second dog.";
 
-/** Identity still only. Drop face / cream / old body crops so @ref cannot override the coat. */
+/** Rear body identity only. Drop face / tiny white chip / old crops so @ref cannot turn Bolt. */
 export function boltKit(extra: (string | null | undefined)[] = []) {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const u of [BOLT_BODY, ...dropTaintedBolt(extra)]) {
-    if (!u || seen.has(u) || isTaintedBolt(u)) continue;
+    if (!u || seen.has(u) || isTaintedBolt(u) || isOtherBoltStill(u)) continue;
     seen.add(u);
     out.push(u);
   }

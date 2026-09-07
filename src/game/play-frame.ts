@@ -37,7 +37,7 @@ export function isHallPlayStill(u?: string | null): boolean {
   return s.startsWith("/films/") || s.startsWith("http") || s.startsWith("blob:");
 }
 
-/** Sealed pack identity labels only. `place-bolt` / seed / pose must not pack to BOLT_BODY. */
+/** Sealed pack identity labels only. Face labels pack to the rear body — never bolt-face.jpg. */
 export function packIdentityStill(label: string): string | null {
   const n = label.toLowerCase().trim();
   if (n === "bolt" || n === "bolt-body" || n === "bolt-face" || n === "face") return BOLT_BODY;
