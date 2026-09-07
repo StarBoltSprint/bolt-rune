@@ -302,6 +302,18 @@ export function resolveDoorEnter(
 export const ENTER_LEFTOVER_MS = 1100;
 
 /**
+ * Leftover Door A/B pointer after hung enter — swallow so it cannot QTE-MISS
+ * or tank pace. Hold + leftover window is enough; the plate may already be biome.
+ */
+export function hallLeftoverQuiet(
+  now: number,
+  mountedAt: number,
+  hold?: string | null,
+): boolean {
+  return Boolean(hold) && now - mountedAt < ENTER_LEFTOVER_MS;
+}
+
+/**
  * Hall-plate tap during biome enter.
  * Leftover enter tap and any door while we hold a hung biome stay on biome —
  * never QTE-MISS or fracture back to the hall.

@@ -21,8 +21,9 @@ import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
 import { playableClipSrc, stockBiomeLoop } from "@/game/play-clip";
 import { HazardLayer } from "@/components/hazard-layer";
-import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, hungBiomePlaylist, hungStageChrome, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
+import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallLeftoverQuiet, hallPlateAt, hungBiomePlaylist, hungStageChrome, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
 import { doorAtPoint, isHallFilm, isLivingHallLoop } from "@/game/stock-room";
+import { PACE_MAX, PACE_MIN, paceAfterMiss } from "@/game/pace";
 
 export type RunResult = {
   score: number;
@@ -45,8 +46,6 @@ type Phase = "arm" | "run" | "crash" | "done";
 
 const APPROACH = 1.55;
 const HOLD_NEED_DEFAULT = 520;
-const PACE_MIN = 0.5;
-const PACE_MAX = 8;
 
 type Props = {
   id: FilmId;
@@ -801,7 +800,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.resonance = Math.max(0.04, g.resonance * 0.32);
     sfxHit("miss");
     pop("MISS", "bad", liveSpot(beat, clock()).x * 100, liveSpot(beat, clock()).y * 100);
-    g.pace = Math.max(PACE_MIN, g.pace - 0.32);
+    g.pace = paceAfterMiss(g.pace);
     setFlash(1);
     window.setTimeout(() => setFlash(0), 120);
     if (g.streakMiss >= (film.lives ?? 3)) {
@@ -874,6 +873,9 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   }
 
   function tryHallDoor(clientX: number, clientY: number) {
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    /* Hall leftover door tap must not QTE-MISS or tank pace — even on biome MP4. */
+    if (hallLeftoverQuiet(now, mountedAt.current, holdDoorRef.current)) return true;
     if (!hallPlateNow()) return false;
     if (holdDoorRef.current) return true;
     const box = wrapRef.current?.getBoundingClientRect();
@@ -883,7 +885,6 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     const hit = doorAtPoint(nx, ny);
     if (hit !== "m1" && hit !== "m2") return true;
     const letter = doorLetterOf(hit);
-    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
     if (hallDoorTap(now, mountedAt.current, letter, holdDoorRef.current) === "stay") return true;
     onHallDoorRef.current?.(letter);
     return true;
@@ -1559,7 +1560,7 @@ function Resonance({ value, score = 0, pace = 1 }: { value: number; score?: numb
   );
 }
 
-/** Narrow vertical tick in the picture at the turn / vault — not a Resonance HUD strip. */
+/** Narrow vertical tick on the turn aisle / vault gap — never over Bolt, never a Resonance HUD strip. */
 function CueFill({ beat, t }: { beat?: Beat; t: number }) {
   if (!beat) return null;
   const until = beat.at - t;

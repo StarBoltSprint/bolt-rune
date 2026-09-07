@@ -13,6 +13,7 @@ import {
   firstBiomePlate,
   gateFromHung,
   hallDoorTap,
+  hallLeftoverQuiet,
   hangArtifactOnDoor,
   hungEnterBindHall,
   hungBiomePlaylist,
@@ -572,14 +573,20 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.equal(biomeHoldPlays(null), false);
     assert.equal(hallDoorTap(40000, 0, "A", "A"), "stay");
     assert.equal(hallDoorTap(40000, 0, "B", "A"), "stay");
+    assert.equal(hallLeftoverQuiet(400, 0, "A"), true);
+    assert.equal(hallLeftoverQuiet(2000, 0, "A"), false);
+    assert.equal(hallLeftoverQuiet(400, 0, null), false);
     const here = dirname(fileURLToPath(import.meta.url));
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
     assert.match(stage, /function chartFor\(duration: number, seed: number\)/);
     assert.match(stage, /return prepareBeats\(film, duration, seed, original\)/);
     assert.doesNotMatch(stage, /if \(biomeQteQuiet\(holdDoorRef\.current\)\) return \[\]/);
     assert.match(stage, /if \(biomeQteQuiet\(holdDoorRef\.current, hallQuiet\) \|\| hallQuiet\)/);
+    assert.match(stage, /hallLeftoverQuiet\(now, mountedAt\.current, holdDoorRef\.current\)/);
     assert.match(stage, /if \(!hallPlateNow\(\)\) return false/);
     assert.match(stage, /if \(holdDoorRef\.current\) return true/);
+    assert.match(stage, /g\.pace = paceAfterMiss\(g\.pace\)/);
+    assert.doesNotMatch(stage, /g\.pace - 0\.32/);
     assert.doesNotMatch(stage, /g\.beats = prepareBeats\(film, a\.duration/);
   });
 
@@ -632,7 +639,7 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.doesNotMatch(stage, /[^!]holdDoor && <CutWash/);
     assert.doesNotMatch(stage, /film\.pad !== "arrows" \|\| holdDoor/);
     assert.match(films, /function jumpMarks/);
-    assert.match(films, /function cuePictureSpot/);
+    assert.match(films, /cuePictureSpot,/);
     assert.match(stage, /hud\.score/);
     assert.match(stage, /hud\.pace/);
   });
@@ -641,14 +648,20 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const films = readFileSync(join(here, "./films.ts"), "utf8");
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
-    assert.match(films, /export function cueSide/);
-    assert.match(films, /export function cuePictureSpot/);
-    assert.match(films, /x: Math.min\(spot.x, 0.26\)/);
-    assert.match(films, /x: Math.max\(spot.x, 0.74\)/);
-    assert.match(films, /spot\.y > 0.7 \? 0.58 : spot.y/);
-    assert.match(films, /const x = m.dir === "left" \? 0.2 : 0.8/);
-    assert.match(films, /spot: \{ x: 0.5, y: 0.58 \}/);
+    assert.match(films, /export \{/);
+    assert.match(films, /cuePictureSpot,/);
+    assert.match(films, /cueSide,/);
+    assert.match(films, /CUE_AISLE_LEFT/);
+    assert.match(films, /CUE_AISLE_RIGHT/);
+    assert.match(films, /spot: \{ x: CUE_JUMP_X, y: CUE_JUMP_Y \}/);
     assert.doesNotMatch(films, /spot: \{ x: 0.5, y: 0.78 \}/);
+    const cue = readFileSync(join(here, "./cue-spot.ts"), "utf8");
+    assert.match(cue, /export const CUE_AISLE_LEFT = 0.22/);
+    assert.match(cue, /export const CUE_AISLE_RIGHT = 0.78/);
+    assert.match(cue, /export const CUE_JUMP_X = 0.28/);
+    assert.match(cue, /export const CUE_JUMP_Y = 0.42/);
+    assert.match(cue, /onBoltBody\(spot.x\) \? CUE_JUMP_X/);
+    assert.doesNotMatch(cue, /return \{ x: 0.5, y \}/);
     const resonance = stage.slice(stage.indexOf("function Resonance"), stage.indexOf("function CueFill"));
     assert.doesNotMatch(resonance, /CueFill/);
     assert.match(stage, /data-cue-axis="y"/);

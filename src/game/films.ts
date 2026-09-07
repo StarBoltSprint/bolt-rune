@@ -1,4 +1,25 @@
 import { buildCanyonChart } from "./canyon";
+import {
+  CUE_AISLE_LEFT,
+  CUE_AISLE_RIGHT,
+  CUE_JUMP_X,
+  CUE_JUMP_Y,
+  CUE_PATH_Y_MIN,
+} from "./cue-spot";
+
+export {
+  BOLT_BODY_X0,
+  BOLT_BODY_X1,
+  CUE_AISLE_LEFT,
+  CUE_AISLE_RIGHT,
+  CUE_JUMP_X,
+  CUE_JUMP_Y,
+  CUE_PATH_Y_MAX,
+  CUE_PATH_Y_MIN,
+  cuePictureSpot,
+  cueSide,
+  spotOf,
+} from "./cue-spot";
 
 export type Lane = "l" | "c" | "r";
 export type BeatKind = "tap" | "hold" | "mash" | "swipe" | "relic" | "pick" | "left" | "right";
@@ -377,8 +398,8 @@ export function turnBeatsForRun(plateDurations: number[]): Beat[] {
     for (const m of turnMarks(secs)) {
       if (m.at >= d - 0.55) continue;
       const lane: Lane = m.dir === "left" ? "l" : "r";
-      const x = m.dir === "left" ? 0.2 : 0.8;
-      const y = 0.56 + ((n % 2) * 0.05);
+      const x = m.dir === "left" ? Math.min(0.2, CUE_AISLE_LEFT) : Math.max(0.8, CUE_AISLE_RIGHT);
+      const y = CUE_PATH_Y_MIN + 0.06 + ((n % 2) * 0.05);
       out.push(
         b(`t${n}`, Number((acc + m.at).toFixed(2)), m.dir, lane, m.dir === "left" ? "←" : "→", {
           win: 1.32,
@@ -392,7 +413,7 @@ export function turnBeatsForRun(plateDurations: number[]): Beat[] {
       out.push(
         b(`j${n}`, Number((acc + at).toFixed(2)), "tap", "c", "↑", {
           win: 1.2,
-          spot: { x: 0.5, y: 0.58 },
+          spot: { x: CUE_JUMP_X, y: CUE_JUMP_Y },
         }),
       );
       n += 1;
@@ -437,30 +458,6 @@ function mulberry32(seed: number) {
   };
 }
 
-export function spotOf(beat: Beat): Spot {
-  return beat.spot ?? beat.relic ?? { x: 0.5, y: 0.5 };
-}
-
-export function cueSide(beat: Beat): "left" | "right" | "center" {
-  if (beat.kind === "left") return "left";
-  if (beat.kind === "right") return "right";
-  if (beat.kind === "tap" && beat.lane === "c") return "center";
-  if (/jump|vault|↑/i.test(beat.label)) return "center";
-  if (beat.lane === "l") return "left";
-  if (beat.lane === "r") return "right";
-  return "center";
-}
-
-/** Picture-space tick at the turn lane / vault — never the Resonance HUD row. */
-export function cuePictureSpot(beat: Beat): Spot {
-  const side = cueSide(beat);
-  const spot = spotOf(beat);
-  const y = Math.min(0.66, Math.max(0.44, spot.y > 0.7 ? 0.58 : spot.y));
-  if (side === "left") return { x: Math.min(spot.x, 0.26), y };
-  if (side === "right") return { x: Math.max(spot.x, 0.74), y };
-  return { x: 0.5, y };
-}
-
 /** Scatter hit marks across the picture. Relics keep authored positions. */
 export function placeSpots(beats: Beat[], seed: number): Beat[] {
   const rand = mulberry32(seed || 1);
@@ -478,11 +475,11 @@ export function placeSpots(beats: Beat[], seed: number): Beat[] {
         x = beat.lane === "l" ? 0.18 + rand() * 0.3 : 0.52 + rand() * 0.3;
         y = used.length % 2 === 0 ? 0.3 + rand() * 0.22 : 0.54 + rand() * 0.2;
       } else if (beat.kind === "left" || beat.lane === "l") {
-        x = 0.18 + rand() * 0.08;
-        y = 0.5 + rand() * 0.12;
+        x = 0.12 + rand() * (CUE_AISLE_LEFT - 0.12);
+        y = CUE_PATH_Y_MIN + rand() * 0.1;
       } else if (beat.kind === "right" || beat.lane === "r") {
-        x = 0.74 + rand() * 0.08;
-        y = 0.5 + rand() * 0.12;
+        x = CUE_AISLE_RIGHT + rand() * (0.88 - CUE_AISLE_RIGHT);
+        y = CUE_PATH_Y_MIN + rand() * 0.1;
       } else {
         x = 0.16 + rand() * 0.68;
         y = 0.26 + rand() * 0.52;
