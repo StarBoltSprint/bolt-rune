@@ -231,6 +231,7 @@ export {
   HALL_LOOP,
   HALL_STILL,
   isHallFilm,
+  stockDoorWalk,
   stockRoomBank,
   stockDoorHits,
   stockStand,

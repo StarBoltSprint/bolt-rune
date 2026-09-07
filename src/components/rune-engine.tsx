@@ -34,6 +34,7 @@ import {
   HALL_STILL,
   isHallFilm,
   stockRoomBank,
+  stockDoorWalk,
   pathEntry,
   stockDoorHits,
   stockStand,
@@ -79,6 +80,7 @@ import {
   stayBiomePlay,
   stockTransUrl,
   hungDoorTap,
+  hungHallLocksDoors,
   walkHangHallHref,
   walkHungHref,
   type BiomeName,
@@ -749,6 +751,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const [hangRoomN, setHangRoomN] = useState(1);
   const hangRoomRef = useRef(1);
   const hangGuard = useRef(0);
+  const walkingTo = useRef("");
   const [liveHall, setLiveHall] = useState(() => (boot?.kind === "path" ? boot.hall || 1 : 1));
   function pickHangHall(n: number) {
     const hall = Math.max(1, Math.min(8, n || 1));
@@ -794,7 +797,6 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const plateRef = useRef(plate);
   refsHold.current = refs;
   plateRef.current = plate;
-  hereRef.current = here;
   pinsRef.current = pins;
   phaseRef.current = phase;
   graphRef.current = graph;
@@ -1439,9 +1441,27 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (done) done();
   }
 
+  function hangDoorHall() {
+    return hungHallLocksDoors({
+      riftA: riftRef.current.m1,
+      riftB: riftRef.current.m2,
+      hungA: hungDoorReady("m1"),
+      hungB: hungDoorReady("m2"),
+      hangRoom: hangRoomRef.current,
+    });
+  }
+
   function goTo(id: string) {
     if (riftPickRef.current || riftDraftRef.current) return;
     if (entering.current) return;
+    /* Leftover pointerup during the first-tap walk must not restart or enter. */
+    if (
+      (id === "m1" || id === "m2") &&
+      walkingTo.current === id &&
+      (playing.current || walk.current || beatRef.current === "playvid" || beatRef.current === "walk")
+    ) {
+      return;
+    }
     if ((id === "m1" || id === "m2")) {
       const pending = readHangPending();
       const bind = hangBindHall(pending?.hall);
@@ -1477,14 +1497,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         return;
       }
       if (stock && (playing.current || walk.current || beatRef.current === "playvid" || beatRef.current === "walk")) {
+        if (walkingTo.current === id) return;
         stopStockWalk();
       }
       liveForge.current = false;
       playing.current = false;
       wrapping.current = false;
       if ((id === "m1" || id === "m2") && hereRef.current === id) {
-        const can = destHall(id) > 0 || !!riftRef.current[id];
-        if (can) {
+        /* destHall must not win — same unhung door stays in breath, never spawn snap. */
+        if (hungDoorReady(id)) {
           void goEnter(id);
           return;
         }
@@ -1510,8 +1531,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     wrapping.current = false;
     if ((id === "m1" || id === "m2") && hereRef.current === id && beatRef.current === "idle") {
-      const can = destHall(id) > 0 || !!riftRef.current[id];
-      if (can) {
+      if (hungDoorReady(id)) {
         void goEnter(id);
         return;
       }
@@ -2163,11 +2183,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const list = withSpawn(pinsRef.current);
     const at = hereRef.current;
     if (id === at) {
-      if ((id === "m1" || id === "m2") && beatRef.current === "idle") {
-        if (destHall(id) > 0 || riftRef.current[id]) {
-          void goEnter(id);
-          return;
-        }
+      if ((id === "m1" || id === "m2") && beatRef.current === "idle" && hungDoorReady(id)) {
+        void goEnter(id);
+        return;
       }
       setLit(id);
       window.setTimeout(() => setLit(null), 280);
@@ -2181,12 +2199,20 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setFrost("no door");
       return;
     }
+    walkingTo.current = id;
     let clip = clipFor(at, id);
     if (!clip) {
-      setFrost(`cook · ${at} → ${id}`);
-      clip = await forgeWalkNow(at, id);
+      const stock = stockDoorWalk(at, id);
+      if (stock) {
+        clip = stock;
+        bank.current.set(`${at}→${id}`, stock);
+      } else {
+        setFrost(`cook · ${at} → ${id}`);
+        clip = await forgeWalkNow(at, id);
+      }
     }
     if (!clip) {
+      walkingTo.current = "";
       setFrost("no film that way");
       setLit(id);
       window.setTimeout(() => setLit(null), 700);
@@ -2227,7 +2253,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         sleep(wait),
       ]);
     }
-    if (token !== playTok.current) return;
+    if (token !== playTok.current) {
+      if (walkingTo.current === id) walkingTo.current = "";
+      return;
+    }
     setPose(null);
     setHere(id);
     hereRef.current = id;
@@ -2237,7 +2266,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setLit(null);
     playing.current = false;
     idleArmed.current = true;
+    walkingTo.current = "";
     markLivePlay(sid.current, id, hallKeep.current || undefined);
+    persist({ phase: "play", here: id, cameFrom: at, plate: plateRef.current });
     const next = queued.current;
     queued.current = null;
     if (id === "m1" || id === "m2") {
@@ -2245,9 +2276,6 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         skipAsk.current = "";
         if (hungDoorReady(id)) {
           /* Breath / hold at hung door. No chrome Enter. Second tap same door enters. */
-          void prefetchExit(id);
-        } else if (destHall(id) > 0 || riftRef.current[id]) {
-          setEnterAsk(id);
           void prefetchExit(id);
         }
       }
@@ -2612,7 +2640,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const g = compileCitadel(plateRef.current || HALL_FALLBACK, pinsRef.current, walkSecsRef.current);
     setGraph(g);
     graphRef.current = g;
-    const hereNow = playEnter ? SPAWN.id : slice.here || SPAWN.id;
+    const keepDoor = !playEnter && phaseRef.current === "play" && (hereRef.current === "m1" || hereRef.current === "m2");
+    const hereNow = playEnter ? SPAWN.id : keepDoor ? hereRef.current : slice.here || SPAWN.id;
     setHere(hereNow);
     hereRef.current = hereNow;
     cameFrom.current = playEnter ? "enter" : slice.cameFrom || "start";
@@ -2993,7 +3022,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         return;
       }
       const door = hit?.inside ? doorAt(hit.nx, hit.ny) : null;
-      if (door) {
+      if (door && door !== "spawn") {
         window.clearTimeout(pendingTap.current);
         lastTap.current = performance.now();
         setTray(false);
@@ -4514,8 +4543,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   async function goEnter(door?: "m1" | "m2") {
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
     /* After Hang Room N, leftover Door A must not open FilmStage. */
-    if (now < hangGuard.current) return;
     const pick: "m1" | "m2" = door === "m1" || door === "m2" ? door : enterAsk === "m2" ? "m2" : "m1";
+    /* Leftover Hang A must not FilmStage. Breath at this door may enter. */
+    if (hereRef.current !== pick) {
+      if (now < hangGuard.current) return;
+    }
     viaHold.current = pick;
     setEnterAsk(null);
     setTray(false);
@@ -4548,6 +4580,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         });
         return;
       }
+      /* Hung hall: never destHall / enter→spawn — stay in breath at this door. */
+      if (hangDoorHall()) return;
       if (dest && dest < hallHold.current) {
         persist({ phase: "play", halls: putSlice(hallsHold.current, snapHall()) });
         await switchHall(dest, false);
