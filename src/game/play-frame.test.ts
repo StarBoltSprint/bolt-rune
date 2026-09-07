@@ -10,6 +10,7 @@ import {
   arrivalBreathUrl,
   arrivalEndStill,
   cookHasWalks,
+  doorArrivalNeedsCook,
   filmTrayStillKeep,
   hallStillOf,
   isBoltSilhouette,
@@ -275,12 +276,18 @@ describe("A↔B last-frame seed chain", () => {
     const enterBreath = src.slice(src.indexOf("async function enterDoorBreath"), src.indexOf("async function saveFilms"));
     assert.match(enterBreath, /cookIdleAt\(node, seed, walkUrl, via, true\)/);
     assert.match(enterBreath, /arrivalBreathUrl\(/);
+    assert.match(enterBreath, /doorArrivalNeedsCook\(/);
+    assert.match(enterBreath, /doorBreathPlayable\(idle, walkUrl\)/);
+    assert.doesNotMatch(enterBreath, /if \(!idle\?\.url\)/);
+    assert.doesNotMatch(enterBreath, /\|\| idle\?\.url \|\| ""/);
     assert.match(enterBreath, /kickPlay\(url, true, true\)/);
     assert.match(enterBreath, /cueBreath\(hid, url\)/);
     const holdIdle = src.slice(src.indexOf("function holdIdle"), src.indexOf("async function playEnterThenIdle"));
     assert.match(holdIdle, /arrivalBreathUrl\(/);
     assert.match(holdIdle, /kickPlay\(breathUrl, true, true\)/);
     assert.match(holdIdle, /filmLoop\.current = true/);
+    assert.match(holdIdle, /atDoor \? ""/);
+    assert.doesNotMatch(holdIdle, /atDoor \? "" :[\s\S]*\|\|\s*frame\.url \|\|\s*visSrc\(\) \|\|\s*""\s*\|\|/);
     assert.doesNotMatch(holdIdle, /freezeVis\(/);
     assert.doesNotMatch(holdIdle, /stickCover\(arrival\)/);
     const playFilm = src.slice(src.indexOf("function playFilm("), src.indexOf("async function cookFilm"));
@@ -325,6 +332,46 @@ describe("picture never stops — Play / Load / forge-complete", () => {
     assert.equal(pictureNeverStops(bank, "m2", "spawn", WALK), true);
     assert.ok(arrivalBreathUrl(bank, "m1", "spawn", WALK));
     assert.notEqual(arrivalBreathUrl(bank, "m1", "spawn", WALK), WALK);
+  });
+
+  it("idle-spawn + spawn→m1 must not return spawn breath for m1 arrival", () => {
+    const bank = {
+      "idle-spawn": { url: BREATH, end: COOKED_HALL },
+      "spawn→m1": { url: WALK, end: COOKED_HALL, start: COOKED_HALL },
+    };
+    assert.equal(arrivalBreathUrl(bank, "m1", "spawn", WALK), "");
+    assert.notEqual(arrivalBreathUrl(bank, "m1", "spawn", WALK), BREATH);
+    assert.equal(pictureNeverStops(bank, "m1", "spawn", WALK), false);
+    assert.equal(arrivalBreathUrl(bank, "m2", "m1", WALK), "");
+    assert.equal(arrivalBreathUrl({ "idle-m1": { url: BREATH, end: COOKED_HALL } }, "m2", "m1", WALK), "");
+    assert.equal(arrivalBreathUrl(bank, "spawn", "start", WALK), BREATH);
+    assert.equal(doorArrivalNeedsCook(null, WALK), true);
+    assert.equal(doorArrivalNeedsCook(undefined, WALK), true);
+  });
+
+  it("stock idle-m1/m2 is unplayable and must not block re-cook from landed", () => {
+    const stockIdle = { url: HALL_LOOP, end: HALL_STILL };
+    const cooked = { url: BREATH, end: COOKED_HALL };
+    const stockBank = {
+      "idle-spawn": stockIdle,
+      "idle-m1": stockIdle,
+      "idle-m2": stockIdle,
+      "spawn→m1": { url: WALK, end: COOKED_HALL },
+    };
+    assert.equal(doorBreathPlayable(stockIdle, WALK), false);
+    assert.equal(doorArrivalNeedsCook(stockIdle, WALK), true);
+    assert.equal(doorArrivalNeedsCook(cooked, WALK), false);
+    assert.equal(arrivalBreathUrl(stockBank, "m1", "spawn", WALK), "");
+    assert.equal(arrivalBreathUrl(stockBank, "m2", "spawn", WALK), "");
+    assert.notEqual(arrivalBreathUrl(stockBank, "m1", "spawn", WALK), HALL_LOOP);
+    assert.notEqual(arrivalBreathUrl(stockBank, "m1", "spawn", WALK), BREATH);
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const enterBreath = src.slice(src.indexOf("async function enterDoorBreath"), src.indexOf("async function saveFilms"));
+    assert.match(enterBreath, /doorArrivalNeedsCook\(idle, walkUrl\)/);
+    assert.match(enterBreath, /cookIdleAt\(node, seed, walkUrl, via, true\)/);
+    const cookIdle = src.slice(src.indexOf("async function cookIdleAt"), src.indexOf("async function cookWalks"));
+    assert.match(cookIdle, /if \(have && doorBreathPlayable\(have, fromFilm\)\) return have\.end \|\| still;/);
   });
 
   it("Load hydrate keeps a thinner incoming bank from wiping cooked clips", () => {
