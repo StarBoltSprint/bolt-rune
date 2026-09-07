@@ -9,7 +9,7 @@ import { hangHall, listHall } from "@/lib/hall";
 import { bindCitadel, defaultHangRoom, hallN, hangOpensSheet, holdHangRooms, listHangCitadels, listHangRooms, resolveHangRoom, type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import { hydrateSessions, lastPlay, listSessions, listStoredHallHints, LOAD_DROP_EVENT, stampPlay } from "@/game/rune-session";
 import { HangAskSheet, StillCarousel, StillChip } from "@/components/hang-ask";
-import { HANG_HALL_FLOOR, HANG_LEFTOVER_SWALLOW_MS, hangBindHall, hangStillWrap, swallowOpeningTap, writeHangFloor, writeHangPending } from "@/game/hang-ask";
+import { HANG_HALL_FLOOR, HANG_LEFTOVER_SWALLOW_MS, hangActEnters, hangBindHall, hangDoorAct, hangStillWrap, swallowOpeningTap, writeHangFloor, writeHangPending, type HangDoorAct } from "@/game/hang-ask";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { FilmStage } from "@/components/film-stage";
 import { sfxForge } from "@/game/audio";
@@ -190,7 +190,7 @@ export function VaultHall() {
     setHangHallN(next);
   }
 
-  function hangDoor(a: HungArtifact, door: "A" | "B", from?: HungArtifact[], hallWant?: number | string | null) {
+  function hangDoor(a: HungArtifact, door: "A" | "B", from?: HungArtifact[], hallWant?: number | string | null, act?: HangDoorAct | string | null) {
     const cit = bindCitadel(listSessions(), lastPlay(), hangCitadelRef.current);
     const rooms = refreshHangRooms(from?.length ? from : hungRef.current);
     const bindHall = hangBindHall(hallWant);
@@ -216,23 +216,30 @@ export function VaultHall() {
     hangGuard.current = (typeof performance !== "undefined" ? performance.now() : Date.now()) + HANG_LEFTOVER_SWALLOW_MS;
     swallowOpeningTap();
     setHangRooms((prev) => prev.map((r) => ({ ...r, living: r.hall === bindHall })));
-    sfxForge("enter");
     const roomsN = Math.max(
       bindHall,
       hangRoomsRef.current.filter((r) => !r.citadel || r.citadel === citadel).length,
       lastPlay()?.id === citadel ? lastPlay()?.rooms || 1 : 1,
     );
     if (citadel || cit.citadel) stampPlay(citadel || cit.citadel, cit.title, bindHall, roomsN);
-    const href = walkHungHref(live.room, roomsN);
-    if (href) {
-      window.location.assign(href);
-      return;
-    }
     const chrome = hungPlayChrome(bindHall, letter);
+    /* Hang A/B Bind stays on the card. Only Hang & enter walks the hall. */
+    if (hangActEnters(act)) {
+      sfxForge("enter");
+      const href = walkHungHref(live.room, roomsN) || walkHangHallHref(citadel, bindHall, roomsN);
+      if (href) {
+        window.location.assign(href);
+        return;
+      }
+    } else {
+      sfxForge("page");
+    }
     setFrost(
-      cit.citadel
-        ? `${cit.title || "Citadel"} · ${chrome.keeper}`
-        : `${chrome.keeper} · Play / Load to walk it`,
+      hangActEnters(act)
+        ? cit.citadel
+          ? `${cit.title || "Citadel"} · ${chrome.keeper}`
+          : `${chrome.keeper} · Play / Load to walk it`
+        : `${chrome.keeper} · hung · Play to walk`,
     );
     window.setTimeout(() => setFrost(""), 2400);
   }
@@ -556,10 +563,13 @@ export function VaultHall() {
           }}
           actions={
             <div data-vault-actions="" className="sticky bottom-0 flex w-full flex-col items-center gap-2">
-              <p className={`font-mono text-[9px] uppercase tracking-[0.16em] ${vaultHungOn ? "text-[#9ef0e4]" : "text-white/40"}`}>
+              <p
+                className={`font-mono text-[9px] uppercase tracking-[0.16em] ${vaultHungOn ? "text-[#9ef0e4]" : "text-white/40"}`}
+                data-hang-bound={vaultHungOn || undefined}
+              >
                 {vaultHungOn
                   ? `${vaultHangCaption(head.room)}${vaultPack.name ? ` · ${vaultPack.name}` : ""}`
-                  : "not on a door · Hang then walk A or B"}
+                  : "not on a door · Hang then Bind or Hang & enter"}
               </p>
               <div className="flex flex-wrap justify-center gap-2">
                 <StillChip
@@ -735,17 +745,16 @@ export function VaultHall() {
           citadel={hangCitadel}
           onCitadel={pickHangCitadel}
           onClose={() => setHangAsk(null)}
-          onConfirm={(hall) => {
+          onConfirm={(hall, act) => {
             const bindHall = hangBindHall(hall);
             const cit = hangCitadelRef.current || hangAsk.rooms.find((r) => r.hall === bindHall)?.citadel || hangCitadel;
-            writeHangPending({ id: hangAsk.a.id, citadel: cit, hall: bindHall });
+            const choice = hangDoorAct(act);
             setHangAsk(null);
-            const href = walkHangHallHref(cit, bindHall, hangRooms.length);
-            if (href) {
-              window.location.assign(href);
-              return;
+            /* Enter keeps today's pending walk. Bind writes the door and stays. */
+            if (hangActEnters(choice)) {
+              writeHangPending({ id: hangAsk.a.id, citadel: cit, hall: bindHall });
             }
-            hangDoor(hangAsk.a, hangAsk.door, undefined, hangBindHall(hall));
+            hangDoor(hangAsk.a, hangAsk.door, undefined, hangBindHall(hall), choice);
           }}
         />
       ) : null}

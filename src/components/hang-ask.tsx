@@ -5,12 +5,14 @@ import {
   HANG_LEFTOVER_SWALLOW_MS,
   hangBindHall,
   hangCardHall,
+  hangDoorAct,
   hangStillLane,
   hangStillSwipe,
   hangStillWrap,
   hangStripCards,
   hangStripPick,
   swallowOpeningTap,
+  type HangDoorAct,
 } from "@/game/hang-ask";
 import { type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import { press } from "@/lib/press";
@@ -448,7 +450,7 @@ export function HangAskSheet({
   rooms: HangRoomPick[];
   hall: number;
   onHall: (n: number) => void;
-  onConfirm: (hall: number) => void;
+  onConfirm: (hall: number, act: HangDoorAct) => void;
   onClose: () => void;
   citadels?: HangCitadelPick[];
   citadel?: string;
@@ -524,9 +526,9 @@ export function HangAskSheet({
     setPicked(next);
     onHall(next);
   }
-  function lockRoom() {
+  function confirm(act: HangDoorAct) {
     if (!armed) return;
-    onConfirm(hangBindHall(picked) || hangBindHall(pickedRef.current));
+    onConfirm(hangBindHall(picked) || hangBindHall(pickedRef.current), hangDoorAct(act));
   }
   function lockCitadel(id: string) {
     lockedCitadel.current = true;
@@ -559,7 +561,7 @@ export function HangAskSheet({
           rooms={picks}
           hall={picked}
           onHall={pickHall}
-          onLock={lockRoom}
+          onLock={pickHall}
           onBack={() => {
             if (citadels.length > 1) {
               lockedCitadel.current = false;
@@ -570,20 +572,38 @@ export function HangAskSheet({
           }}
           actions={
             armed ? (
-              <StillChip
-                data-hang-confirm={door}
-                {...vaultHangRoom(picked)}
-                onPointerDown={(e) => e.stopPropagation()}
-                {...press(() => onConfirm(hangBindHall(picked) || hangBindHall(pickedRef.current)))}
-              >
-                Walk this hall
-                <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/45">
-                  Hang {door} · room {picked}
-                </span>
-              </StillChip>
+              <div className="flex flex-wrap justify-center gap-2" data-hang-choice="">
+                <StillChip
+                  data-hang-confirm={door}
+                  data-hang-act="bind"
+                  data-hang-bind={door}
+                  {...vaultHangRoom(picked)}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  {...press(() => confirm("bind"))}
+                >
+                  Hang
+                  <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/45">
+                    bind · Door {door} · room {picked}
+                  </span>
+                </StillChip>
+                <StillChip
+                  tone="gold"
+                  data-hang-confirm={door}
+                  data-hang-act="enter"
+                  data-hang-enter={door}
+                  {...vaultHangRoom(picked)}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  {...press(() => confirm("enter"))}
+                >
+                  Hang & enter
+                  <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/45">
+                    walk the hall · Door {door}
+                  </span>
+                </StillChip>
+              </div>
             ) : (
               <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/45" data-hang-confirm-wait={door}>
-                pick a room — then confirm
+                pick a room — then Hang or Hang & enter
               </p>
             )
           }
