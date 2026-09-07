@@ -981,6 +981,8 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.doesNotMatch(goTo, /destHall\(id\) > 0 \|\| !!riftRef\.current\[id\]/);
     assert.match(goTo, /void playWalk\(id\)/);
     assert.match(goTo, /walkingTo\.current === id/);
+    assert.match(goTo, /breathTapWalksNow\(/);
+    assert.match(goTo, /Abort idle-spawn \/ idle-m1 \/ idle-m2 \/ arrival breath/);
     const playWalk = engine.slice(engine.indexOf("async function playWalk"), engine.indexOf("async function saveFilms"));
     assert.match(playWalk, /if \(hungDoorReady\(id\)\) \{\s*\n\s*\/\* Breath \/ hold at hung door/);
     assert.match(playWalk, /stockDoorWalk\(at, id\)/);
