@@ -301,6 +301,20 @@ export const FILM_BY_ID = Object.fromEntries(FILMS.map((f) => [f.id, f])) as Rec
 
 export type Grade = "S" | "A" | "B" | "C" | "D" | "F";
 
+/**
+ * SmiR pace lock.
+ * One scored MISS drops playback pace by 0.1.
+ * Floor 0.5 — sensible crawl floor in the 0.4–0.5 band; below this the white GSD looks broken.
+ * Hall leftover door taps never miss and never call paceAfterMiss.
+ */
+export const PACE_MISS = 0.1;
+export const PACE_MIN = 0.5;
+export const PACE_MAX = 8;
+
+export function paceAfterMiss(pace: number): number {
+  return Math.max(PACE_MIN, Number((pace - PACE_MISS).toFixed(4)));
+}
+
 export function gradeOf(perfect: number, great: number, good: number, miss: number, total: number): Grade {
   if (total <= 0) return "F";
   const acc = (perfect + great * 0.85 + good * 0.6) / total;
@@ -360,7 +374,7 @@ export function turnCue(secs: number, tailStraight = 0) {
   return `TURN SHEET (only these): ${hits.join(". ")}. Camera stays dead-center behind him. Between turns he sprints STRAIGHT down the NEW aisle. No extra turns. No U-turns. No looping.${tail}`;
 }
 
-/** Mid-plate vault — one short in-picture vertical tick, not a HUD bar. */
+/** Mid-plate vault times — chart may keep these for later. CueFill/UI does not render them this pass. */
 export function jumpMarks(secs: number): number[] {
   if (secs <= 6) return [3.3];
   if (secs <= 10) return [4.0];
@@ -451,7 +465,24 @@ export function cueSide(beat: Beat): "left" | "right" | "center" {
   return "center";
 }
 
-/** Picture-space tick at the turn lane / vault — never the Resonance HUD row. */
+/**
+ * CueFill this pass: only left|right turn-lane ticks.
+ * Jump / vault / ↑ / center stay in turnBeatsForRun for later — UI must not show them.
+ */
+export function cueFillSide(beat: Beat): "left" | "right" | null {
+  const side = cueSide(beat);
+  return side === "left" || side === "right" ? side : null;
+}
+
+export function cueFillShown(beat: Beat): boolean {
+  return cueFillSide(beat) != null;
+}
+
+/**
+ * Picture-space tick on the turn lane / path side.
+ * Never on the white GSD (center path). Never the Resonance HUD row.
+ * CueFill only consumes left|right — center is authored for later jump beats, not drawn.
+ */
 export function cuePictureSpot(beat: Beat): Spot {
   const side = cueSide(beat);
   const spot = spotOf(beat);
