@@ -360,6 +360,13 @@ export function turnCue(secs: number, tailStraight = 0) {
   return `TURN SHEET (only these): ${hits.join(". ")}. Camera stays dead-center behind him. Between turns he sprints STRAIGHT down the NEW aisle. No extra turns. No U-turns. No looping.${tail}`;
 }
 
+/** Mid-plate vault — one short centered-bottom fill, not a turn. */
+export function jumpMarks(secs: number): number[] {
+  if (secs <= 6) return [3.3];
+  if (secs <= 10) return [4.0];
+  return [7.6];
+}
+
 export function turnBeatsForRun(plateDurations: number[]): Beat[] {
   let acc = 0;
   const out: Beat[] = [];
@@ -380,9 +387,19 @@ export function turnBeatsForRun(plateDurations: number[]): Beat[] {
       );
       n += 1;
     }
+    for (const at of jumpMarks(secs)) {
+      if (at >= d - 0.55) continue;
+      out.push(
+        b(`j${n}`, Number((acc + at).toFixed(2)), "tap", "c", "↑", {
+          win: 1.2,
+          spot: { x: 0.5, y: 0.78 },
+        }),
+      );
+      n += 1;
+    }
     acc += d;
   }
-  return out;
+  return out.sort((p, q) => p.at - q.at);
 }
 
 export function scaleBeats(film: Film, duration: number): Beat[] {

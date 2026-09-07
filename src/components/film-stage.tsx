@@ -1335,13 +1335,14 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           }}
         />
       )}
-      {phase === "run" && film.pad === "arrows" && <CutWash beat={nowBeat ?? undefined} t={hud.t} />}
+      {phase === "run" && film.pad === "arrows" && !holdDoor && <CutWash beat={nowBeat ?? undefined} t={hud.t} />}
       {phase === "run" && (
-        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-40 pb-[max(0.55rem,env(safe-area-inset-bottom))]">
-          <Resonance value={hud.resonance} />
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-40 px-5 pb-[max(0.55rem,env(safe-area-inset-bottom))]">
+          {holdDoor ? <CueFill beat={nowBeat ?? undefined} t={hud.t} /> : null}
+          <Resonance value={hud.resonance} score={hud.score} pace={hud.pace} />
         </div>
       )}
-      {phase === "run" && !(film.hazards && !original) && (film.pad !== "arrows" || holdDoor) && (
+      {phase === "run" && !(film.hazards && !original) && film.pad !== "arrows" && !holdDoor && (
         <Marks
           beats={gRef.current.beats}
           index={hud.i}
@@ -1531,10 +1532,16 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   );
 }
 
-function Resonance({ value }: { value: number }) {
+function Resonance({ value, score = 0, pace = 1 }: { value: number; score?: number; pace?: number }) {
   const v = Math.max(0, Math.min(1, value));
   return (
-    <div className="pointer-events-none px-6">
+    <div className="pointer-events-none">
+      <div className="mb-1.5 flex items-end justify-between font-mono tabular-nums">
+        <p className="text-[10px] uppercase tracking-[0.16em] text-muted">
+          <span className="text-accent">{score}</span>
+        </p>
+        <p className="text-[10px] text-ice">{pace.toFixed(1)}×</p>
+      </div>
       <div className="h-[5px] overflow-hidden rounded-full bg-line/40">
         <div
           className="h-full rounded-full"
@@ -1543,6 +1550,56 @@ function Resonance({ value }: { value: number }) {
             background: "linear-gradient(90deg, #3d6a78 0%, #9ec9d4 58%, #f2fbff 100%)",
             boxShadow: v > 0.18 ? `0 0 ${8 + v * 20}px rgba(158,201,212,${0.2 + v * 0.5})` : "none",
             transition: "width 180ms linear",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function cueSide(beat: Beat): "left" | "right" | "center" {
+  if (beat.kind === "left") return "left";
+  if (beat.kind === "right") return "right";
+  if (beat.kind === "tap" && beat.lane === "c") return "center";
+  if (/jump|vault|↑/i.test(beat.label)) return "center";
+  if (beat.lane === "l") return "left";
+  if (beat.lane === "r") return "right";
+  return "center";
+}
+
+/** Short horizontal fill strip — never a tall pillar, never over Bolt. */
+function CueFill({ beat, t }: { beat?: Beat; t: number }) {
+  if (!beat) return null;
+  const until = beat.at - t;
+  if (until > APPROACH || until < -beat.win * 0.28) return null;
+  const fill = until >= 0 ? Math.max(0, Math.min(1, 1 - until / APPROACH)) : 1;
+  const live = Math.abs(t - beat.at) < beat.win * 0.55;
+  const side = cueSide(beat);
+  const slot =
+    side === "left"
+      ? { left: 0 }
+      : side === "right"
+        ? { right: 0 }
+        : { left: "50%", transform: "translateX(-50%)" };
+  return (
+    <div className="relative mb-2 h-[10px]" data-cue-fill={side} aria-hidden>
+      <div
+        className="absolute overflow-hidden rounded-full bg-white/12"
+        style={{
+          ...slot,
+          width: 52,
+          height: 10,
+          bottom: 0,
+        }}
+      >
+        <div
+          className="h-full rounded-full"
+          style={{
+            width: `${fill * 100}%`,
+            background: live
+              ? "linear-gradient(90deg, #9ec9d4, #f2fbff)"
+              : "linear-gradient(90deg, #3d6a78, #9ec9d4)",
+            boxShadow: live ? "0 0 8px rgba(158,201,212,0.4)" : "none",
           }}
         />
       </div>
