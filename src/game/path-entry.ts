@@ -10,6 +10,72 @@ export function createPathHref(first: "m1" | "m2", q = "drive=engine&rooms=1&hal
   return href;
 }
 
+/** New citadel Door A look + Grok Bot Forge. Cook opens this — no GUI click. */
+export function createBotForgeHref(first: "m1" | "m2" = "m1", q = "drive=engine&rooms=1&hall=1") {
+  return `${createPathHref(first, q)}&forge=bot`;
+}
+
+function lookSearchGet(search: unknown, key: string): unknown {
+  if (search == null) return undefined;
+  if (typeof search === "string") {
+    const q = search.includes("?") ? search.slice(search.indexOf("?") + 1) : search.replace(/^\?/, "");
+    return new URLSearchParams(q).get(key);
+  }
+  if (typeof URLSearchParams !== "undefined" && search instanceof URLSearchParams) return search.get(key);
+  if (typeof search === "object") return (search as Record<string, unknown>)[key];
+  return undefined;
+}
+
+function isBotForgeFlag(raw: unknown): boolean {
+  if (raw === true || raw === 1) return true;
+  if (raw == null || raw === false || raw === 0) return false;
+  const v = String(raw).trim().toLowerCase();
+  return v === "bot" || v === "1" || v === "true";
+}
+
+/** `forge=bot` (canonical) or `botForge=1` on a look/hall path. */
+export function parseLookForge(search?: unknown): "bot" | undefined {
+  const forge = lookSearchGet(search, "forge");
+  if (forge != null && String(forge).trim().toLowerCase() === "start") return undefined;
+  if (isBotForgeFlag(forge)) return "bot";
+  if (isBotForgeFlag(lookSearchGet(search, "botForge"))) return "bot";
+  return undefined;
+}
+
+export function shouldAutoStartBotForge(input: {
+  phase?: string;
+  forge?: "bot" | string | null;
+  stills?: boolean;
+}): boolean {
+  if (input.phase !== "look") return false;
+  if (pathEntry(input.stills) !== "look") return false;
+  return input.forge === "bot";
+}
+
+const lookForgeAutoClaimed = new Set<string>();
+
+/** Once per page load (and per test key). Prevents auto-start loops / Strict remounts. */
+export function claimLookForgeAuto(key = "load"): boolean {
+  if (lookForgeAutoClaimed.has(key)) return false;
+  lookForgeAutoClaimed.add(key);
+  return true;
+}
+
+export function resetLookForgeAuto(key?: string) {
+  if (key) lookForgeAutoClaimed.delete(key);
+  else lookForgeAutoClaimed.clear();
+}
+
+export type BoltForgeHook = {
+  startBot: () => boolean;
+};
+
+declare global {
+  interface Window {
+    __boltForge?: BoltForgeHook;
+  }
+}
+
 /**
  * Human Forge keeps the live look pack (hall + walks).
  * Bot custom is look-screen hall STYLE only (style → LOCK, mic, image).

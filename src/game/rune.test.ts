@@ -4,7 +4,20 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HALL_LOOP, HALL_STILL, doorAtPoint, isHallFilm, stockDoorHits, stockRoomBank, stockStand } from "./stock-room.ts";
-import { biomeBotStart, createPathHref, lookForgeStart, lookForgeWalkStyle, lookHallLocked, pathEntry, vaultHangStart } from "./path-entry.ts";
+import {
+  biomeBotStart,
+  claimLookForgeAuto,
+  createBotForgeHref,
+  createPathHref,
+  lookForgeStart,
+  lookForgeWalkStyle,
+  lookHallLocked,
+  parseLookForge,
+  pathEntry,
+  resetLookForgeAuto,
+  shouldAutoStartBotForge,
+  vaultHangStart,
+} from "./path-entry.ts";
 import {
   BOLT_BODY,
   BOLT_FACE,
@@ -262,8 +275,9 @@ describe("Imagine prompt rails", () => {
     assert.match(src, /data-look-lock=/);
     assert.match(src, /data-forge-pack=\{botForge\.pack\}/);
     assert.match(src, /lookForgeWalkStyle\(hallStyleOnly/);
-    const bot = src.slice(src.indexOf("data-forge={botForge.dataForge}"));
-    const handler = bot.slice(0, bot.indexOf("Grok Bot Forge"));
+    const startAt = src.indexOf("function startBotForge");
+    assert.ok(startAt >= 0, "startBotForge missing");
+    const handler = src.slice(startAt, src.indexOf("startBotForgeRef.current", startAt) + 40);
     assert.match(handler, /lookForgeStart\("bot", \{/);
     assert.match(handler, /style: styleOn/);
     assert.match(handler, /if \(start\.sealed\)/);
@@ -271,6 +285,60 @@ describe("Imagine prompt rails", () => {
     assert.match(handler, /startRefs\(false, "sealed"\)/);
     assert.match(handler, /clearWish\(\)/);
     assert.doesNotMatch(handler, /startRefs\(false, "live"\)/);
+  });
+
+  it("forge=bot on look auto-starts the same Bot Forge pack once", () => {
+    resetLookForgeAuto();
+    assert.equal(parseLookForge("first=m1&drive=engine&rooms=1&hall=1&forge=bot"), "bot");
+    assert.equal(parseLookForge("/rune?first=m1&drive=engine&rooms=1&hall=1&forge=bot"), "bot");
+    assert.equal(parseLookForge({ forge: "bot" }), "bot");
+    assert.equal(parseLookForge({ botForge: "1" }), "bot");
+    assert.equal(parseLookForge({ botForge: 1 }), "bot");
+    assert.equal(parseLookForge({ botForge: true }), "bot");
+    assert.equal(parseLookForge({ forge: "start" }), undefined);
+    assert.equal(parseLookForge({ first: "m1" }), undefined);
+    assert.equal(parseLookForge(new URLSearchParams("forge=bot")), "bot");
+    assert.equal(createBotForgeHref("m1"), "/rune?first=m1&drive=engine&rooms=1&hall=1&forge=bot");
+    assert.equal(createBotForgeHref("m2"), "/rune?first=m2&drive=engine&rooms=1&hall=1&forge=bot");
+    assert.equal(shouldAutoStartBotForge({ phase: "look", forge: "bot" }), true);
+    assert.equal(shouldAutoStartBotForge({ phase: "look", forge: "bot", stills: true }), true);
+    assert.equal(shouldAutoStartBotForge({ phase: "look", forge: "bot", stills: false }), false);
+    assert.equal(shouldAutoStartBotForge({ phase: "play", forge: "bot" }), false);
+    assert.equal(shouldAutoStartBotForge({ phase: "look", forge: undefined }), false);
+    assert.equal(claimLookForgeAuto("unit"), true);
+    assert.equal(claimLookForgeAuto("unit"), false);
+    resetLookForgeAuto("unit");
+    assert.equal(claimLookForgeAuto("unit"), true);
+    resetLookForgeAuto();
+
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const route = readFileSync(join(here, "../routes/rune.tsx"), "utf8");
+    assert.match(route, /forge: parseLookForge\(s\)/);
+    assert.match(route, /stills, forge/);
+    assert.match(src, /shouldAutoStartBotForge/);
+    assert.match(src, /kickAutoBotForge/);
+    assert.match(src, /parseLookForge/);
+    assert.match(src, /window\.__boltForge/);
+    assert.match(src, /startBot:\s*\(\)\s*=>\s*startBotForgeRef\.current\(\)/);
+    const botFn = src.slice(src.indexOf("function startBotForge"), src.indexOf("startBotForgeRef.current", src.indexOf("function startBotForge")));
+    assert.doesNotMatch(botFn, /showOpenFilePicker|file\.current\?\.click|type="file"/);
+  });
+
+  it("Grok Bot Forge stays visible and both click and pointerup start cook", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const bot = src.slice(src.indexOf("data-forge={botForge.dataForge}"));
+    const btn = bot.slice(0, bot.indexOf("Grok Bot Forge") + 20);
+    assert.match(btn, /data-forge-start="bot"/);
+    assert.match(btn, /onPointerUp=/);
+    assert.match(btn, /onClick=/);
+    assert.match(btn, /startBotForge\(\)/);
+    assert.match(btn, /pointerEvents:\s*"auto"/);
+    assert.match(btn, /z-40/);
+    assert.doesNotMatch(btn, /type="file"/);
+    assert.doesNotMatch(btn, /showOpenFilePicker/);
+    assert.match(src, /Grok Bot Forge/);
   });
 });
 
@@ -361,5 +429,6 @@ describe("create path entry", () => {
     assert.equal(createPathHref("m2", "drive=pilot&rooms=1&hall=1"), "/rune?first=m2&drive=pilot&rooms=1&hall=1");
     assert.ok(!createPathHref("m1").includes("stills="));
     assert.ok(createPathHref("m1", "drive=engine&rooms=1&hall=1", false).endsWith("&stills=0"));
+    assert.equal(createBotForgeHref("m1"), `${createPathHref("m1")}&forge=bot`);
   });
 });

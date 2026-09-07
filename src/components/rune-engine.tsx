@@ -48,7 +48,15 @@ import {
   type RuneNode,
   type WalkSecs,
 } from "@/game/rune";
-import { biomeBotStart, lookForgeStart, lookForgeWalkStyle, lookHallLocked } from "@/game/path-entry";
+import {
+  biomeBotStart,
+  lookForgeStart,
+  lookForgeWalkStyle,
+  lookHallLocked,
+  parseLookForge,
+  shouldAutoStartBotForge,
+  type BoltForgeHook,
+} from "@/game/path-entry";
 import { freeRuneSlot, grabRuneFrame, pollCookPlate, startCookStill, startRuneExtend, startRuneFilm, startRuneStill, cacheClip, cacheStill } from "@/lib/cook";
 import { COOK_BUSY_FROST, COOK_BUSY_WAIT_MS, COOK_START_ACCEPTED_PCT, cookBusyNext, isCookSlotBlock } from "@/lib/cook-busy";
 import { BIOMES, biomePlaylist, riftFilm, riftPrompt, type BiomeId } from "@/game/cook";
@@ -645,6 +653,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const worldHold = useRef("");
   const [forgePack, setForgePack] = useState<"live" | "sealed" | "hall">("live");
   const [forgeWish, setForgeWish] = useState("");
+  const [forgeAutoOn, setForgeAutoOn] = useState(false);
   const hallStyleOnly = useRef(false);
   const [lookRes, setLookRes] = useState<"720" | "1080">("720");
   const lookResRef = useRef<"720" | "1080">("720");
@@ -697,6 +706,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const begin = useRef<() => void>(() => {});
   const dead = useRef(false);
   const cooking = useRef(false);
+  const botKick = useRef(false);
+  const botForgeAuto = useRef(false);
+  const startBotForgeRef = useRef<() => boolean>(() => false);
+  const kickAutoBotForgeRef = useRef<() => boolean>(() => false);
   const [hub, setHub] = useState<RuneSessionMeta[]>(() =>
     typeof window === "undefined" ? [] : listSessions(),
   );
@@ -791,6 +804,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       } else {
         setPhase("look");
         phaseRef.current = "look";
+        window.setTimeout(() => kickAutoBotForgeRef.current(), 0);
       }
     }
     return () => {
@@ -5115,6 +5129,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       } else {
         setPhase("look");
         phaseRef.current = "look";
+        window.setTimeout(() => kickAutoBotForgeRef.current(), 0);
       }
     }
   };
@@ -5327,6 +5342,53 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setFrost("");
     if (ear.current) ear.current.value = "";
   }
+
+  function startBotForge() {
+    if (botKick.current) return false;
+    if (phaseRef.current !== "look") return false;
+    botKick.current = true;
+    const start = lookForgeStart("bot", {
+      style: styleOn,
+      still: lookHall.current,
+      pack: lookPackRef.current,
+    });
+    if (start.sealed) {
+      clearWish();
+      startRefs(false, "sealed");
+      return true;
+    }
+    startRefs(false, "hall");
+    return true;
+  }
+  startBotForgeRef.current = startBotForge;
+
+  function kickAutoBotForge() {
+    if (botForgeAuto.current) return false;
+    const stills = boot?.kind === "path" ? boot.stills : undefined;
+    const forge = (boot?.kind === "path" ? boot.forge : undefined) || parseLookForge(typeof window !== "undefined" ? window.location.search : undefined);
+    if (!shouldAutoStartBotForge({ phase: "look", forge, stills })) return false;
+    botForgeAuto.current = true;
+    setForgeAutoOn(true);
+    return startBotForge();
+  }
+  kickAutoBotForgeRef.current = kickAutoBotForge;
+
+  useEffect(() => {
+    if (phase !== "look") return;
+    botKick.current = false;
+    kickAutoBotForge();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  useEffect(() => {
+    const api: BoltForgeHook = {
+      startBot: () => startBotForgeRef.current(),
+    };
+    window.__boltForge = api;
+    return () => {
+      if (window.__boltForge === api) delete window.__boltForge;
+    };
+  }, []);
 
   if (sprint) {
     return (
@@ -5676,6 +5738,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         className="relative flex min-h-dvh flex-col overflow-hidden bg-bg px-5 pt-[max(1.4rem,env(safe-area-inset-top))] pb-[max(1.1rem,env(safe-area-inset-bottom))]"
         data-look="1"
         data-look-lock={lookHallLocked(lookLock) ? "1" : "0"}
+        data-forge-auto={boot?.kind === "path" && boot.forge === "bot" ? "1" : undefined}
         style={{ touchAction: "manipulation" }}
       >
         <img src={bridge.hall || plate || HALL_FALLBACK} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
@@ -5896,7 +5959,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
               ))}
           </div>
         ) : null}
-        <div className="relative z-10 mt-auto flex flex-col items-center gap-3">
+        <div className="relative z-30 mt-auto flex flex-col items-center gap-3">
           <button
             type="button"
             data-forge={lookForgeStart("start").dataForge}
@@ -5913,21 +5976,19 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           <button
             type="button"
             data-forge={botForge.dataForge}
+            data-forge-start="bot"
             data-forge-pack={botForge.pack}
-            className="flex h-12 w-full max-w-xs items-center justify-center font-display text-2xl text-[#9ef0e4] drop-shadow-[0_0_18px_rgba(158,240,228,0.4)]"
-            style={{ touchAction: "manipulation" }}
-            onPointerUp={() => {
-              const start = lookForgeStart("bot", {
-                style: styleOn,
-                still: lookHall.current,
-                pack: lookPackRef.current,
-              });
-              if (start.sealed) {
-                clearWish();
-                startRefs(false, "sealed");
-                return;
-              }
-              startRefs(false, "hall");
+            className="relative z-40 isolate flex min-h-[4.5rem] w-full max-w-xs items-center justify-center px-5 py-4 font-display text-2xl text-[#9ef0e4] drop-shadow-[0_0_18px_rgba(158,240,228,0.4)]"
+            style={{ touchAction: "manipulation", pointerEvents: "auto", WebkitTapHighlightColor: "transparent" }}
+            onPointerUp={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              startBotForge();
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              startBotForge();
             }}
           >
             Grok Bot Forge
@@ -5964,6 +6025,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       data-rune="engine"
       data-forge-pack={forgePack}
       data-forge-wish={forgeWish}
+      data-forge-auto={forgeAutoOn ? "1" : undefined}
       data-camera="lock"
       data-living={phase === "play" && (filmOn || Boolean(idleFor(here))) ? "1" : "0"}
       data-phase={phase}

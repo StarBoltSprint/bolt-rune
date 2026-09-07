@@ -224,7 +224,7 @@ export function otherDoor(first: "m1" | "m2"): "m1" | "m2" {
   return first === "m1" ? "m2" : "m1";
 }
 
-export { pathEntry, createPathHref } from "./path-entry.ts";
+export { pathEntry, createPathHref, createBotForgeHref, parseLookForge, shouldAutoStartBotForge } from "./path-entry.ts";
 
 export const TOUR_PLATE = "/films/citadel-tour.jpg?v=sharp";
 export {

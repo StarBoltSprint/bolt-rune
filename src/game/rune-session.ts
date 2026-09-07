@@ -50,7 +50,7 @@ function guestId() {
 export type RunePhase = "look" | "gate" | "refs" | "forge" | "time" | "play" | "mark";
 
 export type CitadelStart =
-  | { kind: "path"; first: "m1" | "m2"; drive: "pilot" | "engine"; rooms?: number; hall?: number; stills?: boolean; art?: string }
+  | { kind: "path"; first: "m1" | "m2"; drive: "pilot" | "engine"; rooms?: number; hall?: number; stills?: boolean; art?: string; forge?: "bot" }
   | { kind: "session"; id: string; do?: "play" | "more" | "room" | "reset"; art?: string; hall?: number; drive?: "pilot" | "engine" };
 
 export type RiftGate = {
