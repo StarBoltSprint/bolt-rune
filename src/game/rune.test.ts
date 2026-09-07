@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HALL_LOOP, HALL_STILL, doorAtPoint, isHallFilm, isLivingHallLoop, stockDoorHits, stockRoomBank, stockStand } from "./stock-room.ts";
+import { HALL_LOOP, HALL_STILL, doorAtPoint, isHallFilm, isLivingHallLoop, stockDoorHits, stockDoorWalk, stockRoomBank, stockStand } from "./stock-room.ts";
 import {
   biomeBotStart,
   claimLookForgeAuto,
@@ -65,6 +65,15 @@ describe("stock living room", () => {
     assert.equal(isLivingHallLoop("/ui/forge.mp4"), true);
     assert.equal(isLivingHallLoop("/films/forge-forest.mp4"), false);
     assert.equal(isLivingHallLoop("/films/cook-forest.jpg"), false);
+  });
+
+  it("stockDoorWalk is any-to-any A↔B and spawn→door — never door→spawn", () => {
+    assert.deepEqual(stockDoorWalk("spawn", "m2"), { url: HALL_LOOP, end: HALL_STILL });
+    assert.deepEqual(stockDoorWalk("m1", "m2"), { url: HALL_LOOP, end: HALL_STILL });
+    assert.deepEqual(stockDoorWalk("m2", "m1"), { url: HALL_LOOP, end: HALL_STILL });
+    assert.equal(stockDoorWalk("m2", "spawn"), null);
+    assert.equal(stockDoorWalk("m1", "m1"), null);
+    assert.equal(stockDoorWalk("spawn", "spawn"), null);
   });
 
   it("stockRoomBank seeds breath plus both doors from spawn", () => {

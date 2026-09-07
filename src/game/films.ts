@@ -1,4 +1,4 @@
-import { buildCanyonChart } from "./canyon";
+import { buildCanyonChart } from "./canyon.ts";
 
 export type Lane = "l" | "c" | "r";
 export type BeatKind = "tap" | "hold" | "mash" | "swipe" | "relic" | "pick" | "left" | "right";

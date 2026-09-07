@@ -92,6 +92,17 @@ function pathWalks(first: "m1" | "m2"): { from: string; to: string; via: string 
  * Every clip keeps the same hall still as the end frame — camera stays locked
  * on the whole hall. Bolt moves inside that frame; the lens does not follow.
  */
+/**
+ * Stock A↔B / spawn→door walk. Never door→spawn (that is the snap-back fail).
+ * Missing bank keys must use this — never cook Asteroid for a hall walk.
+ */
+export function stockDoorWalk(from?: string | null, to?: string | null): { url: string; end: string } | null {
+  const a = from === "spawn" || from === "m1" || from === "m2" ? from : "";
+  const b = to === "m1" || to === "m2" ? to : "";
+  if (!a || !b || a === b) return null;
+  return { url: HALL_LOOP, end: HALL_STILL };
+}
+
 export function stockRoomBank(first: "m1" | "m2"): { key: string; url: string; end: string }[] {
   const still = HALL_STILL;
   const loop = HALL_LOOP;

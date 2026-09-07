@@ -355,6 +355,33 @@ export function hungEnterNeedsWalk(here?: string | null, door?: string | null): 
   return hungDoorTap(here, door) === "walk";
 }
 
+export type HungDoorArm = "walk" | "enter" | "stay" | null;
+
+/**
+ * Living-hall door arm after Hang.
+ * Walk any-to-any. Same hung door while breathing → enter biome.
+ * Same unhung door → stay (never destHall / spawn snap).
+ */
+export function hungDoorArm(here?: string | null, door?: string | null, hung = false): HungDoorArm {
+  const tap = hungDoorTap(here, door);
+  if (!tap) return null;
+  if (tap === "walk") return "walk";
+  return hung ? "enter" : "stay";
+}
+
+/** Hang bound this hall — destHall must not teleport or play enter→spawn. */
+export function hungHallLocksDoors(opts?: {
+  riftA?: unknown;
+  riftB?: unknown;
+  hungA?: boolean;
+  hungB?: boolean;
+  hangRoom?: number | string | null;
+}): boolean {
+  if (!opts) return false;
+  if (opts.riftA || opts.riftB || opts.hungA || opts.hungB) return true;
+  return hungHallN(opts.hangRoom) > 0;
+}
+
 /** Clip is at the loop seam — restart the chart, do not MISS / finish / fracture. */
 export function holdLoopSeam(
   ended: boolean,

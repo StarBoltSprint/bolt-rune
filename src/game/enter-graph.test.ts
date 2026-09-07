@@ -30,6 +30,8 @@ import {
   holdDoorLoops,
   holdLoopSeam,
   hungDoorTap,
+  hungDoorArm,
+  hungHallLocksDoors,
   hungEnterNeedsWalk,
   hungFilmHold,
   hungPlayChrome,
@@ -440,7 +442,7 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     const vault = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
     assert.match(vault, /vaultHangCaption\(head\.room\)/);
     assert.match(vault, /holdHall=\{hangBindHall\(live\.room\?\.hall\)/);
-    assert.match(vault, /hangThumbStill\(head\)/);
+    assert.match(vault, /hangThumbStill\(vaultHead\)/);
     assert.match(vault, /walkHungHref\(live\.room/);
     assert.match(vault, /window\.location\.assign\(href\)/);
     const cine = readFileSync(join(here, "../components/cine-app.tsx"), "utf8");
@@ -632,18 +634,39 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.equal(hungEnterNeedsWalk("m1", "A"), false);
     assert.equal(hungDoorTap(null, "A"), "walk");
     assert.equal(hungDoorTap("spawn", "x"), null);
+    assert.equal(hungDoorArm("spawn", "A", true), "walk");
+    assert.equal(hungDoorArm("m1", "A", true), "enter");
+    assert.equal(hungDoorArm("m2", "B", true), "enter");
+    assert.equal(hungDoorArm("m2", "B", false), "stay");
+    assert.equal(hungDoorArm("m1", "B", true), "walk");
+    assert.equal(hungHallLocksDoors({ hangRoom: 2 }), true);
+    assert.equal(hungHallLocksDoors({ riftA: { art: "x" } }), true);
+    assert.equal(hungHallLocksDoors({}), false);
     const here = dirname(fileURLToPath(import.meta.url));
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     const goTo = engine.slice(engine.indexOf("function goTo"), engine.indexOf("function drainQueue"));
     assert.match(goTo, /hungDoorTap\(hereRef\.current, id\) === "enter"/);
     assert.match(goTo, /hungDoorReady\(id\)/);
     assert.doesNotMatch(goTo, /if \(now < hangGuard\.current\) return;\s*\n\s*void goEnter\(id\);/);
+    assert.doesNotMatch(goTo, /destHall\(id\) > 0 \|\| !!riftRef\.current\[id\]/);
     assert.match(goTo, /void playWalk\(id\)/);
+    assert.match(goTo, /walkingTo\.current === id/);
     const playWalk = engine.slice(engine.indexOf("async function playWalk"), engine.indexOf("async function saveFilms"));
     assert.match(playWalk, /if \(hungDoorReady\(id\)\) \{\s*\n\s*\/\* Breath \/ hold at hung door/);
+    assert.match(playWalk, /stockDoorWalk\(at, id\)/);
+    assert.match(playWalk, /persist\(\{ phase: "play", here: id/);
     assert.doesNotMatch(playWalk, /if \(hungDoorReady\(id\)\) \{\s*\n\s*void goEnter/);
     assert.doesNotMatch(playWalk, /if \(hungDoorReady\(id\)\) \{[^}]*setEnterAsk/);
+    assert.doesNotMatch(playWalk, /destHall\(id\) > 0 \|\| riftRef\.current\[id\]/);
     assert.match(engine, /Leftover Hang A \/ Door A after confirm must stay on hall N/);
+    const goEnterFn = engine.slice(engine.indexOf("async function goEnter"), engine.indexOf("function enterNext"));
+    assert.match(goEnterFn, /Hung hall: never destHall \/ enter→spawn/);
+    assert.match(goEnterFn, /if \(hangDoorHall\(\)\) return/);
+    assert.match(engine, /keepDoor \? hereRef\.current : slice\.here/);
+    assert.doesNotMatch(engine, /hereRef\.current = here;/);
+    const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    assert.match(stage, /if \(holdDoorRef\.current\) return true/);
+    assert.match(stage, /holdDoor \? hungBiomePlaylist\(raw\)/);
   });
 
   it("hall leftover stays and never MISS — hung biome sprint is still a QTE game", () => {
