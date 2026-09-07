@@ -77,6 +77,7 @@ export function walkLastFrameSeed(...candidates: (string | null | undefined)[]):
  * Reuse a bank walk only when it was cooked FROM this last-frame seed (`clip.start`).
  * A prior A→B (mid-stride / other facing / other coat) must not play after breath at A.
  * Stock HALL_LOOP never holds a seed — next walk Imagines from the still.
+ * Load hydrate may drop `start`: keep the cooked clip (do not re-Imagine).
  */
 export function walkClipHoldsSeed(
   clip?: { url?: string | null; end?: string | null; start?: string | null } | null,
@@ -87,7 +88,97 @@ export function walkClipHoldsSeed(
   const next = walkLastFrameSeed(seed);
   if (!next) return true;
   const from = walkLastFrameSeed(clip.start);
-  return Boolean(from) && from === next;
+  if (!from) return true;
+  return from === next;
+}
+
+export type BankRow = { key: string; url: string; end?: string; start?: string };
+
+/** Union two banks. Existing keys keep url/end/start; incoming only fills gaps or adds keys. */
+export function mergeBankClips(keep: BankRow[] = [], incoming: BankRow[] = []): BankRow[] {
+  const byKey = new Map<string, { key: string; url: string; end: string; start?: string }>();
+  const take = (b?: BankRow | null, prefer = false) => {
+    if (!b?.key || !b.url) return;
+    const prev = byKey.get(b.key);
+    if (!prev) {
+      byKey.set(b.key, { key: b.key, url: b.url, end: b.end || "", start: b.start || undefined });
+      return;
+    }
+    byKey.set(b.key, {
+      key: b.key,
+      url: prefer ? b.url || prev.url : prev.url || b.url,
+      end: prefer ? b.end || prev.end || "" : prev.end || b.end || "",
+      start: prefer ? b.start || prev.start : prev.start || b.start,
+    });
+  };
+  for (const b of incoming) take(b, false);
+  for (const b of keep) take(b, true);
+  return [...byKey.values()];
+}
+
+function clipUrl(v?: PlayClip | BankRow | null): string {
+  const url = (v?.url || "").trim();
+  if (!url || isBoltSilhouette(url)) return "";
+  return url;
+}
+
+/**
+ * Living breath to loop at spawn / A / B after a walk (or on Load play).
+ * Cooked idle-* wins. Never returns the walk. Stock HALL_LOOP is last resort —
+ * the picture must not freeze on a still end-frame.
+ */
+export function arrivalBreathUrl(
+  bank: PlayBank,
+  node: string,
+  via?: string,
+  walkUrl?: string,
+): string {
+  const entries = bankEntries(bank);
+  const walk = (walkUrl || "").trim();
+  const ok = (v?: PlayClip | null) => {
+    const url = clipUrl(v);
+    if (!url || (walk && url === walk)) return "";
+    return url;
+  };
+  const keyed = via ? entries.find(([k]) => k === `idle-${node}←${via}`)?.[1] : undefined;
+  const direct = entries.find(([k]) => k === `idle-${node}`)?.[1];
+  const any = entries.find(([k, v]) => k.startsWith(`idle-${node}`) && ok(v))?.[1];
+  for (const hit of [keyed, direct, any]) {
+    if (doorBreathPlayable(hit, walk)) return clipUrl(hit);
+  }
+  for (const hit of [keyed, direct, any]) {
+    const url = ok(hit);
+    if (url) return url;
+  }
+  for (const [k, v] of entries) {
+    if (!k.startsWith("idle-")) continue;
+    const url = ok(v);
+    if (url) return url;
+  }
+  return "";
+}
+
+/** True when the picture has a looping breath — the primary Play / Load / forge-complete acceptance. */
+export function pictureNeverStops(
+  bank: PlayBank,
+  node: "spawn" | "m1" | "m2",
+  via?: string,
+  walkUrl?: string,
+): boolean {
+  return Boolean(arrivalBreathUrl(bank, node, via, walkUrl));
+}
+
+/** Hide Still A / Still B that are the same pixels as hall/seed. */
+export function filmTrayStillKeep(
+  id: "spawn" | "m1" | "m2",
+  src?: string | null,
+  hall?: string | null,
+): boolean {
+  const still = (src || "").trim();
+  if (!still) return false;
+  if (id === "spawn") return true;
+  const plate = (hall || "").trim();
+  return !plate || still !== plate;
 }
 
 /**

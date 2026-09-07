@@ -116,6 +116,7 @@ import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
 import { playableClipSrc } from "@/game/play-clip";
 import {
+  arrivalBreathUrl,
   arrivalEndStill,
   cookHasWalks,
   hallStillOf,
@@ -123,6 +124,7 @@ import {
   isHallPlayStill,
   isStockHallClip,
   livingPlayFrame,
+  mergeBankClips,
   packIdentityStill,
   playCoverStill,
   playStillOrHall,
@@ -972,10 +974,21 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       .map((r) => ({ ...r, src: slimU(r.src) }))
       .filter((r) => r.src)
       .slice(0, 12);
+    const slimClip = (u?: string) => {
+      if (!u) return "";
+      if (u.startsWith("blob:")) return "";
+      if (u.startsWith("data:image/")) return u;
+      return slimU(u);
+    };
     snap.bank = (snap.bank || [])
-      .map((b) => ({ key: b.key, url: slimU(b.url), end: slimU(b.end) }))
+      .map((b) => ({
+        key: b.key,
+        url: slimU(b.url),
+        end: slimClip(b.end),
+        start: slimClip(b.start) || undefined,
+      }))
       .filter((b) => b.url)
-      .slice(0, 24);
+      .slice(0, 48);
     if (snap.halls) {
       snap.halls = snap.halls.slice(0, 8).map((h) => ({
         ...h,
@@ -983,9 +996,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         plate: slimU(h.plate),
         start: slimU(h.start),
         bank: (h.bank || [])
-          .map((b) => ({ ...b, url: slimU(b.url), end: slimU(b.end) }))
+          .map((b) => ({ ...b, url: slimU(b.url), end: slimClip(b.end), start: slimClip(b.start) || b.start }))
           .filter((b) => b.url)
-          .slice(0, 16),
+          .slice(0, 48),
         refs: (h.refs || [])
           .map((r) => ({ ...r, src: slimU(r.src) }))
           .filter((r) => r.src)
@@ -1883,7 +1896,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     notePaint(el);
     if (el !== visFilm()) return;
     if (!filmLoop.current) {
-      freezeVis(true);
+      /* Walk ended — enterDoorBreath / holdIdle owns the picture. Never freeze still. */
       return;
     }
     const hid = hidFilm();
@@ -2127,8 +2140,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setFrost(phaseRef.current === "play" ? "" : "tap a door");
     idleArmed.current = true;
     const frame = livingNow();
-    const seedBolt = isBoltSilhouette(refsMap.current.get("seed")) || isBoltSilhouette(refsMap.current.get("placed"));
-    const idle = seedBolt ? null : idleFor(hereRef.current);
+    const idle = idleFor(hereRef.current);
     walkFace.current = standFace(hereRef.current);
     if (isHallFilm(idle?.url) && hereRef.current !== "spawn") stockSprite.current = true;
     else if (hereRef.current === "spawn") stockSprite.current = false;
@@ -2136,13 +2148,16 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       lockHall(frame.still);
     }
     const walkHere = clipFor(cameFrom.current, hereRef.current)?.url || "";
-    const breathUrl = doorBreathPlayable(idle, walkHere)
-      ? idle!.url
-      : hereRef.current === "spawn"
-        ? idle?.url || frame.url || ""
-        : "";
-    /* Arrival breath must loop a real idle-* clip (not the walk, not stock HALL_LOOP). */
-    if (breathUrl) {
+    /* Play / Load / forge-complete: living film NEVER stops. Loop idle at spawn, A, B. */
+    const breathUrl =
+      arrivalBreathUrl(bank.current, hereRef.current, cameFrom.current, walkHere) ||
+      (doorBreathPlayable(idle, walkHere) ? idle!.url : "") ||
+      (hereRef.current === "spawn" ? idle?.url || frame.url || "" : "") ||
+      idle?.url ||
+      frame.url ||
+      visSrc() ||
+      "";
+    if (breathUrl && !isBoltSilhouette(breathUrl)) {
       if (isHallFilm(breathUrl) && hereRef.current !== "spawn") stockSprite.current = true;
       setPose(null);
       filmLoop.current = true;
@@ -2151,25 +2166,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       kickPlay(breathUrl, true, true);
       return;
     }
-    if (hereRef.current === "spawn" && frame.url && frame.playFrame === "breath") {
-      filmLoop.current = true;
-      setLoopOn(true);
-      setPlayFrameKind("breath");
-      kickPlay(frame.url, true, true);
-      return;
-    }
-    if (hereRef.current === "spawn" && frame.playFrame === "walk") {
-      setPlayFrameKind("hall");
-    } else if (phaseRef.current === "play") {
-      setPlayFrameKind(frame.playFrame === "fail" ? "hall" : frame.playFrame || "hall");
-    }
-    freezeVis(true);
-    filmLoop.current = false;
-    setLoopOn(false);
-    if (filmHasPaint(visFilm()) && filmUrl && !isBoltSilhouette(filmUrl)) {
-      setFilmOn(true);
-      setCoverFade(true);
-    }
+    setPlayFrameKind(frame.playFrame === "fail" ? "hall" : frame.playFrame || "breath");
+    filmLoop.current = true;
+    setLoopOn(true);
     prefetchFrom(hereRef.current);
     setLiving("idle");
   }
@@ -2368,30 +2367,35 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (!shown) holdIdle();
   }
 
-  /** Cook idle-* from landed still when bank has no visible door breath, then kickPlay loop. */
+  /** Walk ends → loop bank idle immediately. Cook only if truly missing. Never freeze still. */
   async function enterDoorBreath(node: string, via: string, walkUrl: string, landed: string) {
     let idle = idleFor(node, via) || bank.current.get(`idle-${node}`);
-    if (!doorBreathPlayable(idle, walkUrl)) {
+    if (!idle?.url) {
       const seed = walkLastFrameSeed(landed, lastLive.current, refsMap.current.get(`pose-${node}`)) || landed;
-      if (!seed) return false;
-      await cookIdleAt(node, seed, walkUrl, via, true);
-      idle = idleFor(node, via) || bank.current.get(`idle-${node}`);
+      if (seed) {
+        await cookIdleAt(node, seed, walkUrl, via, true);
+        idle = idleFor(node, via) || bank.current.get(`idle-${node}`);
+      }
     }
-    if (!doorBreathPlayable(idle, walkUrl) || !idle?.url) return false;
+    const url = arrivalBreathUrl(bank.current, node, via, walkUrl) || idle?.url || "";
+    if (!url) {
+      holdIdle();
+      return true;
+    }
     filmLoop.current = true;
     setLoopOn(true);
     setPlayFrameKind("breath");
     setPose(null);
     const hid = hidFilm();
-    if (hid && slotSrc(hid) === idle.url && filmHasPaint(hid)) {
-      cueBreath(hid, idle.url);
+    if (hid && slotSrc(hid) === url && filmHasPaint(hid)) {
+      cueBreath(hid, url);
       if (hid !== visFilm()) showIncoming();
       setFilmOn(true);
       setCoverFade(true);
       prefetchFrom(node);
       return true;
     }
-    kickPlay(idle.url, true, true);
+    kickPlay(url, true, true);
     return true;
   }
 
@@ -2531,10 +2535,23 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setNeedStill(!(bank.current.has("idle-spawn") && bank.current.has("idle-m1") && bank.current.has("idle-m2")));
     const seen = new Set<string>();
     const clips: { key: string; label: string; kind: "walk" | "breathe" | "still"; url: string; end: string }[] = [];
+    const hallSrc = [
+      refsMap.current.get("hall"),
+      refsMap.current.get("empty"),
+      refsMap.current.get("seed"),
+      refsMap.current.get("room"),
+      startHold.current,
+      plateRef.current,
+      hallKeep.current,
+    ]
+      .map((u) => (u || "").trim())
+      .find(Boolean) || "";
     for (const id of ["spawn", "m1", "m2"] as const) {
-      const src = nodeStill(id);
+      const src = (nodeStill(id) || "").trim();
       if (!src || seen.has(src)) continue;
-      seen.add(`still:${id}`);
+      /* Still A / Still B that equal hall/seed are useless Films chips. */
+      if (id !== "spawn" && hallSrc && src === hallSrc) continue;
+      seen.add(src);
       clips.push({ key: `still-${id}`, label: clipLabel(`still-${id}`), kind: "still", url: "", end: src });
     }
     for (const [k, v] of bank.current) {
@@ -2699,7 +2716,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     roomsHold.current = Math.max(1, hallsHold.current.length);
   }
 
-  function applyHall(slice: HallSlice, playEnter = false) {
+  function applyHall(slice: HallSlice, playEnter = false, mode: "replace" | "hydrate" = "replace") {
     hallHold.current = slice.n;
     /* Living Room 1 slice must not wipe hangRoomRef after Hang Room N. */
     if (!(slice.n <= 1 && (hangRoomRef.current >= 2 || hungLockHall(readArtifacts()) >= 2))) {
@@ -2719,7 +2736,16 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     hallKeep.current = plateRef.current;
     lockHall(plateRef.current);
     rememberHall(sid.current, plateRef.current);
-    bank.current = new Map((slice.bank || []).filter((b) => b?.key && b.url).map((b) => [b.key, { url: b.url, end: b.end || "", start: b.start }]));
+    const incoming = (slice.bank || []).filter((b) => b?.key && b.url);
+    if (mode === "hydrate") {
+      const merged = mergeBankClips(
+        [...bank.current].map(([key, v]) => ({ key, url: v.url, end: v.end, start: v.start })),
+        incoming,
+      );
+      bank.current = new Map(merged.map((b) => [b.key, { url: b.url, end: b.end || "", start: b.start }]));
+    } else {
+      bank.current = new Map(incoming.map((b) => [b.key, { url: b.url, end: b.end || "", start: b.start }]));
+    }
     refsHold.current = forgeTrayRefs(slice.refs || []);
     refsMap.current = new Map(refsHold.current.map((r) => [r.id, r.src]));
     setRefs(refsHold.current);
@@ -3414,11 +3440,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         settled = true;
         const mineStill = loadGen.current === mine && playTok.current === gen;
         if (mineStill) {
-          if (freeze && !filmLoop.current) freezeVis(true);
-          else if (freeze && breath) {
-            filmLoop.current = false;
-            freezeVis(true);
-          }
+          if (breath) filmLoop.current = true;
+          /* Walk/breath end never sticks on a still — arrival loops idle-* immediately. */
           el.removeEventListener("ended", fail);
           el.removeEventListener("error", fail);
           visFilm()?.removeEventListener("timeupdate", stamp);
@@ -3471,7 +3494,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             still,
             prompt,
             duration: secs === 6 ? 6 : secs === 10 ? 10 : clampWalk(walkSecsRef.current),
-            refs: boltKit([lookHall.current, refsMap.current.get("hall"), hallKeep.current, ...kit]),
+            refs: boltKit([BOLT_BODY, lookHall.current, refsMap.current.get("hall"), hallKeep.current, ...kit]),
             res: lookResRef.current,
           },
         });
@@ -3668,7 +3691,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function refKit(extra?: string | null) {
-    return boltKit([extra, refsMap.current.get("bolt"), refsMap.current.get("m1"), refsMap.current.get("m2")]);
+    return boltKit([BOLT_BODY, extra, refsMap.current.get("bolt"), refsMap.current.get("m1"), refsMap.current.get("m2")]);
   }
 
   async function cookIdleAt(node: string, still: string, fromFilm?: string, via?: string, playArrival = false) {
@@ -5454,18 +5477,20 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       wishRef.current = kept;
       setWish(kept);
     }
-    bank.current = new Map(
-      (s.bank || [])
-        .filter((b) => b?.key && b.url)
-        .map((b) => [b.key, { url: b.url, end: b.end }]),
-    );
     const slice = hallsHold.current[wantHall - 1];
+    bank.current = new Map(
+      mergeBankClips(s.bank || [], slice?.bank || []).map((b) => [b.key, { url: b.url, end: b.end || "", start: b.start }]),
+    );
     if (slice && (wantHall > 1 || (slice.bank || []).length > (s.bank || []).length)) {
-      applyHall(slice, false);
+      applyHall(slice, false, "hydrate");
     }
-    if (hallsHold.current.length > 1) {
-      persist({ halls: hallsHold.current, rooms: hallsHold.current.length, hall: wantHall, from: undefined });
-    }
+    rememberSlice(snapHall());
+    persist({
+      halls: hallsHold.current.length ? hallsHold.current : undefined,
+      rooms: roomsHold.current,
+      hall: wantHall,
+      from: undefined,
+    });
     const localEnd = [...bank.current.values()].map((v) => v.end).find((u) => u && u.startsWith("/films/") && !u.includes("hall-doors")) || "";
     if (!hangArt.current) {
     void (async () => {
@@ -5522,7 +5547,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const need = planWalks(g.nodes.map((n) => n.id), filmCapRef.current).length;
     const have = [...bank.current.entries()].filter(([k, v]) => v.url && (k.includes("→") || k.includes("←"))).length;
     const askedPlay = !(boot?.kind === "session" && (boot.do === "more" || boot.do === "room" || boot.do === "reset"));
-    setStripOn(false);
+    setStripOn(true);
     if (askedPlay) {
       setPhase("play");
       phaseRef.current = "play";
@@ -7183,7 +7208,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         {status}
       </p>
       )}
-      {clipsUI.length && phase === "forge" ? (
+      {clipsUI.length && (phase === "forge" || phase === "play") ? (
         <>
           {reelOn ? null : (
           <button
@@ -7341,7 +7366,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           ) : null}
         </>
       ) : null}
-      {phase === "forge" ? (
+      {phase === "forge" || phase === "play" ? (
         <>
           {hallsOn ? null : (
             <button
@@ -7750,7 +7775,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           </div>
         </div>
       ) : null}
-      {refs.length > 0 && phase !== "play" ? (
+      {refs.length > 0 ? (
         stripOn ? (
         <div
           className="absolute inset-x-0 bottom-0 z-50 overflow-visible"

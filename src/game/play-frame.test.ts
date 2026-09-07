@@ -7,14 +7,18 @@ import { BOLT_BODY, BOLT_FACE, TOUR_PLATE } from "./rune.ts";
 import { HALL_LOOP, HALL_STILL } from "./stock-room.ts";
 import { playableClipSrc } from "./play-clip.ts";
 import {
+  arrivalBreathUrl,
   arrivalEndStill,
   cookHasWalks,
+  filmTrayStillKeep,
   hallStillOf,
   isBoltSilhouette,
   isHallPlayStill,
   isStockHallClip,
   livingPlayFrame,
+  mergeBankClips,
   packIdentityStill,
+  pictureNeverStops,
   playCoverStill,
   playStillOrHall,
   seedMayBankIdle,
@@ -219,7 +223,7 @@ describe("A↔B last-frame seed chain", () => {
     assert.equal(walkLastFrameSeed(HALL_STILL, BOLT_BODY, COOKED_HALL), COOKED_HALL);
     assert.equal(walkLastFrameSeed(HALL_STILL, HALL_LOOP), "");
     assert.equal(walkClipHoldsSeed(stockIdle, landed), false);
-    assert.equal(walkClipHoldsSeed({ url: WALK, end: landed }, landed), false);
+    assert.equal(walkClipHoldsSeed({ url: WALK, end: landed }, landed), true);
     assert.equal(walkClipHoldsSeed({ url: WALK, end: landed, start: landed }, landed), true);
     assert.equal(walkClipHoldsSeed({ url: WALK, end: COOKED_HALL, start: COOKED_HALL }, landed), false);
     assert.equal(walkClipHoldsSeed({ url: WALK, end: landed, start: landed }, ""), true);
@@ -267,16 +271,72 @@ describe("A↔B last-frame seed chain", () => {
     assert.doesNotMatch(playWalk, /setPose\(walkLastFrameSeed/);
     const enterBreath = src.slice(src.indexOf("async function enterDoorBreath"), src.indexOf("async function saveFilms"));
     assert.match(enterBreath, /cookIdleAt\(node, seed, walkUrl, via, true\)/);
-    assert.match(enterBreath, /kickPlay\(idle\.url, true, true\)/);
-    assert.match(enterBreath, /cueBreath\(hid, idle\.url\)/);
+    assert.match(enterBreath, /arrivalBreathUrl\(/);
+    assert.match(enterBreath, /kickPlay\(url, true, true\)/);
+    assert.match(enterBreath, /cueBreath\(hid, url\)/);
     const holdIdle = src.slice(src.indexOf("function holdIdle"), src.indexOf("async function playEnterThenIdle"));
-    assert.match(holdIdle, /doorBreathPlayable\(idle, walkHere\)/);
+    assert.match(holdIdle, /arrivalBreathUrl\(/);
     assert.match(holdIdle, /kickPlay\(breathUrl, true, true\)/);
     assert.match(holdIdle, /filmLoop\.current = true/);
+    assert.doesNotMatch(holdIdle, /freezeVis\(/);
     assert.doesNotMatch(holdIdle, /stickCover\(arrival\)/);
     const forgeNow = src.slice(src.indexOf("async function forgeWalkNow"), src.indexOf("async function recookWalk"));
     assert.match(forgeNow, /walkLastFrameSeed\(/);
     assert.match(forgeNow, /start: fromStill/);
     assert.match(cookWalks, /start: fromStill/);
+  });
+});
+
+describe("picture never stops — Play / Load / forge-complete", () => {
+  it("arrival breath loops at spawn, A, and B from cooked idle-*", () => {
+    const bank = {
+      "idle-spawn": { url: BREATH, end: COOKED_HALL },
+      "idle-m1": { url: BREATH, end: COOKED_HALL },
+      "idle-m2←spawn": { url: BREATH, end: COOKED_HALL },
+      "spawn→m1": { url: WALK, end: COOKED_HALL, start: COOKED_HALL },
+    };
+    assert.equal(pictureNeverStops(bank, "spawn", "start", WALK), true);
+    assert.equal(pictureNeverStops(bank, "m1", "spawn", WALK), true);
+    assert.equal(pictureNeverStops(bank, "m2", "spawn", WALK), true);
+    assert.ok(arrivalBreathUrl(bank, "m1", "spawn", WALK));
+    assert.notEqual(arrivalBreathUrl(bank, "m1", "spawn", WALK), WALK);
+  });
+
+  it("Load hydrate keeps a thinner incoming bank from wiping cooked clips", () => {
+    const keep = [
+      { key: "spawn→m1", url: WALK, end: COOKED_HALL, start: COOKED_HALL },
+      { key: "idle-m1", url: BREATH, end: COOKED_HALL },
+    ];
+    const merged = mergeBankClips(keep, []);
+    assert.equal(merged.length, 2);
+    assert.equal(merged.find((b) => b.key === "spawn→m1")?.start, COOKED_HALL);
+    assert.equal(mergeBankClips([], keep).length, 2);
+  });
+
+  it("Films tray hides Still A / Still B when they equal hall/seed", () => {
+    assert.equal(filmTrayStillKeep("spawn", COOKED_HALL, COOKED_HALL), true);
+    assert.equal(filmTrayStillKeep("m1", COOKED_HALL, COOKED_HALL), false);
+    assert.equal(filmTrayStillKeep("m2", COOKED_HALL, COOKED_HALL), false);
+    assert.equal(filmTrayStillKeep("m1", BREATH, COOKED_HALL), true);
+  });
+
+  it("engine hydrates bank start, never wipes on Load, and shows trays on play", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const hub = readFileSync(join(here, "../components/citadel-hub.tsx"), "utf8");
+    assert.match(hub, /function playSession/);
+    assert.match(src, /mergeBankClips\(/);
+    assert.match(src, /applyHall\(slice, false, "hydrate"\)/);
+    assert.match(src, /start: b\.start/);
+    assert.match(src, /setStripOn\(true\)/);
+    assert.match(src, /clipsUI\.length && \(phase === "forge" \|\| phase === "play"\)/);
+    assert.match(src, /phase === "forge" \|\| phase === "play" \? \(/);
+    assert.match(src, /\{refs\.length > 0 \? \(/);
+    assert.doesNotMatch(src, /refs\.length > 0 && phase !== "play"/);
+    const open = src.slice(src.indexOf("async function openSession"), src.indexOf("function wipeSession"));
+    assert.match(open, /holdIdle\(\)/);
+    const finish = src.slice(src.indexOf("if (!liveForge.current) return;\n    liveForge.current = false;"));
+    assert.match(finish, /holdIdle\(\)/);
+    assert.match(src, /BOLT_BODY, lookHall\.current/);
   });
 });

@@ -170,9 +170,14 @@ function keepHalls(halls?: HallSlice[]): HallSlice[] | undefined {
     .slice(0, 8)
     .map((h, i) => {
       const bank = (h.bank || [])
-        .map((b) => ({ key: String(b.key || "").slice(0, 40), url: httpUrl(b.url), end: httpUrl(b.end) }))
+        .map((b) => ({
+          key: String(b.key || "").slice(0, 40),
+          url: httpUrl(b.url),
+          end: httpUrl(b.end),
+          start: httpUrl(b.start) || undefined,
+        }))
         .filter((b) => b.key && b.url)
-        .slice(0, 24);
+        .slice(0, 48);
       const refs = (h.refs || [])
         .map((r) => ({ id: String(r.id || "").slice(0, 24), name: String(r.name || "").slice(0, 32), src: httpUrl(r.src) }))
         .filter((r) => r.src)
@@ -204,9 +209,14 @@ function keepHalls(halls?: HallSlice[]): HallSlice[] | undefined {
 
 function pack(session: RuneSession): { meta: RuneSessionMeta; body: string; session: RuneSession } {
   const bank = (session.bank || [])
-    .map((b) => ({ key: String(b.key || "").slice(0, 40), url: httpUrl(b.url), end: httpUrl(b.end) }))
+    .map((b) => ({
+      key: String(b.key || "").slice(0, 40),
+      url: httpUrl(b.url),
+      end: httpUrl(b.end),
+      start: httpUrl(b.start) || undefined,
+    }))
     .filter((b) => b.key && b.url)
-    .slice(0, 24);
+    .slice(0, 48);
   const refs = (session.refs || [])
     .map((r) => ({ id: String(r.id || "").slice(0, 24), name: String(r.name || "").slice(0, 32), src: httpUrl(r.src) }))
     .filter((r) => r.src)

@@ -774,6 +774,22 @@ export function clearLivePlay() {
   }
 }
 
+/** Persist walk/breath rows including last-frame `start` so Load can replay without Imagine. */
+export function packBankClips(
+  bank: { key: string; url: string; end?: string; start?: string }[] = [],
+  stills = false,
+): { key: string; url: string; end: string; start?: string }[] {
+  return (bank || [])
+    .map((b) => {
+      const url = keepUrl(b.url);
+      if (!b?.key || !url) return null;
+      const end = stills ? keepStill(b.end) || keepUrl(b.end) : keepUrl(b.end) || keepStill(b.end);
+      const start = stills ? keepStill(b.start) || keepUrl(b.start) : keepUrl(b.start) || keepStill(b.start);
+      return { key: b.key, url, end: end || "", ...(start ? { start } : {}) };
+    })
+    .filter((b): b is { key: string; url: string; end: string; start?: string } => Boolean(b));
+}
+
 function keepHalls(halls?: HallSlice[], stills = false): HallSlice[] | undefined {
   if (!Array.isArray(halls) || !halls.length) return undefined;
   const src = stills ? keepStill : keepUrl;
@@ -786,10 +802,7 @@ function keepHalls(halls?: HallSlice[], stills = false): HallSlice[] | undefined
       plate: src(h.plate) || undefined,
       here: h.here,
       cameFrom: h.cameFrom,
-      bank: (h.bank || [])
-        .map((b) => ({ key: b.key, url: keepUrl(b.url), end: stills ? keepStill(b.end) || keepUrl(b.end) : keepUrl(b.end) }))
-        .filter((b) => b.key && b.url)
-        .slice(0, 24),
+      bank: packBankClips(h.bank, stills).slice(0, 48),
       refs: (h.refs || [])
         .map((r) => ({ ...r, src: src(r.src) }))
         .filter((r) => r.src)
@@ -813,9 +826,7 @@ function lightOf(session: RuneSession): RuneSession {
     refs: (session.refs || [])
       .map((r) => ({ ...r, src: keepUrl(r.src) }))
       .filter((r) => r.src),
-    bank: (session.bank || [])
-      .map((b) => ({ key: b.key, url: keepUrl(b.url), end: keepUrl(b.end) }))
-      .filter((b) => b.key && b.url),
+    bank: packBankClips(session.bank, true),
     rift: keepRift(session.rift),
     halls: keepHalls(session.halls),
   };
@@ -832,9 +843,7 @@ function packOf(session: RuneSession): RuneSession {
     refs: (session.refs || [])
       .map((r) => ({ ...r, src: keepStill(r.src) || keepUrl(r.src) }))
       .filter((r) => r.src),
-    bank: (session.bank || [])
-      .map((b) => ({ key: b.key, url: keepUrl(b.url), end: keepStill(b.end) }))
-      .filter((b) => b.key && b.url),
+    bank: packBankClips(session.bank, true),
     rift: keepRift(session.rift),
     halls: keepHalls(session.halls, true),
   };
