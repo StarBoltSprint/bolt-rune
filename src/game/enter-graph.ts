@@ -1,5 +1,5 @@
 import type { HungArtifact, HungRoom } from "./artifacts.ts";
-import { stockBiomeLoop } from "./play-clip.ts";
+import { playableClipSrc, stockBiomeLoop } from "./play-clip.ts";
 import type { RiftGate } from "./rune-session.ts";
 import { doorAtPoint, HALL_LOOP, isHallFilm, isLivingHallLoop } from "./stock-room.ts";
 
@@ -277,13 +277,12 @@ export function resolveDoorEnter(
   const clips = uniq([trans, ...playlist]);
   const bound = (() => {
     const art = gate.art ? arts.find((a) => a.id === gate.art) : undefined;
-    const n = art?.room?.hall;
-    return typeof n === "number" && n >= 1 && n <= 8 ? n : 0;
+    return hungHallN(art?.room?.hall);
   })();
   return {
     kind: "biome",
     door,
-    hall: bound || hall,
+    hall: hungEnterBindHall(bound, hall, 0) || hungHallN(hall) || hall,
     citadel: citadel || undefined,
     art: gate.art || "",
     biome,
@@ -320,10 +319,31 @@ export function biomeQteQuiet(holdDoor?: string | null): boolean {
   return Boolean(holdDoor);
 }
 
+/** Hall N in 1–8, else 0. Living default 1 is a real hall — callers must not treat 0 as Room 1. */
+export function hungHallN(v?: number | string | null): number {
+  const raw = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(raw) && raw >= 1 && raw <= 8 ? Math.round(raw) : 0;
+}
+
+/**
+ * Biome enter / FilmStage chrome hall.
+ * Hung bind Room N wins. Living default / hallHold 1 never overrides Room 2+.
+ */
+export function hungEnterBindHall(
+  artHall?: number | string | null,
+  enterHall?: number | string | null,
+  hangRoom?: number | string | null,
+): number {
+  const art = hungHallN(artHall);
+  const enter = hungHallN(enterHall);
+  const hang = hungHallN(hangRoom);
+  const bound = [art, enter, hang].find((n) => n >= 2);
+  return bound || art || enter || hang || 0;
+}
+
 /** Living-hall / FilmStage overlay after Hang Room N — never stuck on Room 1. Door letter is never blank. */
 export function hungPlayChrome(hall?: number | string | null, door?: string | null): { keeper: string; name: string } {
-  const raw = typeof hall === "number" ? hall : Number(hall);
-  const n = Number.isFinite(raw) ? Math.max(1, Math.min(8, Math.round(raw))) : 1;
+  const n = hungHallN(hall) || 1;
   const letter = doorLetterOf(door || "A");
   return {
     keeper: `Room ${n} • Door ${letter}`,
@@ -396,9 +416,8 @@ export function hungStageChrome(
   door?: string | null,
   film?: { name?: string; keeper?: string; line?: string } | null,
 ): { title: string; play: string; biome: string } {
-  const raw = typeof hall === "number" ? hall : Number(hall);
-  const n = Number.isFinite(raw) && raw >= 1 && raw <= 8 ? Math.round(raw) : 0;
   const fromKeeper = ROOM_DOOR.exec(String(film?.keeper || ""));
+  const n = hungEnterBindHall(fromKeeper ? Number(fromKeeper[1]) : 0, hall, 0) || hungHallN(hall);
   const chrome = n
     ? hungPlayChrome(n, door || fromKeeper?.[2] || "A")
     : fromKeeper
@@ -413,8 +432,12 @@ export function hungStageChrome(
   return { title: chrome.keeper, play: chrome.name, biome };
 }
 
+function isShippedBiomeLoop(u?: string | null): boolean {
+  return Boolean(u && u.includes("/ui/forge.mp4"));
+}
+
 export function firstBiomePlate(playlist: Array<string | null | undefined> = []): number {
-  const i = playlist.findIndex((u) => u && !isLivingHallLoop(u));
+  const i = playlist.findIndex((u) => u && (!isLivingHallLoop(u) || isShippedBiomeLoop(u)));
   return i < 0 ? 0 : i;
 }
 
@@ -422,25 +445,49 @@ export function firstBiomePlate(playlist: Array<string | null | undefined> = [])
 export function shouldHoldBiome(playlist: Array<string | null | undefined> = [], i = 0): boolean {
   if (!playlist.length) return false;
   const at = playlist[i];
-  if (at && !isLivingHallLoop(at)) return true;
-  return i >= playlist.length - 1 && playlist.some((u) => u && !isLivingHallLoop(u));
+  if (at && (!isLivingHallLoop(at) || isShippedBiomeLoop(at))) return true;
+  return i >= playlist.length - 1 && playlist.some((u) => u && (!isLivingHallLoop(u) || isShippedBiomeLoop(u)));
+}
+
+const STOCK_FORGE_MP4 = /\/films\/forge-[a-z0-9-]+\.mp4$/i;
+
+/** Placeholder sprint loops that are not shipped — playing them 404s into still thrash. */
+export function isStockForgeClip(u?: string | null): boolean {
+  if (!u) return false;
+  const path = u.split("?")[0] || u;
+  return STOCK_FORGE_MP4.test(path);
+}
+
+/**
+ * Hung artefact MP4s for biome enter — proxied, continuous.
+ * Cooked Imagine / clip URLs win. Never stills, hall loops, or four missing forge pads.
+ */
+export function hungBiomePlaylist(urls?: Array<string | null | undefined> | null, biome?: string | null): string[] {
+  const cooked: string[] = [];
+  for (const raw of urls || []) {
+    if (!raw || isLivingHallLoop(raw) || isStockForgeClip(raw) || isHallFilm(raw)) continue;
+    const u = playableClipSrc(raw);
+    if (!u || isLivingHallLoop(u) || isStockForgeClip(u) || isHallFilm(u)) continue;
+    if (/\.(jpe?g|png|webp|gif)(\?|$)/i.test(u) && !u.includes(".mp4")) continue;
+    if (!cooked.includes(u)) cooked.push(u);
+  }
+  if (cooked.length) return cooked;
+  return [stockBiomeLoop(biome)];
 }
 
 /**
  * Hung / stock rift handoff: cooked room→biome trans (if any) then biome loops.
  * Stock hall loop / citadel still are not a trans — playing them is the
  * "biome flashes then snaps back to the room" fail.
+ * Missing forge-*.mp4 pads become one shipped loop so FilmStage does not still-thrash.
  */
 export function stayBiomePlay(enter: DoorEnter): DoorEnter {
   if (enter.kind !== "biome") return enter;
   const still = enter.still && !isHallFilm(enter.still) ? enter.still : biomeStill(enter.biome);
   const rawTrans = enter.trans && /\.mp4(\?|$)/i.test(enter.trans) ? enter.trans : "";
-  const trans = rawTrans && !isLivingHallLoop(rawTrans) ? rawTrans : "";
-  const loops = uniq(
-    [...(enter.playlist || []), ...stockBiomePlaylist(enter.biome)].filter((u) => u && !isLivingHallLoop(u)),
-  );
-  const fallback = stockBiomeLoop(enter.biome);
-  if (!loops.length && fallback && !isLivingHallLoop(fallback)) loops.push(fallback);
+  const transPlay = rawTrans && !isLivingHallLoop(rawTrans) && !isStockForgeClip(rawTrans) ? playableClipSrc(rawTrans) : "";
+  const trans = transPlay && !isLivingHallLoop(transPlay) ? transPlay : "";
+  const loops = hungBiomePlaylist([trans, ...(enter.playlist || []), ...(enter.clips || [])], enter.biome);
   const clips = uniq([trans, ...loops].filter(Boolean));
   return {
     ...enter,

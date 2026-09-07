@@ -1,4 +1,5 @@
-import { hungPlayChrome } from "./enter-graph";
+import { hungBiomePlaylist, hungPlayChrome } from "./enter-graph";
+import { playableClipSrc } from "./play-clip";
 import { b, turnBeatsForRun, turnCue, type Beat, type Film } from "./films";
 import { ENGINE } from "./laws";
 
@@ -393,13 +394,14 @@ export function riftBeats(): Beat[] {
   ];
 }
 
-/** Hung biome stay: no QTE chart, so leftover door taps cannot MISS. */
+/** Hung biome stay: no QTE chart / score, so leftover door taps cannot MISS and play does not hitch. */
 export function quietBiomeFilm(film: Film): Film {
   return {
     ...film,
     beats: [],
     pad: undefined,
     lives: 1,
+    score: undefined,
   };
 }
 
@@ -427,10 +429,12 @@ function filmFromPlates(name: string, still: string, plates: string[], prompt?: 
 }
 
 function asPlates(urls: string[], keepStock: boolean) {
+  if (keepStock) return hungBiomePlaylist(urls);
   const plates: string[] = [];
-  for (const u of urls.filter(Boolean)) {
-    if (!/\.mp4(\?|$)/i.test(u) && !u.includes("xai-vidgen") && !u.startsWith("/api/clip")) continue;
-    if (!keepStock && /\/films\/forge-[a-z0-9]+\.mp4$/i.test(u)) continue;
+  for (const raw of urls.filter(Boolean)) {
+    const u = playableClipSrc(raw);
+    if (!u) continue;
+    if (/\/films\/forge-[a-z0-9-]+\.mp4$/i.test(u.split("?")[0] || u)) continue;
     if (!plates.includes(u)) plates.push(u);
   }
   return plates;
