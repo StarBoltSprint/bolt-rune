@@ -1347,6 +1347,33 @@ export async function dropLoadRoom(citadel: string, hall?: number | string | nul
     }
   } else {
     if (root?.id) await replaceSessionFull(dropHallFromSession(root, drop.hall, drop.remaining));
+    else {
+      const meta = planned.rows.find((r) => r.id === drop.citadel);
+      if (meta) {
+        const light = {
+          ...meta,
+          walkSecs: 6 as const,
+          pins: [],
+          plate: meta.thumb || "/refs/hall-doors.jpg",
+          here: "spawn",
+          cameFrom: "spawn",
+          forged: 0,
+          refs: [],
+          bank: [],
+          rooms: drop.remaining,
+          hall: Math.min(meta.hall || 1, drop.remaining),
+          halls: Array.from({ length: drop.remaining }, (_, i) => ({
+            n: i + 1,
+            still: meta.hallHints?.find((h) => (h.n || h.hall) === i + 1)?.still || (i === 0 ? meta.thumb || "" : ""),
+            bank: [] as { key: string; url: string; end: string }[],
+            refs: [] as { id: string; name: string; src: string }[],
+            pins: [],
+          })),
+          updated: Date.now(),
+        };
+        await replaceSessionFull(light);
+      }
+    }
     for (const full of kin) await replaceSessionFull(dropHallFromSession(full, drop.hall, drop.remaining));
     for (const s of rows.filter((r) => !planned.rows.some((n) => n.id === r.id))) {
       await dropSession(s.id);
