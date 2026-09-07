@@ -426,9 +426,11 @@ async function runBiomeVaultBot(browser, vp) {
     } else {
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.waitForSelector("[data-hang=A]", { timeout: 8000 });
-      await page.locator("[data-hang-pick='2']").first().click();
       await page.locator("[data-hang=A]").first().click();
     }
+    await page.waitForSelector("[data-hang-ask=A]", { timeout: 8000 });
+    await page.locator("[data-hang-ask] [data-hang-pick='2']").first().click();
+    await page.locator("[data-hang-confirm]").first().click();
     await page.waitForFunction(() => /room 2\s*[·.]\s*door A/i.test(document.body.innerText), { timeout: 5000 }).catch(() => {});
     const hungA = await page.evaluate(() => /room 2\s*[·.]\s*door A/i.test(document.body.innerText));
     if (!hungA) {

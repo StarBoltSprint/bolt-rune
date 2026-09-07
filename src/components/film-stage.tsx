@@ -18,6 +18,8 @@ import { press } from "@/lib/press";
 import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
 import { HazardLayer } from "@/components/hazard-layer";
+import { sprintHallDoor } from "@/game/enter-graph";
+import { isHallFilm } from "@/game/stock-room";
 
 export type RunResult = {
   score: number;
@@ -52,6 +54,7 @@ type Props = {
   onExit: () => void;
   onDone: (result: RunResult) => void;
   onCook?: (seed: { frame: string; path: "main" | "river" | "thicket"; dusk: boolean; hunter: number; crashed: boolean; grade: Grade }) => void;
+  onHallDoor?: (door: "A" | "B") => void;
 };
 
 type G = {
@@ -147,7 +150,7 @@ function nearSpot(nx: number, ny: number, spot: Spot, box: DOMRect) {
   return dx * dx + dy * dy <= 110 * 110;
 }
 
-export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit, onDone }: Props) {
+export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit, onDone, onHallDoor }: Props) {
   const film = custom ?? FILM_BY_ID[id];
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const aRef = useRef<HTMLVideoElement | null>(null);
@@ -170,6 +173,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   const doneSent = useRef(false);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+  const onHallDoorRef = useRef(onHallDoor);
+  onHallDoorRef.current = onHallDoor;
 
   const [live, setLive] = useState(false);
   const [phase, setPhase] = useState<Phase>(custom || film.pad === "arrows" || film.id === "sprint" ? "run" : "arm");
@@ -506,7 +511,10 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         if (beat.kind === "hold" && g.hold >= beat.holdMs && Math.abs(t - beat.at) < beat.win) {
           judge(g, beat, Math.abs(t - beat.at));
         } else if (late && !advancing.current) {
-          if (t - beat.at > 1.35) {
+          if (hallPlateNow()) {
+            g.resolved = true;
+            advance(g);
+          } else if (t - beat.at > 1.35) {
             g.resolved = true;
             advance(g);
           } else {
@@ -774,8 +782,29 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     }
   }
 
+  function hallPlateNow() {
+    const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
+    const url = list[plateRef.current] || videoRef.current?.getAttribute("data-url") || film.local || "";
+    return isHallFilm(url);
+  }
+
+  function tryHallDoor(clientX: number, clientY: number) {
+    if (!hallPlateNow()) return false;
+    const box = wrapRef.current?.getBoundingClientRect();
+    if (!box) return Boolean(onHallDoorRef.current);
+    const nx = (clientX - box.left) / box.width;
+    const ny = (clientY - box.top) / box.height;
+    const door = sprintHallDoor(videoRef.current?.getAttribute("data-url") || platesRef.current[plateRef.current] || film.local, nx, ny);
+    if (door && onHallDoorRef.current) {
+      onHallDoorRef.current(door);
+      return true;
+    }
+    return true;
+  }
+
   function tryHit(nx?: number, ny?: number, swipe?: Lane) {
     const g = gRef.current;
+    if (hallPlateNow()) return;
     if (phaseRef.current !== "run" || g.crashed) return;
     const v = videoRef.current;
     const t = clock();
@@ -814,6 +843,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
 
   function hitArrow(lane: Lane) {
     const g = gRef.current;
+    if (hallPlateNow()) return;
     if (phaseRef.current !== "run" || g.crashed) return;
     const v = videoRef.current;
     const t = clock();
@@ -909,6 +939,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.holding = false;
     const start = swipe.current;
     swipe.current = null;
+    if (start && tryHallDoor(e.clientX, e.clientY)) return;
     const beat = g.beats[g.i];
     const box = wrapRef.current?.getBoundingClientRect();
     if (!box || !beat || !start) return;

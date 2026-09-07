@@ -441,6 +441,27 @@ export function listSessions(): RuneSessionMeta[] {
 
 const LAST = "bolt-last-play";
 
+/** Halls persisted on the live citadel — Vault hang picker reads these, not only catalog rooms=1. */
+export function listStoredHallHints(): { hall: number; still: string; name: string }[] {
+  const seen = new Set<number>();
+  const out: { hall: number; still: string; name: string }[] = [];
+  const put = (n: number, still: string, name: string) => {
+    if (n < 1 || n > 8 || seen.has(n)) return;
+    seen.add(n);
+    out.push({ hall: n, still, name: name || `Room ${n}` });
+  };
+  for (const s of readStore()) {
+    if (s.halls?.length) {
+      for (const h of s.halls) put(Math.max(1, h.n || 1), h.still || h.plate || s.thumb || "", `Room ${h.n || 1}`);
+    }
+    const cap = Math.max(1, s.rooms || 1, s.hall || 1, s.halls?.length || 0);
+    for (let i = 1; i <= cap; i++) {
+      put(i, i === (s.hall || 1) ? s.thumb || s.plate || "" : "", `Room ${i}`);
+    }
+  }
+  return out.sort((a, b) => a.hall - b.hall);
+}
+
 export function lastPlay(): { id: string; title?: string; hall?: number } | null {
   try {
     const raw =

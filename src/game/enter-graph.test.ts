@@ -10,6 +10,7 @@ import {
   hydrateRift,
   inferBiome,
   resolveDoorEnter,
+  sprintHallDoor,
   stockBiomePlaylist,
   stockTransUrl,
 } from "./enter-graph.ts";
@@ -29,6 +30,13 @@ function art(id: string, biome = "forest") {
 }
 
 describe("enter graph · hang any artefact on any door", () => {
+  it("hall trans in a sprint maps door taps to A/B, not a gesture miss", () => {
+    assert.equal(sprintHallDoor(HALL_LOOP, 0.22, 0.42), "A");
+    assert.equal(sprintHallDoor("/ui/citadel.mp4?v=aaa", 0.72, 0.4), "B");
+    assert.equal(sprintHallDoor("/films/forge-forest.mp4", 0.22, 0.42), null);
+    assert.equal(sprintHallDoor("/films/citadel-tour.jpg?v=sharp", 0.7, 0.4), "B");
+  });
+
   it("maps A/B to living-hall m1/m2", () => {
     assert.equal(doorIdOf("A"), "m1");
     assert.equal(doorIdOf("B"), "m2");

@@ -167,6 +167,7 @@ export function listHangRooms(
   rows: RuneSessionMeta[] = [],
   last: LastPlayHint = null,
   arts?: Array<{ room?: { hall?: number; still?: string } | null; still?: string }>,
+  extra?: HangRoomPick[],
 ): HangRoomPick[] {
   const cit = bindCitadel(rows, last);
   const packs = packCitadels(rows);
@@ -177,17 +178,22 @@ export function listHangRooms(
   const living = cit.hall || 1;
   const seen = new Set<number>();
   const rooms: HangRoomPick[] = [];
+  const put = (hall: number, name: string, still: string) => {
+    if (hall < 1 || hall > 8 || seen.has(hall)) return;
+    seen.add(hall);
+    rooms.push({ hall, name: name || `Room ${hall}`, still, living: hall === living });
+  };
   raw.forEach((r, i) => {
     const hall = hallN(r.hall) || i + 1;
-    if (hall < 1 || seen.has(hall)) return;
-    seen.add(hall);
-    rooms.push({
-      hall,
-      name: r.name && r.name !== pack?.root.name ? r.name : `Room ${hall}`,
-      still: roomStill(hall, r, arts),
-      living: hall === living,
-    });
+    put(hall, r.name && r.name !== pack?.root.name ? r.name : `Room ${hall}`, roomStill(hall, r, arts));
   });
+  for (const e of extra || []) put(e.hall, e.name, e.still || roomStill(e.hall, undefined, arts));
+  for (const a of arts || []) {
+    const hall = hallN(a.room?.hall);
+    if (hall) put(hall, `Room ${hall}`, a.room?.still || a.still || "");
+  }
+  const lastN = hallN(last?.hall);
+  if (lastN) put(lastN, `Room ${lastN}`, roomStill(lastN, undefined, arts));
   if (!rooms.length) rooms.push({ hall: 1, name: "Room 1", still: "", living: true });
   return rooms.sort((a, b) => a.hall - b.hall);
 }

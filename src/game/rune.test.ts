@@ -299,10 +299,18 @@ describe("Imagine prompt rails", () => {
     assert.match(src, /data-hang-pick=/);
     assert.match(src, /data-hang-rooms=/);
     assert.match(src, /data-hang-room/);
+    assert.match(src, /data-hang-ask/);
+    assert.match(src, /data-hang-confirm/);
+    assert.match(src, /askHang\(/);
     assert.match(src, /listHangRooms/);
     assert.match(src, /resolveHangRoom/);
     assert.match(src, /vaultHangRoom\(/);
     assert.match(src, /Hang on room/);
+    assert.match(src, /onHallDoor=/);
+    const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    assert.match(stage, /sprintHallDoor/);
+    assert.match(stage, /tryHallDoor/);
+    assert.match(stage, /onHallDoorRef/);
     const bot = src.slice(src.indexOf("data-hang-bot="));
     const btn = bot.slice(0, bot.indexOf("Grok Bot Hang") + 20);
     assert.match(btn, /vaultHangRoom\(/);
