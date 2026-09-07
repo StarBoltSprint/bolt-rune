@@ -94,7 +94,7 @@ export type RuneSessionMeta = {
   via?: string;
   title?: string;
   /** Hall numbers that exist — empty slices still count. Catalog carries n/still only. */
-  halls?: Array<{ n?: number; hall?: number; still?: string }>;
+  hallHints?: Array<{ n?: number; hall?: number; still?: string }>;
 };
 
 export type RuneSession = RuneSessionMeta & {
@@ -175,32 +175,36 @@ function keepStill(u?: string) {
   return "";
 }
 
-function hallHintsOf(s?: { halls?: Array<{ n?: number; hall?: number; still?: string; plate?: string }> | null }): RuneSessionMeta["halls"] {
-  const raw = s?.halls;
+function hallHintsOf(s?: { halls?: Array<{ n?: number; hall?: number; still?: string; plate?: string }> | null; hallHints?: RuneSessionMeta["hallHints"] }): RuneSessionMeta["hallHints"] {
+  const raw = s?.halls?.length ? s.halls : s?.hallHints;
   if (!Array.isArray(raw) || !raw.length) return undefined;
-  return raw.slice(0, 8).map((h, i) => ({
-    n: Math.max(1, Math.min(8, Number(h.n) || Number(h.hall) || i + 1)),
-    still: keepUrl(h.still) || keepUrl(h.plate) || "",
-  }));
+  return raw.slice(0, 8).map((h, i) => {
+    const still = "still" in h ? h.still : "";
+    const plate = "plate" in h ? (h as { plate?: string }).plate : "";
+    return {
+      n: Math.max(1, Math.min(8, Number(h.n) || Number(h.hall) || i + 1)),
+      still: keepUrl(still) || keepUrl(plate) || "",
+    };
+  });
 }
 
-function keepHallMeta(a?: RuneSessionMeta["halls"], b?: RuneSessionMeta["halls"]): RuneSessionMeta["halls"] {
+function keepHallMeta(a?: RuneSessionMeta["hallHints"], b?: RuneSessionMeta["hallHints"]): RuneSessionMeta["hallHints"] {
   const left = Array.isArray(a) ? a : [];
   const right = Array.isArray(b) ? b : [];
   if (!left.length && !right.length) return undefined;
   return left.length >= right.length ? left : right;
 }
 
-function roomCap(s?: { rooms?: number; hall?: number; halls?: Array<{ n?: number; hall?: number }> }): number | undefined {
+function roomCap(s?: { rooms?: number; hall?: number; halls?: Array<{ n?: number; hall?: number }>; hallHints?: RuneSessionMeta["hallHints"] }): number | undefined {
   if (!s) return undefined;
-  const halls = s.halls || [];
+  const halls = s.halls?.length ? s.halls : s.hallHints || [];
   const ns = halls.map((h, i) => Math.max(0, Number(h.n) || Number(h.hall) || i + 1));
   return keepRooms(s.rooms, Math.max(s.hall || 0, halls.length, ...ns));
 }
 
 function metaOf(s: Partial<RuneSession> & RuneSessionMeta): RuneSessionMeta {
   const walks = Array.isArray(s.bank) ? s.bank.filter((b) => b?.url).length : s.walks || 0;
-  const halls = hallHintsOf(s) || s.halls;
+  const halls = hallHintsOf(s);
   return {
     id: s.id,
     name: s.name || "Room",
@@ -214,7 +218,7 @@ function metaOf(s: Partial<RuneSession> & RuneSessionMeta): RuneSessionMeta {
     from: s.from,
     via: s.via,
     title: s.title,
-    halls,
+    hallHints: halls,
   };
 }
 
@@ -270,7 +274,7 @@ function writeCookie(list: RuneSessionMeta[]) {
       hall: s.hall,
       from: s.from,
       title: s.title,
-      halls: hallHintsOf(s),
+      hallHints: hallHintsOf(s),
     }));
     document.cookie = `${COOKIE}=${encodeURIComponent(JSON.stringify(tiny))}; max-age=31536000; path=/; SameSite=Lax`;
   } catch {
@@ -316,7 +320,7 @@ function idsOf(list: RuneSessionMeta[]) {
     from: s.from,
     via: s.via,
     title: s.title,
-    halls: hallHintsOf(s),
+    hallHints: hallHintsOf(s),
   }));
 }
 
@@ -389,7 +393,7 @@ function readCatalog(): RuneSessionMeta[] {
         thumb: keepUrl(meta.thumb) || prev?.thumb || "/refs/hall-doors.jpg",
         rooms: keepRooms(prev?.rooms, roomCap(meta)),
         hall: meta.hall || prev?.hall,
-        halls: keepHallMeta(prev?.halls, hallHintsOf(meta) || meta.halls),
+        hallHints: keepHallMeta(prev?.hallHints, hallHintsOf(meta)),
       });
     }
   };
@@ -416,7 +420,7 @@ function writeCatalog(list: RuneSessionMeta[]) {
     from: s.from,
     via: s.via,
     title: s.title,
-    halls: hallHintsOf(s),
+    hallHints: hallHintsOf(s),
   }));
   if (!tiny.length) return;
   const raw = JSON.stringify(tiny);
@@ -464,7 +468,7 @@ export function listSessions(): RuneSessionMeta[] {
           title: meta.title || prev?.title,
           rooms: keepRooms(prev?.rooms, roomCap(meta)),
           hall: meta.hall || prev?.hall,
-          halls: keepHallMeta(prev?.halls, hallHintsOf(meta) || meta.halls),
+          hallHints: keepHallMeta(prev?.hallHints, hallHintsOf(meta)),
         });
       }
     };
@@ -503,11 +507,12 @@ export function listStoredHallHints(): { hall: number; still: string; name: stri
     seen.add(n);
     out.push({ hall: n, still, name: name || `Room ${n}` });
   };
-  const fill = (s: { rooms?: number; hall?: number; halls?: { n?: number; still?: string; plate?: string }[]; thumb?: string; plate?: string }) => {
-    if (s.halls?.length) {
-      for (const h of s.halls) put(Math.max(1, h.n || 1), h.still || h.plate || s.thumb || "", `Room ${h.n || 1}`);
+  const fill = (s: { rooms?: number; hall?: number; halls?: { n?: number; still?: string; plate?: string }[]; hallHints?: { n?: number; still?: string }[]; thumb?: string; plate?: string }) => {
+    const slices = s.halls?.length ? s.halls : s.hallHints || [];
+    if (slices.length) {
+      for (const h of slices) put(Math.max(1, h.n || 1), h.still || s.thumb || "", `Room ${h.n || 1}`);
     }
-    const cap = Math.max(s.rooms || 0, s.hall || 0, s.halls?.length || 0);
+    const cap = Math.max(s.rooms || 0, s.hall || 0, slices.length);
     for (let i = 1; i <= cap && i <= 8; i++) {
       put(i, i === (s.hall || 1) ? s.thumb || s.plate || "" : "", `Room ${i}`);
     }
@@ -852,7 +857,7 @@ function mergeMeta(list: RuneSessionMeta[]) {
       title: newer.title || older.title,
       rooms: keepRooms(older.rooms, roomCap(newer)),
       hall: newer.hall || older.hall,
-      halls: keepHallMeta(older.halls, newer.halls),
+      hallHints: keepHallMeta(older.hallHints, newer.hallHints),
     });
   }
   const rows = relinkMetas([...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0)));

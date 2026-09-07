@@ -36,7 +36,7 @@ function ownerKey(userId: string) {
   return String(userId || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
 }
 
-function hallHints(halls?: HallSlice[]): RuneSessionMeta["halls"] {
+function hallHints(halls?: HallSlice[]): RuneSessionMeta["hallHints"] {
   if (!Array.isArray(halls) || !halls.length) return undefined;
   return halls.slice(0, 8).map((h, i) => ({
     n: Math.max(1, Math.min(8, Number(h.n) || i + 1)),
@@ -64,7 +64,7 @@ function metaFrom(session: RuneSession): RuneSessionMeta {
     from: session.from,
     via: session.via,
     title: session.title,
-    halls,
+    hallHints: halls,
   };
 }
 
@@ -340,7 +340,7 @@ async function fetchCitadelList(userId: string): Promise<RuneSessionMeta[]> {
         from: r.from_id || undefined,
         via: r.via || undefined,
         title: r.title || undefined,
-        halls,
+        hallHints: halls,
       });
     }
   } catch {

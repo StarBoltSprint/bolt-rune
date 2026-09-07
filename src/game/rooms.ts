@@ -117,7 +117,7 @@ export function packCitadels(list: RuneSessionMeta[] = []): CitadelPack[] {
       const packed = citadelRoomCount({
         rooms: root.rooms,
         hall: root.hall,
-        halls: root.halls?.length ? root.halls : tree.map((r) => r.hall),
+        halls: root.hallHints?.length ? root.hallHints : tree.map((r) => r.hall || 0),
         hungHalls: tree.map((r) => r.hall),
       });
       const rooms = packed > 1 || tree.length <= 1 ? asHalls(root, packed) : tree;
@@ -219,7 +219,7 @@ export function listHangRooms(
   const packs = packCitadels(rows);
   const pack = packs.find((p) => p.root.id === cit.citadel) || packs[0];
   const kin = livingCitadelRows(rows, cit.citadel);
-  const raw: Array<Pick<RuneSessionMeta, "hall" | "name" | "thumb" | "halls" | "rooms">> = pack?.rooms?.length
+  const raw: Array<Pick<RuneSessionMeta, "hall" | "name" | "thumb" | "hallHints" | "rooms">> = pack?.rooms?.length
     ? pack.rooms
     : [{ hall: 1, name: pack?.title || "Room 1", thumb: pack?.root.thumb || "" }];
   const living = cit.hall || 1;
@@ -237,16 +237,16 @@ export function listHangRooms(
   raw.forEach((r, i) => {
     const hall = hallN(r.hall) || i + 1;
     put(hall, r.name && r.name !== pack?.root.name ? r.name : `Room ${hall}`, roomStill(hall, r, arts));
-    fillCount(citadelRoomCount({ rooms: r.rooms, hall: r.hall, halls: r.halls }), r);
+    fillCount(citadelRoomCount({ rooms: r.rooms, hall: r.hall, halls: r.hallHints }), r);
   });
   for (const s of kin) {
     fillCount(
-      citadelRoomCount({ rooms: s.rooms, hall: s.hall, halls: s.halls }),
+      citadelRoomCount({ rooms: s.rooms, hall: s.hall, halls: s.hallHints }),
       s,
     );
     const hn = hallN(s.hall);
     if (hn) put(hn, s.name && s.name !== pack?.root.name ? s.name : `Room ${hn}`, roomStill(hn, s, arts));
-    for (const h of s.halls || []) {
+    for (const h of s.hallHints || []) {
       const n = hallN(h.n) || hallN(h.hall);
       if (n) put(n, `Room ${n}`, h.still || roomStill(n, s, arts));
     }
@@ -266,14 +266,14 @@ export function listHangRooms(
     citadelRoomCount({
       rooms: pack?.root.rooms,
       hall: cit.hall,
-      halls: pack?.root.halls,
+      halls: pack?.root.hallHints,
       lastRooms: last?.rooms,
       lastHall: last?.hall,
       hungHalls: (arts || []).map((a) => a.room?.hall),
     }),
     pack?.rooms?.length || 0,
     citadelRoomCount({ halls: extra || [] }),
-    ...kin.map((s) => citadelRoomCount({ rooms: s.rooms, hall: s.hall, halls: s.halls })),
+    ...kin.map((s) => citadelRoomCount({ rooms: s.rooms, hall: s.hall, halls: s.hallHints })),
   );
   for (let i = 1; i <= cap; i++) put(i, `Room ${i}`, roomStill(i, undefined, arts));
   if (!rooms.length) rooms.push({ hall: 1, name: "Room 1", still: "", living: true });

@@ -86,7 +86,7 @@ describe("hang room pick", () => {
       [1, 2, 3],
     );
     assert.equal(byRooms.find((r) => r.living)?.hall, 2);
-    const byHalls = listHangRooms([{ ...cit(1, 2), halls: [{ n: 1 }, { n: 2 }, { n: 3 }] }], { id: "cit-1", hall: 2 });
+    const byHalls = listHangRooms([{ ...cit(1, 2), hallHints: [{ n: 1 }, { n: 2 }, { n: 3 }] }], { id: "cit-1", hall: 2 });
     assert.deepEqual(
       byHalls.map((r) => r.hall),
       [1, 2, 3],
