@@ -320,7 +320,7 @@ export function VaultHall() {
     sfxForge("cook");
     let spec = readClipSpec();
     const pace = { n: 2, cap: 16 };
-    let outcome: "ok" | "fail" | "abort" = "fail";
+    let outcome: "ok" | "fail" | "abort" | "wait" = "fail";
     const tick = window.setInterval(() => {
       if (abort.current) return;
       pace.n = Math.min(pace.cap, pace.n + 1);
@@ -558,6 +558,7 @@ export function VaultHall() {
           return;
         }
         bump(99, 99, "Still forging · keep this open");
+        outcome = "wait";
         return;
       }
       setFrameHint("");
@@ -571,6 +572,8 @@ export function VaultHall() {
         setPct(0);
         setFrameHint("");
         setFrost("");
+      } else if (outcome === "wait") {
+        /* keep overlay — cook may still land if Imagine is slow */
       } else {
         window.setTimeout(() => {
           setForge(false);
