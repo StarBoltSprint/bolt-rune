@@ -16,6 +16,7 @@ import {
   pathEntry,
   resetLookForgeAuto,
   shouldAutoStartBotForge,
+  vaultHangRoom,
   vaultHangStart,
 } from "./path-entry.ts";
 import {
@@ -289,6 +290,25 @@ describe("Imagine prompt rails", () => {
     assert.deepEqual(biomeBotStart(), { dataBiome: "bot", sealed: true });
     assert.deepEqual(vaultHangStart("bot"), { dataHang: "bot", sealed: true });
     assert.deepEqual(vaultHangStart("A"), { dataHang: "A", sealed: false });
+    assert.deepEqual(vaultHangRoom(2), { "data-hang-room": 2 });
+  });
+
+  it("Vault hang picks a citadel room before Hang A/B", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
+    assert.match(src, /data-hang-pick=/);
+    assert.match(src, /data-hang-rooms=/);
+    assert.match(src, /data-hang-room/);
+    assert.match(src, /listHangRooms/);
+    assert.match(src, /resolveHangRoom/);
+    assert.match(src, /vaultHangRoom\(/);
+    assert.match(src, /Hang on room/);
+    const bot = src.slice(src.indexOf("data-hang-bot="));
+    const btn = bot.slice(0, bot.indexOf("Grok Bot Hang") + 20);
+    assert.match(btn, /vaultHangRoom\(/);
+    assert.match(btn, /onPointerUp=/);
+    assert.match(btn, /onClick=/);
+    assert.doesNotMatch(btn, /no picker/);
   });
 
   it("Grok Bot Forge uses a LOCKed hall still/style, else sealed DEFAULT HALL", () => {

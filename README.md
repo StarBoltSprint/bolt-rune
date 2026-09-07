@@ -15,7 +15,7 @@ npm run dev
 Open `http://localhost:8080`.
 
 - **Runes** — citadel. Play / Load / New citadel.
-- **Vault** — coffre. Continue, Shift, Hang A / Hang B.
+- **Vault** — coffre. Continue, Shift, pick a room, Hang A / Hang B.
 - **Keep** — sign in so the hall is yours.
 
 Stock sprint mp4s are not in this tree (too heavy). Stills, UI, and Imagine CDN clips are.
