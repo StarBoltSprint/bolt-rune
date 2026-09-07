@@ -114,7 +114,12 @@ export function packCitadels(list: RuneSessionMeta[] = []): CitadelPack[] {
   return shown
     .map((root) => {
       const tree = walkRooms(root.id, kids, byId, new Set());
-      const packed = Math.max(1, root.rooms || 1, tree.length);
+      const packed = citadelRoomCount({
+        rooms: root.rooms,
+        hall: root.hall,
+        halls: root.hallHints?.length ? root.hallHints : tree.map((r) => r.hall || 0),
+        hungHalls: tree.map((r) => r.hall),
+      });
       const rooms = packed > 1 || tree.length <= 1 ? asHalls(root, packed) : tree;
       const updated = Math.max(root.updated || 0, ...tree.map((r) => r.updated || 0));
       return {
@@ -142,12 +147,14 @@ export type RoomCountHint = {
   halls?: Array<{ n?: number; hall?: number } | number>;
   lastRooms?: number;
   lastHall?: number;
-  hungHalls?: Array<number | undefined | null>;
+  hungHalls?: Array<number | string | undefined | null>;
+  next?: { m1?: number | string; m2?: number | string };
 };
 
 /** Union every hall the citadel actually has — never shrink to 1 when more exist. */
 export function citadelRoomCount(hint: RoomCountHint = {}): number {
-  const hallNs = (hint.halls || []).map((h, i) =>
+  const list = hint.halls || [];
+  const hallNs = list.map((h, i) =>
     typeof h === "number" ? hallN(h) : hallN(h.n) || hallN(h.hall) || (h.n == null && h.hall == null ? i + 1 : 0),
   );
   const n = Math.max(
@@ -155,10 +162,18 @@ export function citadelRoomCount(hint: RoomCountHint = {}): number {
     hint.hall || 0,
     hint.lastRooms || 0,
     hint.lastHall || 0,
+    list.length,
     ...hallNs,
     ...(hint.hungHalls || []).map((h) => hallN(h) || 0),
+    hallN(hint.next?.m1),
+    hallN(hint.next?.m2),
   );
   return Math.max(1, Math.min(8, n || 1));
+}
+
+function livingCitadelRows(rows: RuneSessionMeta[], citadel: string): RuneSessionMeta[] {
+  if (!citadel) return rows;
+  return rows.filter((s) => s.id === citadel || s.from === citadel || rootOf(s.id, rows) === citadel);
 }
 
 /** Hang A/B and Grok Bot Hang always confirm a room before binding a door. */
@@ -203,7 +218,8 @@ export function listHangRooms(
   const cit = bindCitadel(rows, last);
   const packs = packCitadels(rows);
   const pack = packs.find((p) => p.root.id === cit.citadel) || packs[0];
-  const raw: Array<Pick<RuneSessionMeta, "hall" | "name" | "thumb">> = pack?.rooms?.length
+  const kin = livingCitadelRows(rows, cit.citadel);
+  const raw: Array<Pick<RuneSessionMeta, "hall" | "name" | "thumb" | "hallHints" | "rooms">> = pack?.rooms?.length
     ? pack.rooms
     : [{ hall: 1, name: pack?.title || "Room 1", thumb: pack?.root.thumb || "" }];
   const living = cit.hall || 1;
@@ -214,10 +230,27 @@ export function listHangRooms(
     seen.add(hall);
     rooms.push({ hall, name: name || `Room ${hall}`, still, living: hall === living });
   };
+  const fillCount = (count: number, meta?: Pick<RuneSessionMeta, "thumb" | "name" | "hall">) => {
+    const n = Math.max(0, Math.min(8, count || 0));
+    for (let i = 1; i <= n; i++) put(i, `Room ${i}`, roomStill(i, meta?.hall === i ? meta : undefined, arts));
+  };
   raw.forEach((r, i) => {
     const hall = hallN(r.hall) || i + 1;
     put(hall, r.name && r.name !== pack?.root.name ? r.name : `Room ${hall}`, roomStill(hall, r, arts));
+    fillCount(citadelRoomCount({ rooms: r.rooms, hall: r.hall, halls: r.hallHints }), r);
   });
+  for (const s of kin) {
+    fillCount(
+      citadelRoomCount({ rooms: s.rooms, hall: s.hall, halls: s.hallHints }),
+      s,
+    );
+    const hn = hallN(s.hall);
+    if (hn) put(hn, s.name && s.name !== pack?.root.name ? s.name : `Room ${hn}`, roomStill(hn, s, arts));
+    for (const h of s.hallHints || []) {
+      const n = hallN(h.n) || hallN(h.hall);
+      if (n) put(n, `Room ${n}`, h.still || roomStill(n, s, arts));
+    }
+  }
   for (const e of extra || []) put(e.hall, e.name, e.still || roomStill(e.hall, undefined, arts));
   for (const a of arts || []) {
     const hall = hallN(a.room?.hall);
@@ -229,14 +262,19 @@ export function listHangRooms(
   }
   const lastN = hallN(last?.hall);
   if (lastN) put(lastN, `Room ${lastN}`, roomStill(lastN, undefined, arts));
-  const cap = citadelRoomCount({
-    rooms: pack?.root.rooms || pack?.rooms?.length,
-    hall: cit.hall,
-    halls: [...raw, ...(extra || [])],
-    lastRooms: last?.rooms,
-    lastHall: last?.hall,
-    hungHalls: (arts || []).map((a) => a.room?.hall),
-  });
+  const cap = Math.max(
+    citadelRoomCount({
+      rooms: pack?.root.rooms,
+      hall: cit.hall,
+      halls: pack?.root.hallHints,
+      lastRooms: last?.rooms,
+      lastHall: last?.hall,
+      hungHalls: (arts || []).map((a) => a.room?.hall),
+    }),
+    pack?.rooms?.length || 0,
+    citadelRoomCount({ halls: extra || [] }),
+    ...kin.map((s) => citadelRoomCount({ rooms: s.rooms, hall: s.hall, halls: s.hallHints })),
+  );
   for (let i = 1; i <= cap; i++) put(i, `Room ${i}`, roomStill(i, undefined, arts));
   if (!rooms.length) rooms.push({ hall: 1, name: "Room 1", still: "", living: true });
   return rooms.sort((a, b) => a.hall - b.hall);

@@ -48,7 +48,7 @@ export function VaultHall() {
   const [seed, setSeed] = useState("");
   const [hangRooms, setHangRooms] = useState<HangRoomPick[]>([{ hall: 1, name: "Room 1", still: "", living: true }]);
   const [hangHallN, setHangHallN] = useState(1);
-  const [hangAsk, setHangAsk] = useState<{ a: HungArtifact; door: "A" | "B" } | null>(null);
+  const [hangAsk, setHangAsk] = useState<{ a: HungArtifact; door: "A" | "B"; rooms: HangRoomPick[] } | null>(null);
   const lock = useRef(false);
   const abort = useRef(false);
   const hungRef = useRef(hung);
@@ -154,7 +154,7 @@ export function VaultHall() {
     const rooms = refreshHangRooms();
     const hall = resolveHangRoom(rooms, hallWant ?? hangHallRef.current);
     setHangHallN(hall);
-    setHangAsk({ a, door });
+    setHangAsk({ a, door, rooms });
   }
 
   function playArt(a: HungArtifact) {
@@ -665,7 +665,7 @@ export function VaultHall() {
         <HangAskSheet
           door={hangAsk.door}
           name={hangAsk.a.name}
-          rooms={hangRooms}
+          rooms={hangRooms.length >= hangAsk.rooms.length ? hangRooms : hangAsk.rooms}
           hall={hangHallN}
           onHall={setHangHallN}
           onClose={() => setHangAsk(null)}

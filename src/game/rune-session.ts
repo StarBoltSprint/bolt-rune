@@ -93,6 +93,8 @@ export type RuneSessionMeta = {
   from?: string;
   via?: string;
   title?: string;
+  /** Hall numbers that exist — empty slices still count. Catalog carries n/still only. */
+  hallHints?: Array<{ n?: number; hall?: number; still?: string }>;
 };
 
 export type RuneSession = RuneSessionMeta & {
@@ -173,9 +175,36 @@ function keepStill(u?: string) {
   return "";
 }
 
+function hallHintsOf(s?: { halls?: Array<{ n?: number; hall?: number; still?: string; plate?: string }> | null; hallHints?: RuneSessionMeta["hallHints"] }): RuneSessionMeta["hallHints"] {
+  const raw = s?.halls?.length ? s.halls : s?.hallHints;
+  if (!Array.isArray(raw) || !raw.length) return undefined;
+  return raw.slice(0, 8).map((h, i) => {
+    const still = "still" in h ? h.still : "";
+    const plate = "plate" in h ? (h as { plate?: string }).plate : "";
+    return {
+      n: Math.max(1, Math.min(8, Number(h.n) || Number(h.hall) || i + 1)),
+      still: keepUrl(still) || keepUrl(plate) || "",
+    };
+  });
+}
+
+function keepHallMeta(a?: RuneSessionMeta["hallHints"], b?: RuneSessionMeta["hallHints"]): RuneSessionMeta["hallHints"] {
+  const left = Array.isArray(a) ? a : [];
+  const right = Array.isArray(b) ? b : [];
+  if (!left.length && !right.length) return undefined;
+  return left.length >= right.length ? left : right;
+}
+
+function roomCap(s?: { rooms?: number; hall?: number; halls?: Array<{ n?: number; hall?: number }>; hallHints?: RuneSessionMeta["hallHints"] }): number | undefined {
+  if (!s) return undefined;
+  const halls = s.halls?.length ? s.halls : s.hallHints || [];
+  const ns = halls.map((h, i) => Math.max(0, Number(h.n) || Number(h.hall) || i + 1));
+  return keepRooms(s.rooms, Math.max(s.hall || 0, halls.length, ...ns));
+}
+
 function metaOf(s: Partial<RuneSession> & RuneSessionMeta): RuneSessionMeta {
   const walks = Array.isArray(s.bank) ? s.bank.filter((b) => b?.url).length : s.walks || 0;
-  const hallNs = (s.halls || []).map((h) => Math.max(0, Number(h.n) || 0));
+  const halls = hallHintsOf(s);
   return {
     id: s.id,
     name: s.name || "Room",
@@ -184,11 +213,12 @@ function metaOf(s: Partial<RuneSession> & RuneSessionMeta): RuneSessionMeta {
     want: s.want || 2,
     walks,
     thumb: keepUrl(s.thumb) || keepUrl(s.plate) || "/refs/hall-doors.jpg",
-    rooms: keepRooms(s.rooms, Math.max(s.halls?.length || 0, ...hallNs, s.hall || 0)),
+    rooms: roomCap({ rooms: s.rooms, hall: s.hall, halls }),
     hall: s.hall,
     from: s.from,
     via: s.via,
     title: s.title,
+    hallHints: halls,
   };
 }
 
@@ -240,10 +270,11 @@ function writeCookie(list: RuneSessionMeta[]) {
       want: s.want || 2,
       walks: s.walks || 0,
       thumb: keepUrl(s.thumb) || "/refs/hall-doors.jpg",
-      rooms: s.rooms,
+      rooms: roomCap(s),
       hall: s.hall,
       from: s.from,
       title: s.title,
+      hallHints: hallHintsOf(s),
     }));
     document.cookie = `${COOKIE}=${encodeURIComponent(JSON.stringify(tiny))}; max-age=31536000; path=/; SameSite=Lax`;
   } catch {
@@ -284,11 +315,12 @@ function idsOf(list: RuneSessionMeta[]) {
     want: s.want || 2,
     walks: s.walks || 0,
     thumb: keepUrl(s.thumb) || "/refs/hall-doors.jpg",
-    rooms: s.rooms,
+    rooms: roomCap(s),
     hall: s.hall,
     from: s.from,
     via: s.via,
     title: s.title,
+    hallHints: hallHintsOf(s),
   }));
 }
 
@@ -301,7 +333,9 @@ function isSessionRow(s: unknown): s is RuneSession {
   if (!s || typeof s !== "object") return false;
   const o = s as Record<string, unknown>;
   if (!o.id || typeof o.id !== "string") return false;
-  return Boolean(o.phase || o.halls || o.rooms || o.bank || o.pins || o.want);
+  // last-play is {id,title,hall,rooms}; artifacts are {id,still,playlist,room}
+  if (Array.isArray(o.playlist) && o.still && !o.phase && !o.bank && !o.halls && !o.pins) return false;
+  return Boolean(o.phase || o.halls || o.bank || o.pins);
 }
 
 function pullSessions(raw: unknown): RuneSession[] {
@@ -323,7 +357,7 @@ function scanStorageSessions(): RuneSession[] {
       for (let i = 0; i < space.length; i++) {
         const k = space.key(i);
         if (!k || !k.startsWith("bolt-")) continue;
-        if (/^bolt-(artifacts|last-play|live-play|guest)/.test(k)) continue;
+        if (/^bolt-(artifacts|arts|last-play|live-play|guest)/.test(k)) continue;
         const v = readJson(space, k);
         out.push(...pullSessions(v));
       }
@@ -357,8 +391,9 @@ function readCatalog(): RuneSessionMeta[] {
         via: meta.via || prev?.via,
         title: meta.title || prev?.title,
         thumb: keepUrl(meta.thumb) || prev?.thumb || "/refs/hall-doors.jpg",
-        rooms: keepRooms(prev?.rooms, meta.rooms),
+        rooms: keepRooms(prev?.rooms, roomCap(meta)),
         hall: meta.hall || prev?.hall,
+        hallHints: keepHallMeta(prev?.hallHints, hallHintsOf(meta)),
       });
     }
   };
@@ -380,11 +415,12 @@ function writeCatalog(list: RuneSessionMeta[]) {
     want: s.want || 2,
     walks: s.walks || 0,
     thumb: keepUrl(s.thumb) || "/refs/hall-doors.jpg",
-    rooms: s.rooms,
+    rooms: roomCap(s),
     hall: s.hall,
     from: s.from,
     via: s.via,
     title: s.title,
+    hallHints: hallHintsOf(s),
   }));
   if (!tiny.length) return;
   const raw = JSON.stringify(tiny);
@@ -430,8 +466,9 @@ export function listSessions(): RuneSessionMeta[] {
           from: meta.from || prev?.from,
           via: meta.via || prev?.via,
           title: meta.title || prev?.title,
-          rooms: keepRooms(prev?.rooms, meta.rooms),
+          rooms: keepRooms(prev?.rooms, roomCap(meta)),
           hall: meta.hall || prev?.hall,
+          hallHints: keepHallMeta(prev?.hallHints, hallHintsOf(meta)),
         });
       }
     };
@@ -470,15 +507,17 @@ export function listStoredHallHints(): { hall: number; still: string; name: stri
     seen.add(n);
     out.push({ hall: n, still, name: name || `Room ${n}` });
   };
-  const fill = (s: { rooms?: number; hall?: number; halls?: { n?: number; still?: string; plate?: string }[]; thumb?: string; plate?: string }) => {
-    if (s.halls?.length) {
-      for (const h of s.halls) put(Math.max(1, h.n || 1), h.still || h.plate || s.thumb || "", `Room ${h.n || 1}`);
+  const fill = (s: { rooms?: number; hall?: number; halls?: { n?: number; still?: string; plate?: string }[]; hallHints?: { n?: number; still?: string }[]; thumb?: string; plate?: string }) => {
+    const slices = s.halls?.length ? s.halls : s.hallHints || [];
+    if (slices.length) {
+      for (const h of slices) put(Math.max(1, h.n || 1), h.still || s.thumb || "", `Room ${h.n || 1}`);
     }
-    const cap = Math.max(s.rooms || 0, s.hall || 0, s.halls?.length || 0);
+    const cap = Math.max(s.rooms || 0, s.hall || 0, slices.length);
     for (let i = 1; i <= cap && i <= 8; i++) {
       put(i, i === (s.hall || 1) ? s.thumb || s.plate || "" : "", `Room ${i}`);
     }
   };
+  for (const s of readMem()) fill(s);
   for (const s of readStore()) fill(s);
   for (const s of readCatalog()) fill(s);
   const last = lastPlay();
@@ -695,12 +734,13 @@ export function saveSessionSync(session: RuneSession): RuneSessionMeta {
     next: packed.next || kept.next,
     from: packed.from || kept.from,
     via: packed.via || kept.via,
-    rooms: keepRooms(packed.rooms, kept.rooms),
+    rooms: roomCap({ rooms: keepRooms(packed.rooms, kept.rooms), hall: packed.hall || kept.hall, halls: (packed.halls?.length || 0) >= (kept.halls?.length || 0) ? packed.halls : kept.halls }),
     hall: packed.hall || kept.hall,
     title: packed.title || kept.title,
     halls: (packed.halls?.length || 0) >= (kept.halls?.length || 0) ? packed.halls : kept.halls,
     updated: Math.max(packed.updated || 0, kept.updated || 0, Date.now()),
   };
+  merged.rooms = roomCap(merged);
   const meta = metaOf(merged);
   writeMem([merged, ...readMem().filter((s) => s.id !== session.id)]);
   const index = listSessions().filter((s) => s.id !== session.id);
@@ -815,8 +855,9 @@ function mergeMeta(list: RuneSessionMeta[]) {
       from: newer.from || older.from,
       via: newer.via || older.via,
       title: newer.title || older.title,
-      rooms: keepRooms(older.rooms, newer.rooms),
+      rooms: keepRooms(older.rooms, roomCap(newer)),
       hall: newer.hall || older.hall,
+      hallHints: keepHallMeta(older.hallHints, newer.hallHints),
     });
   }
   const rows = relinkMetas([...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0)));
