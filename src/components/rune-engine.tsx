@@ -6726,7 +6726,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         </p>
       ) : null}
       {phase === "play" || beat === "cook" || beat === "playvid" ? null : (
-      <button>
+      <button
         type="button"
         className="absolute left-4 top-[max(0.7rem,env(safe-area-inset-top))] z-50 flex h-11 items-center rounded-full border border-white/20 bg-black/50 px-4 font-mono text-[11px] uppercase tracking-[0.18em] text-ice"
         style={{ touchAction: "manipulation" }}

@@ -1256,7 +1256,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       ))}
 
       {phase === "run" && film.hazards && !original && !holdDoor && (
-        <HazardLayer>
+        <HazardLayer
           beats={gRef.current.beats}
           getClock={() => {
             const g = gRef.current;
@@ -1286,7 +1286,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         </div>
       )}
       {phase === "run" && !(film.hazards && !original) && film.pad !== "arrows" && !holdDoor && (
-        <Marks>
+        <Marks
           beats={gRef.current.beats}
           index={hud.i}
           t={hud.t}

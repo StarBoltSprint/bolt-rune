@@ -401,6 +401,12 @@ describe("Imagine prompt rails", () => {
     assert.match(stage, /data-biome-quiet=/);
     assert.match(stage, /function chartFor/);
     assert.match(stage, /if \(biomeQteQuiet\(holdDoorRef\.current\)\) return \[\]/);
+    assert.match(engine, /<button\n\s+type="button"/);
+    assert.doesNotMatch(engine, /<button>\s*\n\s*type=/);
+    assert.match(stage, /<HazardLayer\n\s+beats=/);
+    assert.match(stage, /<Marks\n\s+beats=/);
+    assert.doesNotMatch(stage, /<HazardLayer>\s*\n/);
+    assert.doesNotMatch(stage, /<Marks>\s*\n/);
     const vault = src;
     assert.match(vault, /holdDoor=\{live\.room\?\.door === "B" \? "B"/);
     assert.match(vault, /Room \$\{roomN\} • Door \$\{hungOn\} Play Sprint/);
