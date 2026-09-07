@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BOLT_BODY, BOLT_FACE, TOUR_PLATE } from "./rune.ts";
 import { HALL_LOOP, HALL_STILL } from "./stock-room.ts";
-import { playableClipSrc } from "./play-clip.ts";
+import { clipWarmSrc, playableClipSrc, sameClipSrc, warmClip, warmedClip } from "./play-clip.ts";
 import {
   arrivalBreathUrl,
   arrivalEndStill,
@@ -46,6 +46,11 @@ describe("play frame after cook", () => {
     const proxied = playableClipSrc("https://imgen.x.ai/vid/walk.mp4?tok=1");
     assert.match(proxied, /^\/api\/clip\?u=/);
     assert.doesNotMatch(proxied, /^https:\/\/imgen/);
+    assert.equal(clipWarmSrc(WALK), PLAY_WALK);
+    assert.equal(sameClipSrc(WALK, PLAY_WALK), true);
+    assert.equal(sameClipSrc(WALK, BREATH), false);
+    assert.equal(warmClip(""), null);
+    assert.equal(warmedClip(WALK), null);
   });
 
   it("treats sealed identity refs as Bolt silhouettes, not hall plates", () => {

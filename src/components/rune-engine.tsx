@@ -80,6 +80,7 @@ import {
   hungHallForDoor,
   hungLockHall,
   hungStayHall,
+  hungBiomeFirstUrl,
   stayBiomePlay,
   stockTransUrl,
   hungDoorTap,
@@ -114,7 +115,7 @@ import { HANG_LEFTOVER_SWALLOW_MS, hangActEnters, hangBindHall, hangDoorAct, rea
 import { bindCitadel, defaultHangRoom, hallN, listHangCitadels, listHangRooms, liveSlice, livingHangHall, putSlice, seedHalls, type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
-import { playableClipSrc } from "@/game/play-clip";
+import { playableClipSrc, warmClip } from "@/game/play-clip";
 import {
   arrivalBreathUrl,
   arrivalEndStill,
@@ -2171,6 +2172,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setLoopOn(true);
       setPlayFrameKind("breath");
       kickPlay(breathUrl, true, true);
+      if ((hereRef.current === "m1" || hereRef.current === "m2") && hungDoorReady(hereRef.current)) {
+        warmHungBiome(hereRef.current);
+      }
       return;
     }
     setPlayFrameKind(frame.playFrame === "fail" ? "hall" : frame.playFrame || "breath");
@@ -2359,6 +2363,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         if (hungDoorReady(id)) {
           /* Breath / hold at hung door. No chrome Enter. Second tap same door enters. */
           void prefetchExit(id);
+          warmHungBiome(id);
         }
       }
     } else {
@@ -2388,6 +2393,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         idle = idleFor(node, via) || bank.current.get(`idle-${node}`);
       }
     }
+    if ((node === "m1" || node === "m2") && hungDoorReady(node)) warmHungBiome(node);
     const url =
       arrivalBreathUrl(bank.current, node, via, walkUrl) ||
       (doorBreathPlayable(idle, walkUrl) ? idle!.url : "");
@@ -2609,6 +2615,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   function hungDoorReady(door: "m1" | "m2"): boolean {
     const enter = resolveHungEnter(doorLetterOf(door), hallHold.current, sid.current, readArtifacts(), riftRef.current);
     return enter.kind === "biome";
+  }
+
+  /** First hung biome plate while Bolt breathes at the door — FilmStage must not cold-load. */
+  function warmHungBiome(door: "m1" | "m2") {
+    const arts = hungArts.length ? hungArts : readArtifacts();
+    const enter = stayBiomePlay(resolveHungEnter(doorLetterOf(door), hallHold.current, sid.current, arts, riftRef.current));
+    if (enter.kind !== "biome") return;
+    const first = hungBiomeFirstUrl([enter.trans, ...(enter.playlist || []), ...(enter.clips || [])], enter.biome);
+    if (first) warmClip(first);
   }
 
   async function goHungHall(n: number, idle = true) {
@@ -4904,6 +4919,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setLiveHall(hall);
     sprintHold.current = true;
     playing.current = true;
+    if (stay.kind === "biome") {
+      const first = hungBiomeFirstUrl(stay.playlist, stay.biome);
+      if (first) warmClip(first);
+    }
     setRiftBloom(null);
     setSprint({
       film: riftFilm(stay.name, stay.still, stay.clips, hall, letter),
@@ -5002,6 +5021,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         : `${chrome.keeper} · hung`,
     );
     sfxForge("enter");
+    warmHungBiome(door);
     if (!sprintHold.current) holdIdle();
   }
 

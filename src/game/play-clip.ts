@@ -91,6 +91,66 @@ export function biomePlaySrc(urls?: string[] | null, biome?: string | null): str
   return stockBiomeLoop(biome);
 }
 
+export function clipWarmSrc(url?: string | null): string {
+  return playableClipSrc(url) || "";
+}
+
+export function sameClipSrc(a?: string | null, b?: string | null): boolean {
+  const x = clipWarmSrc(a) || String(a || "").trim();
+  const y = clipWarmSrc(b) || String(b || "").trim();
+  return !!x && x === y;
+}
+
+let warmEl: HTMLVideoElement | null = null;
+
+/**
+ * Keep one hidden <video preload="auto"> plus an HTTP cache fetch.
+ * Hall breath / hang bind use this so FilmStage armPlate is not a cold load().
+ */
+export function warmClip(url?: string | null): HTMLVideoElement | null {
+  const src = clipWarmSrc(url);
+  if (!src || typeof document === "undefined") return null;
+  const have = warmEl;
+  const now = have ? (have.getAttribute("src") || have.currentSrc || have.getAttribute("data-url") || "").trim() : "";
+  if (have && sameClipSrc(now, src)) {
+    if (src.startsWith("/api/clip") || src.startsWith("/ui/") || src.startsWith("/films/")) {
+      void fetch(src, { credentials: "same-origin", cache: "force-cache" }).catch(() => {});
+    }
+    return have;
+  }
+  const v = have || document.createElement("video");
+  v.muted = true;
+  v.defaultMuted = true;
+  v.playsInline = true;
+  v.preload = "auto";
+  v.setAttribute("playsinline", "true");
+  v.setAttribute("webkit-playsinline", "true");
+  v.setAttribute("muted", "true");
+  v.setAttribute("data-warm-clip", "1");
+  v.setAttribute("data-url", src);
+  v.setAttribute("aria-hidden", "true");
+  v.style.cssText = "position:fixed;left:-120px;top:-120px;width:2px;height:2px;opacity:0;pointer-events:none";
+  if (!have) {
+    (document.body || document.documentElement).appendChild(v);
+    warmEl = v;
+  }
+  if ((v.getAttribute("src") || "").trim() !== src) {
+    v.src = src;
+    v.load();
+  }
+  if (src.startsWith("/api/clip") || src.startsWith("/ui/") || src.startsWith("/films/")) {
+    void fetch(src, { credentials: "same-origin", cache: "force-cache" }).catch(() => {});
+  }
+  return v;
+}
+
+export function warmedClip(url?: string | null): HTMLVideoElement | null {
+  const src = clipWarmSrc(url);
+  if (!src || !warmEl) return null;
+  const now = (warmEl.getAttribute("src") || warmEl.currentSrc || warmEl.getAttribute("data-url") || "").trim();
+  return sameClipSrc(now, src) ? warmEl : null;
+}
+
 export function allowClipProxyHost(url: string): boolean {
   if (!isRemoteHttp(url)) return false;
   try {

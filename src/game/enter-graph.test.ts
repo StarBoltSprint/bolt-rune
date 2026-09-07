@@ -15,6 +15,7 @@ import {
   hallDoorTap,
   hangArtifactOnDoor,
   hungEnterBindHall,
+  hungBiomeFirstUrl,
   hungBiomePlaylist,
   hungHallForDoor,
   hydrateRift,
@@ -623,6 +624,47 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     const cook = readFileSync(join(here, "./cook.ts"), "utf8");
     assert.match(cook, /hungBiomePlaylist\(urls\)/);
     assert.doesNotMatch(cook, /score: undefined/);
+  });
+
+  it("hall breath / hang bind warms first hung biome plate before FilmStage mount", () => {
+    const cooked = "https://imgen.x.ai/vid/bolt-stride.mp4?sig=1";
+    const other = "https://imgen.x.ai/vid/bolt-stride-b.mp4?sig=2";
+    const first = hungBiomeFirstUrl([cooked, other, "/films/cook-forest.jpg", "/films/forge-forest.mp4"], "forest");
+    assert.equal(first, playableClipSrc(cooked));
+    assert.ok(first.startsWith("/api/clip?u="));
+    assert.equal(hungBiomeFirstUrl(["/films/cook-forest.jpg", "/films/forge-forest.mp4"], "forest"), stockBiomeLoop());
+    const here = dirname(fileURLToPath(import.meta.url));
+    const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const clip = readFileSync(join(here, "./play-clip.ts"), "utf8");
+    const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    const playWalk = engine.slice(engine.indexOf("async function playWalk"), engine.indexOf("async function saveFilms"));
+    const enterBreath = engine.slice(engine.indexOf("async function enterDoorBreath"), engine.indexOf("async function saveFilms"));
+    const holdIdle = engine.slice(engine.indexOf("function holdIdle"), engine.indexOf("async function playEnterThenIdle"));
+    const attachRift = engine.slice(engine.indexOf("function attachRift"), engine.indexOf("function dropRift"));
+    const playRift = engine.slice(engine.indexOf("async function playRift"), engine.indexOf("function refreshHung"));
+    const armPlate = stage.slice(stage.indexOf("function armPlate"), stage.indexOf("function otherPlate"));
+    assert.match(engine, /function warmHungBiome/);
+    assert.match(engine, /hungBiomeFirstUrl\(/);
+    assert.match(engine, /warmClip\(/);
+    assert.match(playWalk, /if \(hungDoorReady\(id\)\) \{\s*\n\s*\/\* Breath \/ hold at hung door/);
+    assert.match(playWalk, /void prefetchExit\(id\);\s*\n\s*warmHungBiome\(id\)/);
+    assert.match(enterBreath, /warmHungBiome\(node\)/);
+    assert.match(holdIdle, /warmHungBiome\(hereRef\.current\)/);
+    assert.match(attachRift, /warmHungBiome\(door\)/);
+    assert.match(playRift, /warmClip\(first\)/);
+    assert.doesNotMatch(playWalk, /if \(hungDoorReady\(id\)\) \{\s*\n\s*void goEnter/);
+    assert.match(clip, /function warmClip/);
+    assert.match(clip, /preload = "auto"/);
+    assert.match(clip, /data-warm-clip/);
+    assert.match(clip, /cache: "force-cache"/);
+    assert.match(clip, /function warmedClip/);
+    assert.match(stage, /warmedClip\(src\)/);
+    assert.match(stage, /if \(holdDoor && first\) warmClip\(first\)/);
+    assert.match(stage, /holdDoor: first plate is warmed during hall breath/);
+    assert.match(stage, /if \(holdDoor\) \{\s*\n\s*return \(\) => \{\s*\n\s*gone = true/);
+    assert.match(armPlate, /skip cold load\(\) from zero/);
+    assert.match(armPlate, /if \(!\(warmed && warmed\.readyState >= 2/);
+    assert.doesNotMatch(stage, /if \(holdDoor\) \{\s*\n\s*const l = document\.createElement\("link"\)/);
   });
 
   it("hung Door A native-loops the MP4 — plate end never Film-fractures stay", () => {
