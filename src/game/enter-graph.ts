@@ -275,10 +275,15 @@ export function resolveDoorEnter(
   const trans = gate.trans && /\.mp4(\?|$)/i.test(gate.trans) ? gate.trans : stockTransUrl(door, biome);
   const playlist = uniq([...(gate.playlist || []), ...stockBiomePlaylist(biome), gate.loop]);
   const clips = uniq([trans, ...playlist]);
+  const bound = (() => {
+    const art = gate.art ? arts.find((a) => a.id === gate.art) : undefined;
+    const n = art?.room?.hall;
+    return typeof n === "number" && n >= 1 && n <= 8 ? n : 0;
+  })();
   return {
     kind: "biome",
     door,
-    hall,
+    hall: bound || hall,
     citadel: citadel || undefined,
     art: gate.art || "",
     biome,
