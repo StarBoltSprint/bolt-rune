@@ -373,7 +373,7 @@ export function turnBeatsForRun(plateDurations: number[]): Beat[] {
       const x = m.dir === "left" ? 0.2 : 0.8;
       const y = 0.56 + ((n % 2) * 0.05);
       out.push(
-        b(`t${n}`, Number((acc + m.at).toFixed(2)), "tap", lane, m.dir === "left" ? "←" : "→", {
+        b(`t${n}`, Number((acc + m.at).toFixed(2)), m.dir, lane, m.dir === "left" ? "←" : "→", {
           win: 1.32,
           spot: { x, y },
         }),
@@ -398,6 +398,9 @@ export function scaleBeats(film: Film, duration: number): Beat[] {
 export function prepareBeats(film: Film, duration: number, seed: number, original = false): Beat[] {
   if (film.hazards && !original) {
     return buildCanyonChart(duration > 12 ? duration : film.chart, seed);
+  }
+  if (film.beats?.length) {
+    return placeSpots(scaleBeats(film, duration), seed);
   }
   if (film.playlist?.length && !original) {
     const n = Math.max(1, film.playlist.length);

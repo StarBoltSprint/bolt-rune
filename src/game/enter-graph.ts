@@ -314,9 +314,17 @@ export function hallDoorTap(
   return "enter";
 }
 
-/** Hung biome stay — leftover / door taps must never score MISS. */
-export function biomeQteQuiet(holdDoor?: string | null): boolean {
-  return Boolean(holdDoor);
+/**
+ * Leftover hall-door plate during hung enter — never QTE-MISS.
+ * Hung biome sprint itself is a playable game: holdDoor alone is not quiet.
+ */
+export function biomeQteQuiet(holdDoor?: string | null, hallPlate = false): boolean {
+  return Boolean(holdDoor && hallPlate);
+}
+
+/** Hung Door A stay is a sprint game unless the leftover hall plate is up. */
+export function biomeHoldPlays(holdDoor?: string | null, hallPlate = false): boolean {
+  return Boolean(holdDoor) && !biomeQteQuiet(holdDoor, hallPlate);
 }
 
 /** Hall N in 1–8, else 0. Living default 1 is a real hall — callers must not treat 0 as Room 1. */

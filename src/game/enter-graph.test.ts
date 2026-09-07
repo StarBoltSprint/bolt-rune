@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  biomeHoldPlays,
   biomeQteQuiet,
   biomeStill,
   bindHungRoom,
@@ -256,9 +257,10 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(cook, /hungPlayChrome\(n, door \|\| "A"\)/);
     assert.match(cook, /line: name && name !== chrome\.name \? name : chrome\.name/);
     assert.match(cook, /quietBiomeFilm/);
-    assert.match(cook, /score: undefined/);
+    assert.match(cook, /pad: film\.pad \?\? "arrows"/);
     assert.match(cook, /name: chrome\.name/);
     assert.match(cook, /keeper: chrome\.keeper/);
+    assert.doesNotMatch(cook, /score: undefined/);
   });
 
   it("Hang Room 8 door A enter resolves hall 8, not living Room 2", () => {
@@ -469,27 +471,78 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
     assert.match(stage, /hungBiomePlaylist\(raw\)/);
     assert.match(stage, /a\.loop = Boolean\(holdDoor\)/);
-    assert.match(stage, /if \(!quiet && film\.score && phaseRef\.current === "run"\) syncScore\(t\)/);
-    assert.match(stage, /else g\.rate = 1/);
-    assert.match(stage, /if \(film\.score && !biomeQteQuiet\(holdDoor\)\) startScore/);
+    assert.match(stage, /if \(film\.score && phaseRef\.current === "run"\) syncScore\(t\)/);
+    assert.match(stage, /if \(!hold && g\.rate > actual/);
+    assert.match(stage, /if \(film\.score\) startScore/);
     assert.match(stage, /if \(holdDoorRef\.current\) \{\s*\n\s*const fallback = stockBiomeLoop\(\)/);
     assert.doesNotMatch(stage, /if \(holdDoorRef\.current\) \{\s*\n\s*setUsingStill\(true\)/);
     const cook = readFileSync(join(here, "./cook.ts"), "utf8");
     assert.match(cook, /hungBiomePlaylist\(urls\)/);
-    assert.match(cook, /score: undefined/);
+    assert.doesNotMatch(cook, /score: undefined/);
   });
 
-  it("biome hold is QTE-quiet — leftover door taps stay and never MISS", () => {
-    assert.equal(biomeQteQuiet("A"), true);
-    assert.equal(biomeQteQuiet("B"), true);
-    assert.equal(biomeQteQuiet(null), false);
+  it("hall leftover stays and never MISS — hung biome sprint is still a QTE game", () => {
+    assert.equal(biomeQteQuiet("A"), false);
+    assert.equal(biomeQteQuiet("B"), false);
+    assert.equal(biomeQteQuiet("A", true), true);
+    assert.equal(biomeQteQuiet("B", true), true);
+    assert.equal(biomeQteQuiet(null, true), false);
     assert.equal(biomeQteQuiet(undefined), false);
+    assert.equal(biomeHoldPlays("A"), true);
+    assert.equal(biomeHoldPlays("A", true), false);
+    assert.equal(biomeHoldPlays(null), false);
     assert.equal(hallDoorTap(40000, 0, "A", "A"), "stay");
     assert.equal(hallDoorTap(40000, 0, "B", "A"), "stay");
     const here = dirname(fileURLToPath(import.meta.url));
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
-    assert.match(stage, /if \(biomeQteQuiet\(holdDoorRef\.current\)\) return \[\]/);
-    assert.match(stage, /if \(biomeQteQuiet\(holdDoorRef\.current\) \|\| hallPlateNow\(\)\)/);
+    assert.match(stage, /function chartFor\(duration: number, seed: number\)/);
+    assert.match(stage, /return prepareBeats\(film, duration, seed, original\)/);
+    assert.doesNotMatch(stage, /if \(biomeQteQuiet\(holdDoorRef\.current\)\) return \[\]/);
+    assert.match(stage, /if \(biomeQteQuiet\(holdDoorRef\.current, hallQuiet\) \|\| hallQuiet\)/);
+    assert.match(stage, /if \(!hallPlateNow\(\)\) return false/);
+    assert.match(stage, /if \(holdDoorRef\.current\) return true/);
     assert.doesNotMatch(stage, /g\.beats = prepareBeats\(film, a\.duration/);
+  });
+
+  it("hung biome play keeps beats, pad arrows, score/speed HUD — not empty quiet film", () => {
+    const cooked = "https://imgen.x.ai/vid/bolt-stride.mp4?sig=1";
+    const id = "art-h2-play";
+    const hung = hangArtifactOnDoor(
+      id,
+      "A",
+      { hall: 2, citadel: "cit-2" },
+      [{ ...art(id, "forest"), playlist: [cooked] }],
+    );
+    const enter = stayBiomePlay(resolveHungEnter("A", 1, "cit-2", hung));
+    assert.equal(enter.kind, "biome");
+    if (enter.kind !== "biome") return;
+    assert.equal(enter.hall, 2);
+    assert.deepEqual(hungPlayChrome(enter.hall, enter.door), { keeper: "Room 2 • Door A", name: "Play Sprint" });
+    assert.ok(enter.playlist.every((u) => u.startsWith("/api/clip?u=") || u === stockBiomeLoop()));
+    assert.ok(!enter.clips.some((u) => /\.(jpe?g|png|webp)(\?|$)/i.test(u)));
+
+    const here = dirname(fileURLToPath(import.meta.url));
+    const films = readFileSync(join(here, "./films.ts"), "utf8");
+    assert.match(films, /function turnBeatsForRun/);
+    assert.match(films, /m\.dir, lane, m\.dir === "left" \? "←" : "→"/);
+    assert.match(films, /if \(film\.beats\?\.length\)/);
+    assert.match(films, /turnBeatsForRun\(Array\.from\(\{ length: n \}/);
+    const cook = readFileSync(join(here, "./cook.ts"), "utf8");
+    assert.match(cook, /beats = film\.beats\?\.length/);
+    assert.match(cook, /pad: film\.pad \?\? "arrows"/);
+    assert.match(cook, /turnBeatsForRun/);
+    assert.doesNotMatch(cook, /beats: \[\],\s*\n\s*pad: undefined/);
+    assert.doesNotMatch(cook, /score: undefined/);
+    const arts = readFileSync(join(here, "./artifacts.ts"), "utf8");
+    assert.match(arts, /quietBiomeFilm\(/);
+    const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    assert.match(stage, /data-qte=\{holdDoor \? "play"/);
+    assert.match(stage, /film\.pad === "arrows" && <CutWash/);
+    assert.match(stage, /<Resonance value=\{hud\.resonance\} \/>/);
+    assert.match(stage, /film\.pad !== "arrows" \|\| holdDoor/);
+    assert.doesNotMatch(stage, /film\.pad === "arrows" && !holdDoor && <CutWash/);
+    assert.doesNotMatch(stage, /phase === "run" && !holdDoor && \(\s*\n\s*<div className="pointer-events-none absolute bottom-0/);
+    assert.match(stage, /hud\.score/);
+    assert.match(stage, /hud\.pace/);
   });
 });
