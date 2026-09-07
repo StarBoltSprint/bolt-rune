@@ -339,6 +339,22 @@ export function holdDoorLoops(hold?: string | null): boolean {
   return Boolean(hold);
 }
 
+/**
+ * Hung Door A/B living-hall tap.
+ * First tap (not at that door) → walk. Breathing at the same hung door → enter.
+ * Other door is always a walk. Never biome on the first approach tap.
+ */
+export function hungDoorTap(here?: string | null, door?: string | null): "walk" | "enter" | null {
+  const id = door === "A" || door === "m1" ? "m1" : door === "B" || door === "m2" ? "m2" : "";
+  if (!id) return null;
+  return String(here || "") === id ? "enter" : "walk";
+}
+
+/** First tap on hung Door A/B while Bolt is not at that door — walk, never biome. */
+export function hungEnterNeedsWalk(here?: string | null, door?: string | null): boolean {
+  return hungDoorTap(here, door) === "walk";
+}
+
 /** Clip is at the loop seam — restart the chart, do not MISS / finish / fracture. */
 export function holdLoopSeam(
   ended: boolean,
