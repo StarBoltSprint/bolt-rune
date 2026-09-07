@@ -2,7 +2,7 @@ import { playableClipSrc } from "./play-clip.ts";
 import { BOLT_BODY, TOUR_PLATE } from "./rune.ts";
 import { HALL_STILL, isHallFilm } from "./stock-room.ts";
 
-export type PlayClip = { url: string; end?: string };
+export type PlayClip = { url: string; end?: string; start?: string };
 export type PlayBank = Map<string, PlayClip> | Iterable<[string, PlayClip]> | Record<string, PlayClip>;
 export type PlayFrameKind = "walk" | "breath" | "hall" | "fail";
 
@@ -35,6 +35,75 @@ export function isHallPlayStill(u?: string | null): boolean {
   if (s.includes("/ui/citadel.jpg") || s.includes("hall-doors")) return false;
   if (s.startsWith("data:")) return false;
   return s.startsWith("/films/") || s.startsWith("http") || s.startsWith("blob:");
+}
+
+/** stockRoomBank idle/walk — HALL_LOOP + HALL_STILL, not an arrival last-frame. */
+export function isStockHallClip(clip?: { url?: string | null; end?: string | null } | null): boolean {
+  if (!clip?.url) return false;
+  return isHallFilm(clip.url) && (!clip.end || isHallFilm(clip.end));
+}
+
+/**
+ * After grabRuneFrame / shotEnd, keep `landed`.
+ * Stock idle-m1/m2 must not overwrite latest / pose / still with HALL_STILL.
+ */
+export function arrivalEndStill(
+  landed?: string | null,
+  home?: { url?: string | null; end?: string | null } | null,
+): string {
+  const end = (landed || "").trim();
+  if (!end) return (home?.end || "").trim();
+  if (!home?.url || isStockHallClip(home)) return end;
+  if (isHallFilm(home.end) || isBoltSilhouette(home.end)) return end;
+  return (home.end || end).trim();
+}
+
+/**
+ * First real last-frame still that may seed Imagine / @ref for the next A↔B walk.
+ * Stock hall stills and Bolt silhouettes are not seeds.
+ */
+export function walkLastFrameSeed(...candidates: (string | null | undefined)[]): string {
+  for (const u of candidates) {
+    const s = (u || "").trim();
+    if (!s || isBoltSilhouette(s) || isHallFilm(s)) continue;
+    if (s.startsWith("data:") || s.startsWith("blob:") || s.startsWith("http") || s.startsWith("/films/") || s.startsWith("/api/")) {
+      return s;
+    }
+  }
+  return "";
+}
+
+/**
+ * Reuse a bank walk only when it was cooked FROM this last-frame seed (`clip.start`).
+ * A prior A→B (mid-stride / other facing / other coat) must not play after breath at A.
+ * Stock HALL_LOOP never holds a seed — next walk Imagines from the still.
+ */
+export function walkClipHoldsSeed(
+  clip?: { url?: string | null; end?: string | null; start?: string | null } | null,
+  seed?: string | null,
+): boolean {
+  if (!clip?.url) return false;
+  if (isStockHallClip(clip)) return false;
+  const next = walkLastFrameSeed(seed);
+  if (!next) return true;
+  const from = walkLastFrameSeed(clip.start);
+  return Boolean(from) && from === next;
+}
+
+/**
+ * Visible door breath — a looping idle clip, not the walk and not stock HALL_LOOP.
+ * Stock idle-* is the same spawn loop as the walk; play must not treat it as breath.
+ */
+export function doorBreathPlayable(
+  idle?: { url?: string | null; end?: string | null } | null,
+  walkUrl?: string | null,
+): boolean {
+  const url = (idle?.url || "").trim();
+  if (!url) return false;
+  if (isBoltSilhouette(url) || isBoltSilhouette(idle?.end)) return false;
+  if (isHallFilm(url) || isStockHallClip(idle)) return false;
+  if (walkUrl && url === walkUrl) return false;
+  return true;
 }
 
 /** Sealed pack identity labels only. Face labels pack to the rear body — never bolt-face.jpg. */
