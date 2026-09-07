@@ -296,17 +296,30 @@ describe("Imagine prompt rails", () => {
   it("Vault hang picks a citadel room before Hang A/B", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
-    assert.match(src, /data-hang-pick=/);
-    assert.match(src, /data-hang-rooms=/);
+    const ask = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
+    const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    assert.match(src, /HangRoomStrip/);
     assert.match(src, /data-hang-room/);
-    assert.match(src, /data-hang-ask/);
-    assert.match(src, /data-hang-confirm/);
+    assert.match(src, /HangAskSheet/);
+    assert.match(ask, /data-hang-pick=/);
+    assert.match(ask, /data-hang-rooms=/);
     assert.match(src, /askHang\(/);
+    assert.match(src, /hangOpensSheet/);
     assert.match(src, /listHangRooms/);
     assert.match(src, /resolveHangRoom/);
     assert.match(src, /vaultHangRoom\(/);
     assert.match(src, /Hang on room/);
     assert.match(src, /onHallDoor=/);
+    assert.match(ask, /data-hang-ask=/);
+    assert.match(ask, /data-hang-confirm=/);
+    assert.match(ask, /data-hang-armed=/);
+    assert.match(ask, /HANG_CONFIRM_ARM_MS/);
+    const hangA = src.slice(src.indexOf('data-hang={vaultHangStart("A")'), src.indexOf("Hang A") + 12);
+    assert.match(hangA, /askHang\(head, "A"/);
+    assert.doesNotMatch(hangA, /hangDoor\(/);
+    const hangB = src.slice(src.indexOf('data-hang={vaultHangStart("B")'), src.indexOf("Hang B") + 12);
+    assert.match(hangB, /askHang\(head, "B"/);
+    assert.doesNotMatch(hangB, /hangDoor\(/);
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
     assert.match(stage, /sprintHallDoor/);
     assert.match(stage, /tryHallDoor/);
@@ -314,9 +327,12 @@ describe("Imagine prompt rails", () => {
     const bot = src.slice(src.indexOf("data-hang-bot="));
     const btn = bot.slice(0, bot.indexOf("Grok Bot Hang") + 20);
     assert.match(btn, /vaultHangRoom\(/);
-    assert.match(btn, /onPointerUp=/);
-    assert.match(btn, /onClick=/);
+    assert.match(btn, /botHang\(/);
     assert.doesNotMatch(btn, /no picker/);
+    assert.match(src, /hangOpensSheet\("bot"/);
+    assert.match(engine, /HangAskSheet/);
+    assert.match(engine, /askLiveHang/);
+    assert.doesNotMatch(engine, /onPointerUp=\{\(\) => beginRift\("m1"/);
   });
 
   it("Grok Bot Forge uses a LOCKed hall still/style, else sealed DEFAULT HALL", () => {

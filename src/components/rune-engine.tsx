@@ -56,7 +56,6 @@ import {
   lookHallLocked,
   parseLookForge,
   shouldAutoStartBotForge,
-  vaultHangRoom,
   type BoltForgeHook,
 } from "@/game/path-entry";
 import { lookForgeAlreadyDone, markLookForgeDone, shouldResumeForgePlay } from "@/game/cook-ready";
@@ -86,7 +85,8 @@ import {
   type RiftGate,
 } from "@/game/rune-session";
 import { BootScreen } from "@/components/citadel-hub";
-import { defaultHangRoom, hallN, listHangRooms, liveSlice, putSlice, seedHalls } from "@/game/rooms";
+import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
+import { defaultHangRoom, hallN, listHangRooms, liveSlice, putSlice, seedHalls, type HangRoomPick } from "@/game/rooms";
 import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
 import {
@@ -714,6 +714,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const [hangRoomN, setHangRoomN] = useState(1);
   const hangRoomRef = useRef(1);
   hangRoomRef.current = hangRoomN;
+  const [hangAsk, setHangAsk] = useState<{ a: HungArtifact; door: "A" | "B" } | null>(null);
+  const [liveHangRooms, setLiveHangRooms] = useState<HangRoomPick[]>([{ hall: 1, name: "Room 1", still: "", living: true }]);
   const [hungArts, setHungArts] = useState<HungArtifact[]>(() => (typeof window === "undefined" ? [] : readArtifacts()));
   const [doorHit, setDoorHit] = useState<{ m1: DoorHit; m2: DoorHit } | null>(() => STOCK_HITS);
   const doorHitRef = useRef<{ m1: DoorHit; m2: DoorHit } | null>(STOCK_HITS);
@@ -4934,7 +4936,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       }
     }
     hallsHold.current = folded;
-    roomsHold.current = Math.max(1, hallsHold.current.length);
+    roomsHold.current = Math.max(s.rooms || 1, hallsHold.current.length, s.hall || 1);
     const wantHall = Math.max(1, Math.min(roomsHold.current, (boot?.kind === "session" && boot.hall) || s.hall || 1));
     hallHold.current = wantHall;
     const artsNow = readArtifacts();
@@ -5532,12 +5534,37 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  useEffect(() => {
-    if (!riftPick) return;
-    const extra = listStoredHallHints().map((h) => ({ ...h, living: h.hall === hallHold.current }));
-    const rooms = listHangRooms(listSessions(), { hall: hallHold.current }, hungArts, extra);
+  function livingHangRooms(arts = hungArts): HangRoomPick[] {
+    const extra = [
+      ...listStoredHallHints().map((h) => ({ ...h, living: h.hall === hallHold.current })),
+      ...hallsHold.current.map((h) => ({
+        hall: h.n,
+        name: `Room ${h.n}`,
+        still: h.still || h.plate || "",
+        living: h.n === hallHold.current,
+      })),
+    ];
+    return listHangRooms(
+      listSessions(),
+      { id: sid.current, hall: hallHold.current, rooms: roomsHold.current },
+      arts,
+      extra,
+    );
+  }
+
+  function askLiveHang(a: HungArtifact, door: "A" | "B") {
+    const rooms = livingHangRooms();
+    setLiveHangRooms(rooms);
     setHangRoomN((prev) => (rooms.some((r) => r.hall === prev) ? prev : defaultHangRoom(rooms)));
-  }, [riftPick, hungArts]);
+    setHangAsk({ a, door });
+  }
+
+  useEffect(() => {
+    if (!riftPick && !hangAsk) return;
+    const rooms = livingHangRooms();
+    setLiveHangRooms(rooms);
+    setHangRoomN((prev) => (rooms.some((r) => r.hall === prev) ? prev : defaultHangRoom(rooms)));
+  }, [riftPick, hungArts, hangAsk]);
 
   useEffect(() => {
     const api: BoltForgeHook = {
@@ -5672,9 +5699,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             {door ? (
               <button
                 type="button"
+                data-hang={door === "m2" ? "B" : "A"}
                 className="shrink-0 px-3 font-mono text-[9px] uppercase tracking-[0.16em] text-[#f0d48a]"
                 style={{ touchAction: "manipulation" }}
-                onPointerUp={() => beginRift(door, gateFromHung(a))}
+                onPointerUp={() => askLiveHang(a, door === "m2" ? "B" : "A")}
               >
                 Hang
               </button>
@@ -5682,17 +5710,19 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
               <>
                 <button
                   type="button"
+                  data-hang="A"
                   className="shrink-0 px-2 font-mono text-[9px] uppercase tracking-[0.14em] text-[#9ef0e4]"
                   style={{ touchAction: "manipulation" }}
-                  onPointerUp={() => beginRift("m1", gateFromHung(a))}
+                  onPointerUp={() => askLiveHang(a, "A")}
                 >
                   A
                 </button>
                 <button
                   type="button"
+                  data-hang="B"
                   className="shrink-0 px-2 font-mono text-[9px] uppercase tracking-[0.14em] text-[#f0d48a]"
                   style={{ touchAction: "manipulation" }}
-                  onPointerUp={() => beginRift("m2", gateFromHung(a))}
+                  onPointerUp={() => askLiveHang(a, "B")}
                 >
                   B
                 </button>
@@ -5742,34 +5772,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
               : "hang your artefact · then forge a 6s opening"
             : `room ${hangRoomN} · hang on A or B, then a transition film`}
         </p>
-        <div className="relative z-10 mt-4 flex gap-2 overflow-x-auto pb-1" data-hang-rooms="">
-          {listHangRooms(listSessions(), { hall: hallHold.current }, hung, listStoredHallHints().map((h) => ({ ...h, living: h.hall === hallHold.current }))).map((r) => {
-            const on = hangRoomN === r.hall;
-            return (
-              <button
-                key={r.hall}
-                type="button"
-                data-hang-pick={r.hall}
-                {...vaultHangRoom(r.hall)}
-                aria-pressed={on}
-                className={`min-w-[4.2rem] overflow-hidden rounded-2xl border bg-black/40 text-left ${
-                  on ? "border-[#9ef0e4]/50" : "border-white/15"
-                }`}
-                style={{ touchAction: "manipulation" }}
-                onPointerUp={() => setHangRoomN(r.hall)}
-              >
-                {r.still ? (
-                  <img src={thumbSrc(r.still)} alt="" className="h-12 w-full object-cover" />
-                ) : (
-                  <div className="h-12 w-full bg-[linear-gradient(180deg,rgba(158,240,228,0.12),rgba(7,8,12,0.7))]" />
-                )}
-                <span className={`block px-2 py-1 font-mono text-[9px] uppercase tracking-[0.14em] ${on ? "text-[#9ef0e4]" : "text-white/50"}`}>
-                  {r.hall}
-                  {r.hall === hallHold.current ? " · here" : ""}
-                </span>
-              </button>
-            );
-          })}
+        <div className="relative z-10 mt-4">
+          <HangRoomStrip
+            rooms={(liveHangRooms.length ? liveHangRooms : livingHangRooms(hung)).map((r) => ({
+              ...r,
+              still: thumbSrc(r.still),
+            }))}
+            hall={hangRoomN}
+            onHall={setHangRoomN}
+          />
         </div>
         <div className="relative z-10 mt-6 mb-4 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
           {hungBlock}
@@ -5859,6 +5870,29 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     );
   }
 
+  function hangAskOverlay() {
+    if (!hangAsk) return null;
+    const rooms = (liveHangRooms.length ? liveHangRooms : livingHangRooms()).map((r) => ({
+      ...r,
+      still: thumbSrc(r.still),
+    }));
+    return (
+      <HangAskSheet
+        door={hangAsk.door}
+        name={hangAsk.a.name}
+        rooms={rooms}
+        hall={hangRoomN}
+        onHall={setHangRoomN}
+        onClose={() => setHangAsk(null)}
+        onConfirm={() => {
+          const door = hangAsk.door === "B" ? "m2" : "m1";
+          beginRift(door, gateFromHung(hangAsk.a));
+          setHangAsk(null);
+        }}
+      />
+    );
+  }
+
   if (phase === "gate") {
     const hall = plate || startHold.current || TOUR_PLATE;
     return (
@@ -5917,6 +5951,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           </button>
         </div>
         {riftOverlay()}
+        {hangAskOverlay()}
       </div>
     );
   }
@@ -7366,6 +7401,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       ) : null}
       {bootOn ? <BootScreen pct={bootPct} label={bootLine} plate={durableStill(plate) || hallKeep.current || ""} /> : null}
       {riftOverlay()}
+      {hangAskOverlay()}
     </div>
   );
 }

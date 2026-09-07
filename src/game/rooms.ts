@@ -136,6 +136,36 @@ export type HangRoomPick = {
 
 export type LastPlayHint = { id?: string; hall?: number; rooms?: number } | null;
 
+export type RoomCountHint = {
+  rooms?: number;
+  hall?: number;
+  halls?: Array<{ n?: number; hall?: number } | number>;
+  lastRooms?: number;
+  lastHall?: number;
+  hungHalls?: Array<number | undefined | null>;
+};
+
+/** Union every hall the citadel actually has — never shrink to 1 when more exist. */
+export function citadelRoomCount(hint: RoomCountHint = {}): number {
+  const hallNs = (hint.halls || []).map((h) => (typeof h === "number" ? hallN(h) : hallN(h.n) || hallN(h.hall)));
+  const n = Math.max(
+    hint.rooms || 0,
+    hint.hall || 0,
+    hint.lastRooms || 0,
+    hint.lastHall || 0,
+    hint.halls?.length || 0,
+    ...hallNs,
+    ...(hint.hungHalls || []).map((h) => hallN(h) || 0),
+  );
+  return Math.max(1, Math.min(8, n || 1));
+}
+
+/** Human Hang A/B always confirm. Bot Hang confirms when more than one hall exists. */
+export function hangOpensSheet(kind: "A" | "B" | "bot", roomCount: number): boolean {
+  if (kind === "A" || kind === "B") return true;
+  return roomCount > 1;
+}
+
 /** The citadel and hall Hang A/B should bind — last Play, not whoever is first in the catalog. */
 export function bindCitadel(
   rows: RuneSessionMeta[] = [],
@@ -198,6 +228,15 @@ export function listHangRooms(
   }
   const lastN = hallN(last?.hall);
   if (lastN) put(lastN, `Room ${lastN}`, roomStill(lastN, undefined, arts));
+  const cap = citadelRoomCount({
+    rooms: pack?.root.rooms || pack?.rooms?.length,
+    hall: cit.hall,
+    halls: [...raw, ...(extra || [])],
+    lastRooms: last?.rooms,
+    lastHall: last?.hall,
+    hungHalls: (arts || []).map((a) => a.room?.hall),
+  });
+  for (let i = 1; i <= cap; i++) put(i, `Room ${i}`, roomStill(i, undefined, arts));
   if (!rooms.length) rooms.push({ hall: 1, name: "Room 1", still: "", living: true });
   return rooms.sort((a, b) => a.hall - b.hall);
 }

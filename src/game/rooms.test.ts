@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bindCitadel, defaultHangRoom, listHangRooms, resolveHangRoom } from "./rooms.ts";
+import { bindCitadel, citadelRoomCount, defaultHangRoom, hangOpensSheet, listHangRooms, resolveHangRoom } from "./rooms.ts";
 import type { RuneSessionMeta } from "./rune-session.ts";
 
 function cit(rooms: number, hall = 1, id = "cit-1"): RuneSessionMeta {
@@ -62,6 +62,28 @@ describe("hang room pick", () => {
       { still: "/films/cook-forest.jpg", room: { hall: 2, still: "/films/cook-canyon.jpg" } },
     ]);
     assert.equal(rooms.find((r) => r.hall === 2)?.still, "/films/cook-canyon.jpg");
+  });
+
+  it("empty halls[] slots still count as rooms — never collapse to Room 1", () => {
+    const rooms = listHangRooms([cit(1, 1)], { id: "cit-1", hall: 1 }, [], [
+      { hall: 1, name: "Room 1", still: "", living: true },
+      { hall: 2, name: "Room 2", still: "", living: false },
+    ]);
+    assert.deepEqual(
+      rooms.map((r) => r.hall),
+      [1, 2],
+    );
+    assert.equal(citadelRoomCount({ rooms: 1, halls: [{ n: 1 }, { n: 2 }] }), 2);
+    assert.equal(citadelRoomCount({ rooms: 2, halls: [{ n: 1 }] }), 2);
+    assert.equal(citadelRoomCount({ rooms: 1, hall: 2 }), 2);
+  });
+
+  it("Hang A/B always open the sheet; Bot Hang only when more than one hall", () => {
+    assert.equal(hangOpensSheet("A", 1), true);
+    assert.equal(hangOpensSheet("B", 1), true);
+    assert.equal(hangOpensSheet("A", 3), true);
+    assert.equal(hangOpensSheet("bot", 1), false);
+    assert.equal(hangOpensSheet("bot", 2), true);
   });
 
   it("bot: one room hangs there; many prefer data-hang-room then living", () => {
