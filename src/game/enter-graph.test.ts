@@ -32,6 +32,7 @@ import {
   holdDoorLoops,
   holdLoopSeam,
   holdPlateStuck,
+  holdPlateUnderrun,
   hungDoorTap,
   hungDoorArm,
   hungHallLocksDoors,
@@ -686,6 +687,11 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.equal(holdPlateStuck(3, false, "waiting"), true);
     assert.equal(holdPlateStuck(3, false, "stalled"), true);
     assert.equal(holdPlateStuck(2, false), false);
+    assert.equal(holdPlateUnderrun(2, false, 0), true);
+    assert.equal(holdPlateUnderrun(2, false, 0.04), true);
+    assert.equal(holdPlateUnderrun(3, false, 0), false);
+    assert.equal(holdPlateUnderrun(2, true, 0), false);
+    assert.equal(holdPlateUnderrun(2, false, 0.5), false);
     const here = dirname(fileURLToPath(import.meta.url));
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
     const armPlate = stage.slice(stage.indexOf("function armPlate"), stage.indexOf("function otherPlate"));
@@ -700,6 +706,7 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(stage, /v\.addEventListener\("waiting", onWait\)/);
     assert.match(stage, /v\.addEventListener\("stalled", onStall\)/);
     assert.match(tick, /holdPlateStuck\(v\.readyState, v\.paused\)/);
+    assert.match(tick, /holdPlateUnderrun\(v\.readyState, v\.paused, v\.currentTime\)/);
     assert.match(tick, /v\.paused && \(live \|\| hold\)/);
     assert.doesNotMatch(tick, /v && v\.paused && live && phaseRef/);
     assert.match(kick, /holdPlateStuck\(v\.readyState, v\.paused\)/);

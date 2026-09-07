@@ -453,6 +453,12 @@ export function holdPlateStuck(readyState = 0, paused = true, event?: string | n
   return false;
 }
 
+/** Playing but frozen on the first frame — waiting may never fire (paused===false). */
+export function holdPlateUnderrun(readyState = 0, paused = true, currentTime = 0): boolean {
+  if (paused || readyState >= 3) return false;
+  return Number.isFinite(currentTime) && currentTime >= 0 && currentTime < 0.08;
+}
+
 /** Hall N in 1–8, else 0. Living default 1 is a real hall — callers must not treat 0 as Room 1. */
 export function hungHallN(v?: number | string | null): number {
   const raw = typeof v === "number" ? v : Number(v);

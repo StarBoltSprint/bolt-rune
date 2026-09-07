@@ -30,7 +30,7 @@ import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
 import { playableClipSrc, stockBiomeLoop, warmClip } from "@/game/play-clip";
 import { HazardLayer } from "@/components/hazard-layer";
-import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, holdDoorLoops, holdLoopSeam, holdPlateStuck, hungBiomePlaylist, hungStageChrome, shouldHoldBiome, sprintHallDoor, stagePlateMustLoad } from "@/game/enter-graph";
+import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, holdDoorLoops, holdLoopSeam, holdPlateStuck, holdPlateUnderrun, hungBiomePlaylist, hungStageChrome, shouldHoldBiome, sprintHallDoor, stagePlateMustLoad } from "@/game/enter-graph";
 import { doorAtPoint, isHallFilm, isLivingHallLoop } from "@/game/stock-room";
 
 export type RunResult = {
@@ -599,6 +599,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       if (v && phaseRef.current === "run" && !g.crashed && !g.done) {
         if (hold && holdLoopSeam(v.ended, v.currentTime, v.duration)) keepHoldLoop(v);
         else if (hold && holdPlateStuck(v.readyState, v.paused)) recoverHoldPlate(v);
+        else if (hold && holdPlateUnderrun(v.readyState, v.paused, v.currentTime)) recoverHoldPlate(v, "waiting");
         else if (v.paused && (live || hold)) void v.play().catch(() => {});
       }
 
