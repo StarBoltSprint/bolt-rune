@@ -116,7 +116,10 @@ export function VaultHall() {
     const cit = bindCitadel(listSessions(), lastPlay());
     const rooms = refreshHangRooms(from?.length ? from : hungRef.current);
     const hall = resolveHangRoom(rooms, hallWant ?? hangHallRef.current);
-    const hung = hangOnRoom(a.id, bindHungRoom(a, door, { citadel: cit.citadel || undefined, hall }), from?.length ? from : hungRef.current);
+    const pick = rooms.find((r) => r.hall === hall);
+    const citadel = pick?.citadel || cit.citadel || undefined;
+    const bindHall = pick?.bindHall || hall;
+    const hung = hangOnRoom(a.id, bindHungRoom(a, door, { citadel, hall: bindHall }), from?.length ? from : hungRef.current);
     setHung(hung);
     setHangHallN(hall);
     const live = hung.find((x) => x.id === a.id);
@@ -145,12 +148,19 @@ export function VaultHall() {
     if (!head) return;
     const rooms = refreshHangRooms(list);
     if (!hangOpensSheet("bot", rooms.length)) return;
-    askHang(head, "A", hallWant);
+    void askHang(head, "A", hallWant);
   }
 
-  function askHang(a: HungArtifact, door: "A" | "B", hallWant?: number | string | null) {
+  async function askHang(a: HungArtifact, door: "A" | "B", hallWant?: number | string | null) {
     swallowOpeningTap();
     hangGuard.current = (typeof performance !== "undefined" ? performance.now() : Date.now()) + HANG_LEFTOVER_SWALLOW_MS;
+    try {
+      await hydrateSessions((rows) => {
+        if (rows.length) refreshHangRooms(hungRef.current);
+      });
+    } catch {
+      /* Load catalog may already be in memory */
+    }
     const rooms = refreshHangRooms();
     const hall = resolveHangRoom(rooms, hallWant ?? hangHallRef.current);
     setHangHallN(hall);
@@ -595,7 +605,7 @@ export function VaultHall() {
                           style={{ touchAction: "manipulation" }}
                           {...press(() => {
                             if (busy) return;
-                            askHang(head, "A", hangHallRef.current);
+                            void askHang(head, "A", hangHallRef.current);
                           })}
                         >
                           Hang A
@@ -610,7 +620,7 @@ export function VaultHall() {
                           style={{ touchAction: "manipulation" }}
                           {...press(() => {
                             if (busy) return;
-                            askHang(head, "B", hangHallRef.current);
+                            void askHang(head, "B", hangHallRef.current);
                           })}
                         >
                           Hang B

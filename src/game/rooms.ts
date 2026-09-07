@@ -137,6 +137,10 @@ export type HangRoomPick = {
   name: string;
   still: string;
   living: boolean;
+  /** Load card this pick belongs to — Hang binds here, not lastPlay’s biome artefact. */
+  citadel?: string;
+  /** Real hall on that citadel when display hall was remapped (several 1-room saves). */
+  bindHall?: number;
 };
 
 export type LastPlayHint = { id?: string; hall?: number; rooms?: number } | null;
@@ -250,10 +254,11 @@ export function bindCitadel(
   const living = livingHangRows(rows);
   if (!living.length) return { citadel: "", hall: 1, title: "" };
   const hint = hangLastHint(rows, last);
-  const hit = (hint?.id ? living.find((s) => s.id === hint.id) : undefined) || living[0];
   const packs = packCitadels(living);
+  const richest = richestHangPack(packs);
+  const hit = (hint?.id ? living.find((s) => s.id === hint.id) : undefined) || richest?.root || living[0];
   const pack =
-    packs.find((p) => p.root.id === hit.id || p.rooms.some((r) => r.id === hit.id)) || richestHangPack(packs);
+    packs.find((p) => p.root.id === hit.id || p.rooms.some((r) => r.id === hit.id)) || richest;
   const hall = hallN(hint?.hall) || Math.max(1, Math.min(8, pack?.root.hall || hit.hall || 1));
   return {
     citadel: pack?.root.id || rootOf(hit.id, living),
@@ -280,34 +285,53 @@ export function listHangRooms(
 ): HangRoomPick[] {
   const living = livingHangRows(rows);
   const hint = hangLastHint(rows, last);
-  const cit = bindCitadel(living, hint);
+  const cit = bindCitadel(rows, last);
   const packs = packCitadels(living);
-  const pack = packs.find((p) => p.root.id === cit.citadel) || richestHangPack(packs);
+  const multi = packs.filter((p) => p.rooms.length > 1);
+  const pack =
+    multi.find((p) => p.root.id === cit.citadel) ||
+    richestHangPack(multi) ||
+    packs.find((p) => p.root.id === cit.citadel) ||
+    richestHangPack(packs);
   const kin = livingCitadelRows(living, cit.citadel);
-  // Same room rows Load renders (`p.rooms`) — every saved hall, all living packs.
-  const loadRooms = packs.flatMap((p) => p.rooms);
-  const raw: Array<Pick<RuneSessionMeta, "hall" | "name" | "thumb" | "hallHints" | "rooms">> = loadRooms.length
-    ? loadRooms
-    : pack?.rooms?.length
-      ? pack.rooms
-      : [];
   const here = cit.hall || 1;
   const seen = new Set<number>();
   const rooms: HangRoomPick[] = [];
-  const put = (hall: number, still: string) => {
+  const put = (hall: number, still: string, citadel?: string, bindHall?: number) => {
     if (hall < 1 || hall > 8 || seen.has(hall)) return;
     seen.add(hall);
-    rooms.push({ hall, name: `Room ${hall}`, still, living: hall === here });
+    rooms.push({
+      hall,
+      name: `Room ${hall}`,
+      still,
+      living: hall === here && (!citadel || citadel === cit.citadel),
+      citadel: citadel || cit.citadel || undefined,
+      bindHall,
+    });
   };
   const fillCount = (count: number, meta?: Pick<RuneSessionMeta, "thumb" | "name" | "hall">) => {
     const n = Math.max(0, Math.min(8, count || 0));
-    for (let i = 1; i <= n; i++) put(i, roomStill(i, meta?.hall === i ? meta : undefined, arts));
+    for (let i = 1; i <= n; i++) put(i, roomStill(i, meta?.hall === i ? meta : undefined, arts), cit.citadel);
   };
-  raw.forEach((r, i) => {
-    const hall = hallN(r.hall) || i + 1;
-    put(hall, roomStill(hall, r, arts));
-    fillCount(citadelRoomCount({ rooms: r.rooms, hall: r.hall, halls: r.hallHints }), r);
-  });
+  // Load’s saved halls: expanded Room N under a multi-room citadel, else one pick per Load card.
+  if (multi.length && pack) {
+    pack.rooms.forEach((r, i) => {
+      const hall = hallN(r.hall) || i + 1;
+      put(hall, roomStill(hall, r, arts), pack.root.id);
+      fillCount(citadelRoomCount({ rooms: r.rooms, hall: r.hall, halls: r.hallHints }), r);
+    });
+  } else if (packs.length > 1) {
+    packs.forEach((p, i) => {
+      const actual = hallN(p.root.hall) || hallN(p.rooms[0]?.hall) || 1;
+      put(i + 1, p.root.thumb || roomStill(actual, p.root, arts), p.root.id, actual);
+    });
+  } else if (pack?.rooms.length) {
+    pack.rooms.forEach((r, i) => {
+      const hall = hallN(r.hall) || i + 1;
+      put(hall, roomStill(hall, r, arts), pack.root.id);
+      fillCount(citadelRoomCount({ rooms: r.rooms, hall: r.hall, halls: r.hallHints }), r);
+    });
+  }
   for (const s of kin) {
     fillCount(citadelRoomCount({ rooms: s.rooms, hall: s.hall, halls: s.hallHints }), s);
     const hn = hallN(s.hall);

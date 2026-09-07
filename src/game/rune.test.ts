@@ -309,6 +309,7 @@ describe("Imagine prompt rails", () => {
     assert.match(src, /hangAsk\.rooms/);
     assert.match(src, /hangOpensSheet/);
     assert.match(src, /listHangRooms/);
+    assert.match(src, /await hydrateSessions/);
     assert.match(src, /resolveHangRoom/);
     assert.match(src, /vaultHangRoom\(/);
     assert.match(src, /Hang on room/);

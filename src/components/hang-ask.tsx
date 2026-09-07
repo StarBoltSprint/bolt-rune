@@ -18,11 +18,11 @@ export function HangRoomStrip({
 }) {
   return (
     <div className="flex gap-2 overflow-x-auto pb-1" data-hang-rooms="" data-hang-load-halls={rooms.length}>
-      {rooms.map((r) => {
+      {rooms.map((r, i) => {
         const on = hall === r.hall;
         return (
           <button
-            key={r.hall}
+            key={`${r.citadel || ""}-${r.hall}-${i}`}
             type="button"
             data-hang-pick={r.hall}
             {...vaultHangRoom(r.hall)}
@@ -75,6 +75,7 @@ export function HangAskSheet({
   onClose: () => void;
 }) {
   const [armed, setArmed] = useState(false);
+  const [held, setHeld] = useState(rooms);
   useEffect(() => {
     const release = swallowOpeningTap(HANG_LEFTOVER_SWALLOW_MS);
     const t = window.setTimeout(() => setArmed(true), HANG_CONFIRM_ARM_MS);
@@ -83,12 +84,16 @@ export function HangAskSheet({
       window.clearTimeout(t);
     };
   }, []);
+  useEffect(() => {
+    if (rooms.length >= held.length) setHeld(rooms);
+  }, [rooms, held.length]);
+  const picks = held.length >= rooms.length ? held : rooms;
   return (
     <div
       className="fixed inset-0 z-[90] flex flex-col bg-black/92 px-5 pt-[max(1.6rem,env(safe-area-inset-top))] pb-[max(1.6rem,env(safe-area-inset-bottom))]"
       data-hang-ask={door}
       data-hang-sheet="1"
-      data-hang-load-halls={rooms.length}
+      data-hang-load-halls={picks.length}
       data-hang-armed={armed ? "1" : "0"}
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
@@ -108,9 +113,9 @@ export function HangAskSheet({
         Pick the citadel room, then hang door {door}.
       </p>
       <p className="mt-5 mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[#9ef0e4]">
-        {rooms.length > 1 ? `${rooms.length} rooms · tap one` : "one room · confirm to hang"}
+        {picks.length > 1 ? `${picks.length} rooms · tap one` : "one room · confirm to hang"}
       </p>
-      <HangRoomStrip rooms={rooms} hall={hall} onHall={onHall} />
+      <HangRoomStrip rooms={picks} hall={hall} onHall={onHall} />
       {armed ? (
         <button
           type="button"
