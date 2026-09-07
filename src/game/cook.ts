@@ -394,14 +394,18 @@ export function riftBeats(): Beat[] {
   ];
 }
 
-/** Hung biome stay: no QTE chart / score, so leftover door taps cannot MISS and play does not hitch. */
+/** Hung biome stay: Room N chrome + sprint QTE. Hall leftover MISS is hallPlateNow, not an empty chart. */
 export function quietBiomeFilm(film: Film): Film {
+  const each = 15;
+  const plates = film.playlist?.length ? film.playlist : [];
+  const beats = film.beats?.length
+    ? film.beats
+    : turnBeatsForRun(plates.length ? plates.map(() => each) : [each]);
   return {
     ...film,
-    beats: [],
-    pad: undefined,
-    lives: 1,
-    score: undefined,
+    beats,
+    pad: film.pad ?? "arrows",
+    lives: film.lives && film.lives > 0 ? film.lives : 3,
   };
 }
 

@@ -400,7 +400,8 @@ describe("Imagine prompt rails", () => {
     assert.match(stage, /data-qte=/);
     assert.match(stage, /data-biome-quiet=/);
     assert.match(stage, /function chartFor/);
-    assert.match(stage, /if \(biomeQteQuiet\(holdDoorRef\.current\)\) return \[\]/);
+    assert.match(stage, /return prepareBeats\(film, duration, seed, original\)/);
+    assert.doesNotMatch(stage, /if \(biomeQteQuiet\(holdDoorRef\.current\)\) return \[\]/);
     assert.match(engine, /<button\n\s+type="button"/);
     assert.doesNotMatch(engine, /<button>\s*\n\s*type=/);
     assert.match(stage, /<HazardLayer\n\s+beats=/);

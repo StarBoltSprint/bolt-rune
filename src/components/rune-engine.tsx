@@ -4604,7 +4604,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         : stayBiomePlay({
             kind: "biome",
             door: doorLetterOf(door),
-            hall: hungEnterBindHall(liveArt?.room?.hall, hangRoomRef.current, 0) || hangRoomRef.current || hallHold.current,
+            hall: hungEnterBindHall(liveArt?.room?.hall, hangRoomRef.current, hallHold.current) || hangRoomRef.current || hallHold.current,
             art: liveGate.art || "",
             biome: (liveGate.biome as BiomeName) || "open",
             name: liveGate.name,
@@ -4616,9 +4616,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const hall =
       hungEnterBindHall(
         liveArt?.room?.hall,
-        stay.kind === "biome" ? stay.hall : 0,
         hangRoomRef.current,
+        stay.kind === "biome" ? stay.hall : hallHold.current,
       ) ||
+      hangBindHall(hangRoomRef.current) ||
+      hangBindHall(stay.kind === "biome" ? stay.hall : 0) ||
       hangBindHall(hallHold.current) ||
       1;
     hangRoomRef.current = hall;

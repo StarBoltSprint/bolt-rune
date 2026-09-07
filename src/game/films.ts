@@ -360,6 +360,13 @@ export function turnCue(secs: number, tailStraight = 0) {
   return `TURN SHEET (only these): ${hits.join(". ")}. Camera stays dead-center behind him. Between turns he sprints STRAIGHT down the NEW aisle. No extra turns. No U-turns. No looping.${tail}`;
 }
 
+/** Mid-plate vault — one short centered-bottom fill, not a turn. */
+export function jumpMarks(secs: number): number[] {
+  if (secs <= 6) return [3.3];
+  if (secs <= 10) return [4.0];
+  return [7.6];
+}
+
 export function turnBeatsForRun(plateDurations: number[]): Beat[] {
   let acc = 0;
   const out: Beat[] = [];
@@ -373,16 +380,26 @@ export function turnBeatsForRun(plateDurations: number[]): Beat[] {
       const x = m.dir === "left" ? 0.2 : 0.8;
       const y = 0.56 + ((n % 2) * 0.05);
       out.push(
-        b(`t${n}`, Number((acc + m.at).toFixed(2)), "tap", lane, m.dir === "left" ? "←" : "→", {
+        b(`t${n}`, Number((acc + m.at).toFixed(2)), m.dir, lane, m.dir === "left" ? "←" : "→", {
           win: 1.32,
           spot: { x, y },
         }),
       );
       n += 1;
     }
+    for (const at of jumpMarks(secs)) {
+      if (at >= d - 0.55) continue;
+      out.push(
+        b(`j${n}`, Number((acc + at).toFixed(2)), "tap", "c", "↑", {
+          win: 1.2,
+          spot: { x: 0.5, y: 0.78 },
+        }),
+      );
+      n += 1;
+    }
     acc += d;
   }
-  return out;
+  return out.sort((p, q) => p.at - q.at);
 }
 
 export function scaleBeats(film: Film, duration: number): Beat[] {
@@ -398,6 +415,9 @@ export function scaleBeats(film: Film, duration: number): Beat[] {
 export function prepareBeats(film: Film, duration: number, seed: number, original = false): Beat[] {
   if (film.hazards && !original) {
     return buildCanyonChart(duration > 12 ? duration : film.chart, seed);
+  }
+  if (film.beats?.length) {
+    return placeSpots(scaleBeats(film, duration), seed);
   }
   if (film.playlist?.length && !original) {
     const n = Math.max(1, film.playlist.length);
