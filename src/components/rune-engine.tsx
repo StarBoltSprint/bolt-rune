@@ -3472,8 +3472,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         resolve();
       };
       const fail = () => {
-        freezeVis(true);
-        done(true);
+        /* Walk/error end never freezes — enterDoorBreath / holdIdle loops idle-* until tap. */
+        done(false);
       };
       el.addEventListener("ended", fail);
       el.addEventListener("error", fail);

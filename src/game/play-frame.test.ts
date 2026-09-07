@@ -283,6 +283,12 @@ describe("A↔B last-frame seed chain", () => {
     assert.match(holdIdle, /filmLoop\.current = true/);
     assert.doesNotMatch(holdIdle, /freezeVis\(/);
     assert.doesNotMatch(holdIdle, /stickCover\(arrival\)/);
+    const playFilm = src.slice(src.indexOf("function playFilm("), src.indexOf("async function cookFilm"));
+    assert.doesNotMatch(playFilm, /freezeVis\(/);
+    assert.match(playFilm, /addEventListener\("ended"/);
+    const againLoop = src.slice(src.indexOf("function againLoop"), src.indexOf("function startAtSkip"));
+    assert.doesNotMatch(againLoop, /freezeVis\(/);
+    assert.match(againLoop, /Walk ended/);
     const forgeNow = src.slice(src.indexOf("async function forgeWalkNow"), src.indexOf("async function recookWalk"));
     assert.match(forgeNow, /walkLastFrameSeed\(/);
     assert.match(forgeNow, /start: fromStill/);
@@ -291,6 +297,22 @@ describe("A↔B last-frame seed chain", () => {
 });
 
 describe("picture never stops — Play / Load / forge-complete", () => {
+  it("acceptance: walk ends → breath loops until tap; Load keep bank; LARGE snow-white", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const rails = readFileSync(join(here, "./rune.ts"), "utf8");
+    const playWalk = src.slice(src.indexOf("async function playWalk"), src.indexOf("async function saveFilms"));
+    assert.match(playWalk, /enterDoorBreath\(/);
+    assert.match(playWalk, /if \(!shown\) holdIdle\(\)/);
+    assert.match(src, /kickPlay\(url, true, true\)/);
+    assert.match(src, /kickPlay\(breathUrl, true, true\)/);
+    assert.match(src, /setStripOn\(true\)/);
+    assert.match(src, /sealedWalkPlayable\(clip\)/);
+    assert.match(rails, /SCALE: LARGE Bolt/);
+    assert.match(rails, /FULL snow-white ONLY/);
+    assert.match(rails, /\/refs\/bolt-body\.jpg/);
+  });
+
   it("arrival breath loops at spawn, A, and B from cooked idle-*", () => {
     const bank = {
       "idle-spawn": { url: BREATH, end: COOKED_HALL },
