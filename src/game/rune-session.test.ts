@@ -6,6 +6,21 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+describe("Load hydrate keeps cooked bank start", () => {
+  it("session persist and cloud pack keep clip.start", () => {
+    const session = readFileSync(join(here, "./rune-session.ts"), "utf8");
+    const cloud = readFileSync(join(here, "../lib/citadel-cloud.ts"), "utf8");
+    const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    assert.match(session, /export function packBankClips/);
+    assert.match(session, /start \? \{ start \}/);
+    assert.match(session, /preferHalls\(packed\.halls, kept\.halls\)/);
+    assert.match(cloud, /start: httpUrl\(b\.start\)/);
+    assert.match(engine, /slimClip\(b\.start\)/);
+    assert.match(engine, /mergeBankClips/);
+    assert.match(engine, /sealedWalkPlayable/);
+  });
+});
+
 describe("Load drop? cannot no-op", () => {
   it("tombstone, guest cloud, and empty catalog actually purge", () => {
     const session = readFileSync(join(here, "./rune-session.ts"), "utf8");

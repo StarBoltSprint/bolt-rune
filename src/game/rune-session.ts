@@ -3,6 +3,7 @@ import { dropCitadelAll, dropCitadelHall, hallN, livingLoadPacks, loadHangHallCo
 import { unbindDroppedHalls } from "@/game/artifacts.ts";
 import { dropHangPending, writeHangFloor } from "@/game/hang-ask.ts";
 import { dropCitadel, dropGuestCitadel, getCitadel, getGuestCitadel, listCitadels, listGuestCitadels, putCitadel, putGuestCitadel } from "@/lib/citadel-cloud";
+import { preferHalls } from "@/game/play-frame.ts";
 
 const DB = "bolt-rune-sessions";
 const TABLE = "sessions";
@@ -774,6 +775,22 @@ export function clearLivePlay() {
   }
 }
 
+/** Persist walk/breath rows including last-frame `start` so Load can replay without Imagine. */
+export function packBankClips(
+  bank: { key: string; url: string; end?: string; start?: string }[] = [],
+  stills = false,
+): { key: string; url: string; end: string; start?: string }[] {
+  return (bank || [])
+    .map((b) => {
+      const url = keepUrl(b.url);
+      if (!b?.key || !url) return null;
+      const end = stills ? keepStill(b.end) || keepUrl(b.end) : keepUrl(b.end) || keepStill(b.end);
+      const start = stills ? keepStill(b.start) || keepUrl(b.start) : keepUrl(b.start) || keepStill(b.start);
+      return { key: b.key, url, end: end || "", ...(start ? { start } : {}) };
+    })
+    .filter((b): b is { key: string; url: string; end: string; start?: string } => Boolean(b));
+}
+
 function keepHalls(halls?: HallSlice[], stills = false): HallSlice[] | undefined {
   if (!Array.isArray(halls) || !halls.length) return undefined;
   const src = stills ? keepStill : keepUrl;
@@ -786,10 +803,7 @@ function keepHalls(halls?: HallSlice[], stills = false): HallSlice[] | undefined
       plate: src(h.plate) || undefined,
       here: h.here,
       cameFrom: h.cameFrom,
-      bank: (h.bank || [])
-        .map((b) => ({ key: b.key, url: keepUrl(b.url), end: stills ? keepStill(b.end) || keepUrl(b.end) : keepUrl(b.end) }))
-        .filter((b) => b.key && b.url)
-        .slice(0, 24),
+      bank: packBankClips(h.bank, stills).slice(0, 48),
       refs: (h.refs || [])
         .map((r) => ({ ...r, src: src(r.src) }))
         .filter((r) => r.src)
@@ -813,9 +827,7 @@ function lightOf(session: RuneSession): RuneSession {
     refs: (session.refs || [])
       .map((r) => ({ ...r, src: keepUrl(r.src) }))
       .filter((r) => r.src),
-    bank: (session.bank || [])
-      .map((b) => ({ key: b.key, url: keepUrl(b.url), end: keepUrl(b.end) }))
-      .filter((b) => b.key && b.url),
+    bank: packBankClips(session.bank, true),
     rift: keepRift(session.rift),
     halls: keepHalls(session.halls),
   };
@@ -832,9 +844,7 @@ function packOf(session: RuneSession): RuneSession {
     refs: (session.refs || [])
       .map((r) => ({ ...r, src: keepStill(r.src) || keepUrl(r.src) }))
       .filter((r) => r.src),
-    bank: (session.bank || [])
-      .map((b) => ({ key: b.key, url: keepUrl(b.url), end: keepStill(b.end) }))
-      .filter((b) => b.key && b.url),
+    bank: packBankClips(session.bank, true),
     rift: keepRift(session.rift),
     halls: keepHalls(session.halls, true),
   };
@@ -913,11 +923,11 @@ export function saveSessionSync(session: RuneSession): RuneSessionMeta {
     rooms: roomCap({
       rooms: keepRooms(packed.rooms, kept.rooms),
       hall: packed.hall || kept.hall,
-      halls: (packed.halls?.length || 0) >= (kept.halls?.length || 0) ? packed.halls : kept.halls,
+      halls: preferHalls(packed.halls, kept.halls),
     }),
     hall: packed.hall || kept.hall,
     title: packed.title || kept.title,
-    halls: (packed.halls?.length || 0) >= (kept.halls?.length || 0) ? packed.halls : kept.halls,
+    halls: preferHalls(packed.halls, kept.halls),
     updated: Math.max(packed.updated || 0, kept.updated || 0, Date.now()),
   };
   merged.rooms = roomCap(merged);

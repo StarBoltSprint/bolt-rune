@@ -25,8 +25,10 @@ import {
   BOLT_ID,
   CAM_LOCK,
   COAT_LOCK,
+  DOG_SCALE,
   GAIT_LOCK,
   HALL_SHOT,
+  SCALE_LOCK,
   SHOT_REJECT,
   SPAWN,
   STAND_LOCK,
@@ -156,6 +158,12 @@ describe("Imagine prompt rails", () => {
     assert.match(COAT_LOCK, /FULL snow-white ONLY/);
     assert.match(COAT_LOCK, /ginger/);
     assert.match(COAT_LOCK, /tinted ref/);
+    assert.match(COAT_LOCK, /russet/);
+    assert.match(COAT_LOCK, /roux/);
+    assert.match(COAT_LOCK, /bolt-body\.jpg/);
+    assert.match(SCALE_LOCK, /LARGE/);
+    assert.match(SCALE_LOCK, /lower third/);
+    assert.doesNotMatch(DOG_SCALE, /SMALL figure|≤20% frame/);
     assert.match(CAM_LOCK, /profile-hero|REJECT LIST/);
     assert.match(place, /<IMAGE_0>/);
     assert.match(place, /<IMAGE_1>/);
@@ -201,13 +209,14 @@ describe("Imagine prompt rails", () => {
     const still = idlePrompt(gazeLaw("m1"));
     assert.match(still, /WHOLE hall/);
     assert.match(still, /Feet glued/);
-    assert.match(still, /SMALL figure/);
+    assert.match(still, /LARGE figure/);
     assert.match(still, /profile close-up|profile-hero/);
     assert.match(gazeLaw("m1"), /glance toward the RIGHT door/);
     assert.match(gazeLaw("m2"), /glance toward the LEFT door/);
     assert.match(gazeLaw("spawn"), /rear \/ back-to-camera|rear\/stand/);
     assert.doesNotMatch(gazeLaw("m1"), /PROFILE/);
-    assert.match(HALL_SHOT, /SMALL figure/);
+    assert.doesNotMatch(gazeLaw("m1"), /\bSMALL figure\b/);
+    assert.match(HALL_SHOT, /LARGE Bolt/);
     assert.match(GAIT_LOCK, /foot-slide|skating/);
     assert.match(STAND_LOCK, /3\/4-from-behind/);
   });
@@ -219,7 +228,8 @@ describe("Imagine prompt rails", () => {
     assert.match(ab, /RIGHT across the frame/);
     assert.match(ab, /glance toward the LEFT door/);
     assert.match(ab, /Never moonwalk/);
-    assert.match(ab, /SMALL figure|SMALL Bolt/);
+    assert.match(ab, /LARGE figure|LARGE Bolt/);
+    assert.doesNotMatch(ab, /\bSMALL Bolt\b/);
     assert.match(ab, /foot-slide|Paws plant/);
     assert.match(ab, /BEHIND|back-to-camera|from BEHIND/);
     assert.match(TRAVEL_FACE, /Walk left → body heads left/);
@@ -248,7 +258,7 @@ describe("Imagine prompt rails", () => {
       /medium shot of the dog/,
       /tracking cam/,
       /orbit/,
-      /tan\/beige\/ginger\/saddle\/mask/,
+      /tan\/beige\/cream\/ivory\/russet\/roux\/ginger\/saddle\/mask/,
       /wolf morph/,
       /fox morph/,
     ];
@@ -258,9 +268,10 @@ describe("Imagine prompt rails", () => {
     for (const p of [walk, idle, breath, place, seed, HALL_SHOT, CAM_LOCK]) {
       assert.match(p, /20%|≤20%/);
     }
-    assert.match(place, /LOWER center/);
+    assert.match(place, /LOWER frame|lower third/);
     assert.match(place, /back-to-camera|from behind|rear/);
-    assert.match(idle, /LOWER center/);
+    assert.match(place, /bolt-body\.jpg/);
+    assert.match(idle, /LOWER frame|lower third/);
     assert.match(breath, /3\/4-from-behind|back-to-camera/);
     assert.match(walk, /BOTH doors stay visible/);
     assert.match(walk, /from BEHIND \(rear\) only/);

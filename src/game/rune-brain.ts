@@ -89,12 +89,12 @@ function evolve(g: Gene, grade: Grade): Gene {
 export function genePrompt(g: Gene = loadBrain().gene): string {
   const cam =
     g.cam >= 3
-      ? "TRIPOD WELDED. Same arches/vanishing point. Zero camera move. Dog ≤20% height — no profile-hero."
-      : "LOCKED TRIPOD. Same framing. Dog ≤20% height — no profile-hero.";
+      ? "TRIPOD WELDED. Same arches/vanishing point. Zero camera move. LARGE Bolt lower third+ — no profile-hero, no tiny speck."
+      : "LOCKED TRIPOD. Same framing. LARGE Bolt lower third+ — no profile-hero, no tiny speck.";
   const morph =
     g.morph >= 2
-      ? "Same snow-white Swiss Shepherd, same doors. Zero morph. Never tan, ginger, or saddle."
-      : "Same snow-white Swiss Shepherd. No morph. Never tan or ginger.";
+      ? "Same snow-white Swiss Shepherd from /refs/bolt-body.jpg, same doors. Zero morph. Never tan, cream, russet, roux, ginger, or saddle."
+      : "Same snow-white Swiss Shepherd from /refs/bolt-body.jpg. No morph. Never tan, russet, or ginger.";
   const dest = g.dest > 1 ? "Last frame: already at the destination." : "";
   return [cam, `At least ${g.strides} planted strides. Body heading follows travel. Never moonwalk. Paws plant — no foot-slide.`, morph, dest].filter(Boolean).join(" ");
 }
@@ -165,7 +165,7 @@ export function digest(grade: Grade) {
 
 export function stillLaws(): string {
   const b = loadBrain();
-  const bits = ["No walking. Feet glued. SMALL figure, rear or 3/4-from-behind — no profile-hero. FULL snow-white coat — no tan, beige, ginger, saddle, or mask."];
+  const bits = ["No walking. Feet glued. LARGE figure (lower third+), rear or 3/4-from-behind — no profile-hero, no tiny speck. FULL snow-white coat from /refs/bolt-body.jpg — no tan, beige, cream, ivory, russet, roux, ginger, saddle, or mask."];
   if (b.camera >= 2) bits.push("Pillars, floor vanishing point and door arches match the start image pixel-for-pixel.");
   if (b.messy >= 2) bits.push("Do not morph the dog or the doors. Same snow-white Swiss Shepherd, no cape, no tan, same stone.");
   return bits.join(" ");

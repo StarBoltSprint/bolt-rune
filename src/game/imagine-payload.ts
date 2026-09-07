@@ -15,7 +15,7 @@ export const IMAGINE_PROMPT_MAX = 2200;
 export const HALL_PROMPT_BUDGET = HALL_PROMPT_MAX;
 
 /**
- * Hall cooks: pin SHOT_REJECT + COAT_LOCK first so the slice cannot drop rails.
+ * Hall cooks: pin SHOT_REJECT + COAT_LOCK + SCALE_LOCK first so the slice cannot drop rails.
  * Non-hall prompts (door cutouts, sprint vault) keep the 2200 cap.
  */
 export function clipImaginePrompt(raw: string, max = IMAGINE_PROMPT_MAX) {
