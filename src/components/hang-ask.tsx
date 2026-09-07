@@ -86,7 +86,7 @@ function StillActions({
         </p>
       ) : null}
       <StillDots count={count} index={index} />
-      {children ? <div className="flex flex-col items-center gap-2">{children}</div> : null}
+      {children ? <div className="flex flex-col items-center gap-1.5">{children}</div> : null}
     </div>
   );
 }
