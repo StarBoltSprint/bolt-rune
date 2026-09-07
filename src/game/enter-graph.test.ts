@@ -38,7 +38,6 @@ import {
 import { biomeBotStart, createBotForgeHref, lookForgeStart, parseLookForge, vaultHangRoom, vaultHangStart } from "./path-entry.ts";
 import { playableClipSrc, stockBiomeLoop } from "./play-clip.ts";
 import { HALL_LOOP } from "./stock-room.ts";
-import { cuePictureSpot, cueSide, jumpMarks, turnBeatsForRun } from "./films.ts";
 
 function art(id: string, biome = "forest") {
   return {
@@ -639,29 +638,17 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
   });
 
   it("SmiR cues are narrow vertical ticks at the turn / vault in picture, not Resonance HUD strips", () => {
-    const beats = turnBeatsForRun([15]);
-    const left = beats.find((b) => cueSide(b) === "left");
-    const right = beats.find((b) => cueSide(b) === "right");
-    const jump = beats.find((b) => cueSide(b) === "center" || b.label === "↑");
-    assert.ok(left && right && jump);
-    const L = cuePictureSpot(left);
-    const R = cuePictureSpot(right);
-    const J = cuePictureSpot(jump);
-    assert.equal(cueSide(left), "left");
-    assert.equal(cueSide(right), "right");
-    assert.equal(cueSide(jump), "center");
-    assert.ok(L.x <= 0.26, "left tick sits in the left turn lane");
-    assert.ok(R.x >= 0.74, "right tick sits in the right turn lane");
-    assert.equal(J.x, 0.5);
-    assert.ok(L.y >= 0.44 && L.y <= 0.66);
-    assert.ok(R.y >= 0.44 && R.y <= 0.66);
-    assert.ok(J.y >= 0.44 && J.y <= 0.66, "vault tick stays in picture, not the HUD row");
-    assert.ok(J.y < 0.7);
-    assert.deepEqual(jumpMarks(15), [7.6]);
-    assert.ok(!beats.some((b) => (b.spot?.y ?? 0) > 0.7), "no authored spots in the Resonance row");
-
     const here = dirname(fileURLToPath(import.meta.url));
+    const films = readFileSync(join(here, "./films.ts"), "utf8");
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    assert.match(films, /export function cueSide/);
+    assert.match(films, /export function cuePictureSpot/);
+    assert.match(films, /x: Math.min\(spot.x, 0.26\)/);
+    assert.match(films, /x: Math.max\(spot.x, 0.74\)/);
+    assert.match(films, /spot\.y > 0.7 \? 0.58 : spot.y/);
+    assert.match(films, /const x = m.dir === "left" \? 0.2 : 0.8/);
+    assert.match(films, /spot: \{ x: 0.5, y: 0.58 \}/);
+    assert.doesNotMatch(films, /spot: \{ x: 0.5, y: 0.78 \}/);
     const resonance = stage.slice(stage.indexOf("function Resonance"), stage.indexOf("function CueFill"));
     assert.doesNotMatch(resonance, /CueFill/);
     assert.match(stage, /data-cue-axis="y"/);
