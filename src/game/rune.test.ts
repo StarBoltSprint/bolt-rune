@@ -313,8 +313,13 @@ describe("Imagine prompt rails", () => {
     assert.match(src, /onHallDoor=/);
     assert.match(ask, /data-hang-ask=/);
     assert.match(ask, /data-hang-confirm=/);
+    assert.match(ask, /data-hang-confirm-wait=/);
     assert.match(ask, /data-hang-armed=/);
     assert.match(ask, /HANG_CONFIRM_ARM_MS/);
+    assert.match(ask, /HANG_LEFTOVER_SWALLOW_MS/);
+    assert.match(ask, /\{armed \? \(/);
+    assert.match(src, /swallowOpeningTap\(\)/);
+    assert.match(engine, /swallowOpeningTap\(\)/);
     const hangAAt = src.indexOf('data-hang={vaultHangStart("A")');
     const hangA = src.slice(hangAAt, src.indexOf("Hang A", hangAAt) + 80);
     assert.match(hangA, /askHang\(head, "A"/);

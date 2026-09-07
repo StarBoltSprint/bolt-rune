@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { vaultHangRoom } from "@/game/path-entry";
+import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, swallowOpeningTap } from "@/game/hang-ask";
 import { type HangRoomPick } from "@/game/rooms";
 import { press } from "@/lib/press";
 
-export const HANG_CONFIRM_ARM_MS = 360;
+export { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, swallowOpeningTap } from "@/game/hang-ask";
 
 export function HangRoomStrip({
   rooms,
@@ -76,8 +77,12 @@ export function HangAskSheet({
 }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => {
+    const release = swallowOpeningTap(HANG_LEFTOVER_SWALLOW_MS);
     const t = window.setTimeout(() => setArmed(true), HANG_CONFIRM_ARM_MS);
-    return () => window.clearTimeout(t);
+    return () => {
+      release();
+      window.clearTimeout(t);
+    };
   }, []);
   return (
     <div
@@ -106,22 +111,25 @@ export function HangAskSheet({
         {rooms.length > 1 ? `${rooms.length} rooms · tap one` : "one room · confirm to hang"}
       </p>
       <HangRoomStrip rooms={rooms} hall={hall} onHall={onHall} />
-      <button
-        type="button"
-        data-hang-confirm={door}
-        disabled={!armed}
-        {...vaultHangRoom(hall)}
-        className={`mt-6 rounded-2xl border px-4 py-3 font-display text-2xl ${
-          armed ? "border-[#9ef0e4]/50 text-[#9ef0e4]" : "pointer-events-none border-white/15 text-white/30"
-        }`}
-        style={{ touchAction: "manipulation" }}
-        {...press(() => {
-          if (!armed) return;
-          onConfirm();
-        })}
-      >
-        Hang {door} · room {hall}
-      </button>
+      {armed ? (
+        <button
+          type="button"
+          data-hang-confirm={door}
+          {...vaultHangRoom(hall)}
+          className="mt-6 rounded-2xl border border-[#9ef0e4]/50 px-4 py-3 font-display text-2xl text-[#9ef0e4]"
+          style={{ touchAction: "manipulation" }}
+          {...press(onConfirm)}
+        >
+          Hang {door} · room {hall}
+        </button>
+      ) : (
+        <p
+          className="pointer-events-none mt-6 rounded-2xl border border-white/10 px-4 py-3 font-mono text-[10px] uppercase tracking-[0.16em] text-white/35"
+          data-hang-confirm-wait={door}
+        >
+          pick a room — then confirm
+        </p>
+      )}
     </div>
   );
 }

@@ -448,6 +448,25 @@ async function runBiomeVaultBot(browser, vp) {
     await page.waitForSelector("[data-hang-ask=A]", { timeout: 8000 });
     const askPicks = await page.locator("[data-hang-ask] [data-hang-pick]").count();
     if (askPicks < 2) throw new Error(`${vp.name}: Hang A sheet missing halls (${askPicks})`);
+    if (await page.locator("[data-hang-confirm]").count()) {
+      throw new Error(`${vp.name}: Hang A mounted confirm before leftover tap was swallowed`);
+    }
+    await page.waitForSelector("[data-hang-confirm-wait]", { timeout: 2000 });
+    const leftoverBound = await page.evaluate(() => {
+      const fire = (node, type) => node.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+      const sheet = document.querySelector("[data-hang-ask]");
+      if (sheet) {
+        fire(sheet, "pointerup");
+        fire(sheet, "click");
+      }
+      fire(document, "click");
+      return /room \d+\s*[·.]\s*door/i.test(document.body.innerText);
+    });
+    if (leftoverBound) throw new Error(`${vp.name}: leftover Hang A tap bound a door`);
+    await page.waitForTimeout(450);
+    if (await page.evaluate(() => /room \d+\s*[·.]\s*door/i.test(document.body.innerText))) {
+      throw new Error(`${vp.name}: Hang A bound a door before confirm`);
+    }
     await page.waitForSelector('[data-hang-armed="1"]', { timeout: 4000 });
     await page.locator("[data-hang-ask] [data-hang-pick='2']").first().click();
     await page.locator("[data-hang-confirm]").first().click();

@@ -8,7 +8,7 @@ import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/
 import { hangHall, listHall } from "@/lib/hall";
 import { bindCitadel, defaultHangRoom, hangOpensSheet, listHangRooms, resolveHangRoom, type HangRoomPick } from "@/game/rooms";
 import { hydrateSessions, lastPlay, listSessions, listStoredHallHints } from "@/game/rune-session";
-import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
+import { HangAskSheet, HangRoomStrip, swallowOpeningTap } from "@/components/hang-ask";
 import { HallMark } from "@/components/hall-mark";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { FilmStage } from "@/components/film-stage";
@@ -143,6 +143,7 @@ export function VaultHall() {
   }
 
   function askHang(a: HungArtifact, door: "A" | "B", hallWant?: number | string | null) {
+    swallowOpeningTap();
     const rooms = refreshHangRooms();
     const hall = resolveHangRoom(rooms, hallWant ?? hangHallRef.current);
     setHangHallN(hall);
