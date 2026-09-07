@@ -33,6 +33,9 @@ import {
   TRAVEL_FACE,
   WALK_LOCK,
   boltKit,
+  dropTaintedBolt,
+  forgeTrayRefs,
+  isTaintedBolt,
   breathPrompt,
   faceRow,
   facingOf,
@@ -151,10 +154,27 @@ describe("Imagine prompt rails", () => {
 
   it("uses the snow-white rear still and drops cream profile refs", () => {
     assert.equal(BOLT_BODY, "/refs/bolt-white.jpg");
-    const kit = boltKit([BOLT_FACE, "/refs/bolt-body.jpg", "/refs/bolt.jpg", "/films/citadel-tour.jpg"]);
+    assert.equal(BOLT_FACE, "/refs/bolt-face.jpg");
+    const kit = boltKit([BOLT_FACE, "/refs/bolt-body.jpg", "/refs/bolt.jpg", "/films/citadel-tour.jpg", "/refs/bolt-face.jpg?v=roux"]);
     assert.deepEqual(kit, ["/refs/bolt-white.jpg", "/films/citadel-tour.jpg"]);
     assert.ok(!kit.includes(BOLT_FACE));
     assert.ok(!kit.includes("/refs/bolt-body.jpg"));
+    assert.equal(isTaintedBolt(BOLT_FACE), true);
+    assert.equal(isTaintedBolt("/refs/bolt-face.jpg?v=2"), true);
+    assert.equal(isTaintedBolt("/cdn/bolt-face.jpg"), true);
+    assert.equal(isTaintedBolt("/refs/bolt-body.jpg"), true);
+    assert.equal(isTaintedBolt("/refs/bolt.jpg"), true);
+    assert.equal(isTaintedBolt(BOLT_BODY), false);
+    assert.equal(isTaintedBolt("/films/citadel-tour.jpg"), false);
+    assert.deepEqual(dropTaintedBolt([BOLT_FACE, BOLT_BODY, "/refs/bolt.jpg"]), [BOLT_BODY]);
+    assert.deepEqual(
+      forgeTrayRefs([
+        { id: "bolt-face", name: "face", src: BOLT_FACE },
+        { id: "bolt", name: "bolt", src: BOLT_BODY },
+        { id: "hall", name: "hall", src: "/films/citadel-tour.jpg" },
+      ]).map((r) => r.id),
+      ["bolt", "hall"],
+    );
   });
 
   it("keeps still / walk grammar on the locked whole hall, not a side crop", () => {
@@ -532,6 +552,24 @@ describe("Imagine still / film payloads", () => {
     assert.match(String(jobs[0]?.body.prompt), /profile-hero/);
     assert.match(String(jobs[0]?.body.prompt), /COAT:/);
     assert.match(String(jobs[0]?.body.prompt), /ginger/);
+  });
+
+  it("hard-bans the face crop from Forge tray chips and every Imagine cook", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const cook = readFileSync(join(here, "../lib/cook.ts"), "utf8");
+    const cookAt = engine.indexOf("async function cookRefs");
+    assert.ok(cookAt >= 0, "cookRefs missing");
+    const cookFn = engine.slice(cookAt, engine.indexOf("function startRefs", cookAt));
+    assert.doesNotMatch(cookFn, /list\.push\(\{ id: "bolt-face"/);
+    assert.doesNotMatch(cookFn, /refsMap\.current\.set\("bolt-face"/);
+    assert.match(cookFn, /forgeTrayRefs/);
+    assert.match(engine, /forgeTrayRefs\(refs\)/);
+    const mintAt = engine.indexOf("async function mintStill");
+    const mintFn = engine.slice(mintAt, engine.indexOf("async function cookSeed", mintAt));
+    assert.match(mintFn, /dropTaintedBolt\(extra\)/);
+    assert.match(cook, /dropTaintedBolt\(data\.refs/);
+    assert.match(engine, /refs: boltKit\(/);
   });
 
   it("video variants never combine image with reference_images", () => {

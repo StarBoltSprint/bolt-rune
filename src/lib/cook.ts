@@ -7,7 +7,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { platePrompt, stillPrompt, type BiomeId, ACTS } from "@/game/cook";
 import { playableClipSrc } from "@/game/play-clip";
 import { clipImaginePrompt, runeFilmVariants, runeStillJobs } from "@/game/imagine-payload";
-import { CAM_LOCK, citadelPrompt } from "@/game/rune";
+import { CAM_LOCK, citadelPrompt, dropTaintedBolt } from "@/game/rune";
 import { bindCookSlot, classifyImagineRaw, emptyCookSlot, freeCookSlot, releaseCookSlot, slotStatus, sweepStale, takeCookSlot, type CookSlot } from "@/lib/cook-slot";
 
 const exec = promisify(execFile);
@@ -177,7 +177,10 @@ export const startRuneStill = createServerFn({ method: "POST" })
     if (!headers) return { ok: false, error: "echo-off" };
     const prompt = clipImaginePrompt(data.prompt.trim());
     if (!prompt) return { ok: false, error: "empty" };
-    const refs = (data.refs ?? []).slice(0, 5).map(resolveRuneStill).filter((u) => u && !u.startsWith("blob:"));
+    const refs = dropTaintedBolt(data.refs ?? [])
+      .slice(0, 5)
+      .map(resolveRuneStill)
+      .filter((u) => u && !u.startsWith("blob:"));
     const ratio = data.ratio === "1:1" ? "1:1" : "9:16";
     const resolution = data.res === "1080" ? "2k" : "1k";
     const pics = refs.map((url) => ({ url }));
