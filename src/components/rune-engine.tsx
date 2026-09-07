@@ -77,6 +77,8 @@ import {
   resolveHungEnter,
   hungPlayChrome,
   hungEnterBindHall,
+  hungHallForDoor,
+  hungStayHall,
   stayBiomePlay,
   stockTransUrl,
   hungDoorTap,
@@ -860,6 +862,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       pathFirst.current = boot.first;
       roomsHold.current = boot.rooms || 1;
       hallHold.current = boot.hall || 1;
+      hangRoomRef.current = hallHold.current;
+      setHangRoomN(hallHold.current);
+      setLiveHall(hallHold.current);
       wantIdle.current = boot.stills === true;
       setWant(2);
       setFilmCap(6);
@@ -2608,6 +2613,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function applyHall(slice: HallSlice, playEnter = false) {
     hallHold.current = slice.n;
+    hangRoomRef.current = slice.n;
+    setHangRoomN(slice.n);
     setLiveHall(slice.n);
     viaHold.current = slice.via || "";
     const m1 = slice.next?.m1 ? String(slice.next.m1) : undefined;
@@ -4560,12 +4567,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     try {
       if (enter.kind === "biome") {
         const bindHall =
-          hungEnterBindHall(
-            arts.find((a) => a.id === enter.art)?.room?.hall,
-            enter.hall,
-            hangRoomRef.current,
-          ) || enter.hall;
-        if (bindHall !== hallHold.current) await goHungHall(bindHall, false);
+          hungStayHall({
+            artHall: arts.find((a) => a.id === enter.art)?.room?.hall,
+            enterHall: enter.hall,
+            hangRoom: hangRoomRef.current,
+            liveHall: hallHold.current,
+            doorHall: hungHallForDoor(doorLetterOf(pick), hallHold.current, arts),
+          }) || enter.hall;
+        /* Never snap a living Room 2+ hang down to Room 1 / Asteroid. */
+        if (bindHall >= 2 && bindHall !== hallHold.current) await goHungHall(bindHall, false);
         const restored = hydrateRift(sid.current, hallHold.current, riftRef.current, arts);
         riftRef.current = restored;
         setRift(restored);
@@ -4678,6 +4688,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             clips: uniqueClips([liveGate.trans || "", ...(liveGate.playlist || []), liveGate.loop].filter(Boolean)),
           });
     const hall =
+      hungStayHall({
+        artHall: liveArt?.room?.hall,
+        enterHall: stay.kind === "biome" ? stay.hall : hallHold.current,
+        hangRoom: hangRoomRef.current,
+        liveHall: hallHold.current,
+        doorHall: hungHallForDoor(doorLetterOf(door), hallHold.current, arts),
+      }) ||
       hungEnterBindHall(
         liveArt?.room?.hall,
         hangRoomRef.current,
@@ -5255,6 +5272,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if (!hereHung) wantHall = hungN;
     }
     hallHold.current = wantHall;
+    hangRoomRef.current = wantHall;
+    setHangRoomN(wantHall);
     setLiveHall(wantHall);
     const restored = hydrateRift(s.id, wantHall, s.rift || {}, artsNow);
     riftRef.current = restored;
@@ -5516,6 +5535,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (hungLive) {
       roomsHold.current = Math.max(roomsHold.current, hungLive);
       hallHold.current = hungLive;
+      hangRoomRef.current = hungLive;
+      setHangRoomN(hungLive);
       setLiveHall(hungLive);
     }
     titleHold.current = titleHold.current || "Citadel";
@@ -5601,6 +5622,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       pathFirst.current = boot.first;
       roomsHold.current = boot.rooms || 1;
       hallHold.current = boot.hall || 1;
+      hangRoomRef.current = hallHold.current;
+      setHangRoomN(hallHold.current);
+      setLiveHall(hallHold.current);
       wantIdle.current = boot.stills === true;
       setWant(2);
       setFilmCap(6);

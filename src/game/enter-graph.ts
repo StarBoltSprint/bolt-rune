@@ -212,6 +212,10 @@ export function hydrateRift(
   arts: HungArtifact[],
 ): { m1?: RiftGate; m2?: RiftGate } {
   const next = { ...rift };
+  /* Drop other-hall / unmatched gates so Room 1 Asteroid cannot mask Room N. */
+  for (const door of ["m1", "m2"] as const) {
+    if (next[door] && !riftGateMatchesHall(next[door], hall, arts)) delete next[door];
+  }
   const ordered = [...arts].sort((p, q) => (q.hungAt || 0) - (p.hungAt || 0));
   for (const a of ordered) {
     const room = a.room;
@@ -231,6 +235,21 @@ export function hydrateRift(
     next[door] = gateFromHung(a);
   }
   return next;
+}
+
+/** Gate art is bound to this living hall — stale Room 1 asteroid must not leak. */
+export function riftGateMatchesHall(
+  gate: { art?: string } | null | undefined,
+  hall: number,
+  arts: HungArtifact[] = [],
+): boolean {
+  if (!gate) return false;
+  const n = hungHallN(hall);
+  if (!n || !gate.art) return false;
+  const art = arts.find((a) => a.id === gate.art);
+  const bound = hungHallN(art?.room?.hall);
+  if (bound) return bound === n;
+  return Boolean(art?.room?.door) && n === 1;
 }
 
 /** Latest hang on this letter, preferring the living hall. 0 if none. */
@@ -283,10 +302,12 @@ export function resolveDoorEnter(
     const art = gate.art ? arts.find((a) => a.id === gate.art) : undefined;
     return hungHallN(art?.room?.hall);
   })();
+  const here = hungHallN(hall);
+  if (bound && here && bound !== here) return { kind: "hall", door, hall };
   return {
     kind: "biome",
     door,
-    hall: bound || hungHallN(hall) || hall,
+    hall: bound || here || hall,
     citadel: citadel || undefined,
     art: gate.art || "",
     biome,
@@ -423,6 +444,27 @@ export function hungEnterBindHall(
   return hang || enter || art || 0;
 }
 
+/**
+ * FilmStage / playRift chrome hall after Hang Room N.
+ * Living Room 2+ and the hung artefact win over hangRoomRef/default 1
+ * so enter never titles Room 1 · Asteroid.
+ */
+export function hungStayHall(opts?: {
+  artHall?: number | string | null;
+  enterHall?: number | string | null;
+  hangRoom?: number | string | null;
+  liveHall?: number | string | null;
+  doorHall?: number | string | null;
+}): number {
+  const live = hungHallN(opts?.liveHall);
+  const door = hungHallN(opts?.doorHall);
+  const bound = hungEnterBindHall(opts?.artHall, opts?.enterHall, opts?.hangRoom);
+  if (bound >= 2) return bound;
+  if (door >= 2) return door;
+  if (live >= 2) return live;
+  return bound || door || live || 0;
+}
+
 /** Living-hall / FilmStage overlay after Hang Room N — never stuck on Room 1. Door letter is never blank. */
 export function hungPlayChrome(hall?: number | string | null, door?: string | null): { keeper: string; name: string } {
   const n = hungHallN(hall) || 1;
@@ -512,7 +554,12 @@ export function hungStageChrome(
   const fromKeeper = ROOM_DOOR.exec(String(film?.keeper || ""));
   const hold = hungHallN(hall);
   const keepN = fromKeeper ? Number(fromKeeper[1]) : 0;
-  const n = (hold >= 2 ? hold : 0) || hungEnterBindHall(keepN, hall, 0) || hold || keepN;
+  const n =
+    (hold >= 2 ? hold : 0) ||
+    hungStayHall({ artHall: keepN, enterHall: hall, hangRoom: keepN }) ||
+    hungEnterBindHall(keepN, hall, 0) ||
+    hold ||
+    keepN;
   const chrome = n
     ? hungPlayChrome(n, door || fromKeeper?.[2] || "A")
     : fromKeeper

@@ -351,6 +351,14 @@ function writeCookie(list: HungArtifact[]) {
       prompt: "",
       hungAt: a.hungAt,
       grade: null,
+      room: a.room
+        ? {
+            door: a.room.door,
+            hall: a.room.hall,
+            citadel: a.room.citadel,
+            biome: a.room.biome,
+          }
+        : undefined,
     }));
     document.cookie = `${COOKIE}=${encodeURIComponent(JSON.stringify(tiny))}; max-age=31536000; path=/; SameSite=Lax`;
   } catch {

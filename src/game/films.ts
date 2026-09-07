@@ -441,6 +441,16 @@ export function prepareBeats(film: Film, duration: number, seed: number, origina
   return placeSpots(scaleBeats(film, duration), seed);
 }
 
+/**
+ * Hung Door A/B stay chart for the live plate length.
+ * Scaling a 15s cook chart onto a ~6s forge loop packs four CueFill turns
+ * into one plate — three unhit misses FILM-FRACTURE stay at the cut.
+ */
+export function prepareHoldBeats(duration: number, seed: number): Beat[] {
+  const plate = duration > 1 ? duration : 15;
+  return placeSpots(turnBeatsForRun([plate]), seed);
+}
+
 function mulberry32(seed: number) {
   let a = seed | 0;
   return () => {

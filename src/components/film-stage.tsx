@@ -9,6 +9,7 @@ import {
   PACE_MIN,
   paceAfterMiss,
   prepareBeats,
+  prepareHoldBeats,
   shardsOf,
   spotOf,
   type Beat,
@@ -301,8 +302,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   function chartFor(duration: number, seed: number) {
     if (holdDoorRef.current) {
       const plate = duration > 1 ? duration : 15;
-      const one = { ...film, playlist: (film.playlist || []).slice(0, 1), chart: film.chart || plate };
-      return prepareBeats(one, plate, seed, original);
+      return prepareHoldBeats(plate, seed);
     }
     return prepareBeats(film, duration, seed, original);
   }
@@ -314,6 +314,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.hits = 0;
     g.hold = 0;
     g.holding = false;
+    g.streakMiss = 0;
   }
 
   /** Native-loop the hung plate. Seek 0 at the seam — never finish / Film fracture. */
@@ -1085,6 +1086,22 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.trauma = 0.2;
     sfxHit("rewind");
     const v = videoRef.current;
+    if (holdDoorLoops(holdDoorRef.current)) {
+      restartHoldChart();
+      if (usingStillRef.current) g.fakeT = 0;
+      else if (v) {
+        v.loop = true;
+        try {
+          v.currentTime = 0;
+        } catch {
+          /* */
+        }
+      }
+      setPhase("run");
+      void v?.play().catch(() => {});
+      pop("REWIND", "mid", 50, 40);
+      return;
+    }
     const t = Math.max(0, (target?.at ?? 0) - 0.85);
     if (usingStillRef.current) g.fakeT = t;
     else if (v) v.currentTime = t;

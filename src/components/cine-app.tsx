@@ -337,11 +337,12 @@ export function CineApp({ bootScreen, playArt }: { bootScreen?: Screen; playArt?
 
   if (screen === "play") {
     const hold = hungFilmHold(custom);
+    const hungStay = Boolean(hold.hall || hold.door || custom?.playlist?.length);
     return (
       <FilmStage
-        id={custom?.id ?? "asteroid"}
-        original={!custom?.playlist?.length}
-        custom={custom?.playlist?.length ? custom : undefined}
+        id={custom?.id ?? (hungStay ? "sprint" : "asteroid")}
+        original={!custom?.playlist?.length && !hungStay}
+        custom={custom?.playlist?.length || hungStay ? custom : undefined}
         holdHall={hold.hall}
         holdDoor={hold.door}
         onExit={() => {
