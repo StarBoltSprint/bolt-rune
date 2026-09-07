@@ -52,7 +52,6 @@ export function VaultHall() {
   hungRef.current = hung;
   const hangHallRef = useRef(hangHallN);
   hangHallRef.current = hangHallN;
-  const botKick = useRef(0);
   const { user, isPending: authPending } = useCurrentUserState();
   const owned = Boolean(user);
 
@@ -114,9 +113,6 @@ export function VaultHall() {
   }
 
   function botHang(hallWant?: number | string | null) {
-    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
-    if (now - botKick.current < 400) return;
-    botKick.current = now;
     let list = hungRef.current.length ? hungRef.current : readArtifacts();
     if (!list.length) {
       list = hangArtifact(stockBiomeFilm("asteroid"), true);

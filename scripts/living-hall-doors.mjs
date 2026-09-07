@@ -404,11 +404,16 @@ async function runBiomeVaultBot(browser, vp) {
     page.once("filechooser", () => {
       picker = true;
     });
-    await page.locator("[data-hang-bot=bot]").first().click();
-    await page.waitForTimeout(400);
+    const botHangBtn = page.locator("[data-hang-bot=bot]").first();
+    await botHangBtn.dispatchEvent("pointerup");
+    await botHangBtn.click();
+    await page.waitForFunction(() => /room \d+\s*[·.]\s*door/i.test(document.body.innerText), { timeout: 5000 }).catch(() => {});
     if (picker) throw new Error(`${vp.name}: Grok Bot Hang opened a file picker`);
-    const hungBot = await page.evaluate(() => /room \d+ · door/i.test(document.body.innerText));
-    if (!hungBot) throw new Error(`${vp.name}: Grok Bot Hang did not bind a door`);
+    const hungBot = await page.evaluate(() => /room \d+\s*[·.]\s*door/i.test(document.body.innerText));
+    if (!hungBot) {
+      const dump = await page.evaluate(() => document.body.innerText.slice(0, 800));
+      throw new Error(`${vp.name}: Grok Bot Hang did not bind a door ${JSON.stringify(dump)}`);
+    }
 
     await page.locator("button", { hasText: "Unhang" }).first().click().catch(() => {});
     await page.waitForTimeout(200);
@@ -424,9 +429,12 @@ async function runBiomeVaultBot(browser, vp) {
       await page.locator("[data-hang-pick='2']").first().click();
       await page.locator("[data-hang=A]").first().click();
     }
-    await page.waitForTimeout(400);
-    const hungA = await page.evaluate(() => /room 2 · door A/i.test(document.body.innerText));
-    if (!hungA) throw new Error(`${vp.name}: human Hang A did not bind hall 2 door A`);
+    await page.waitForFunction(() => /room 2\s*[·.]\s*door A/i.test(document.body.innerText), { timeout: 5000 }).catch(() => {});
+    const hungA = await page.evaluate(() => /room 2\s*[·.]\s*door A/i.test(document.body.innerText));
+    if (!hungA) {
+      const dump = await page.evaluate(() => document.body.innerText.slice(0, 800));
+      throw new Error(`${vp.name}: human Hang A did not bind hall 2 door A ${JSON.stringify(dump)}`);
+    }
     await page.screenshot({ path: `${OUT}/${vp.name}-vault-hang.png`, fullPage: false });
 
     const enterPage = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
