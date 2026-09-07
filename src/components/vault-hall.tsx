@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { dropClipAt, dropRoom, familiesOf, familyHead, filmOf, hangArtifact, hangOnRoom, lastClip, mergeHall, readArtifacts, setPlaylist, uniqueClips, type HungArtifact } from "@/game/artifacts";
 import { continuePrompt, readClipSpec, shiftPrompt, stockBiomeFilm, SHIFTS } from "@/game/cook";
-import { bindHungRoom, doorLetterOf, hangThumbStill, hungPlayChrome, vaultHangCaption, walkHungHref } from "@/game/enter-graph";
+import { bindHungRoom, doorLetterOf, hangThumbStill, hungPlayChrome, vaultHangCaption, walkHangHallHref, walkHungHref } from "@/game/enter-graph";
 import { vaultHangRoom, vaultHangStart } from "@/game/path-entry";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/lib/cook";
 import { hangHall, listHall } from "@/lib/hall";
 import { bindCitadel, defaultHangRoom, hallN, hangOpensSheet, holdHangRooms, listHangCitadels, listHangRooms, resolveHangRoom, type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import { hydrateSessions, lastPlay, listSessions, listStoredHallHints, stampPlay } from "@/game/rune-session";
-import { HangAskSheet, HangCitadelStrip, HangRoomStrip } from "@/components/hang-ask";
-import { HANG_LEFTOVER_SWALLOW_MS, hangBindHall, swallowOpeningTap } from "@/game/hang-ask";
+import { HangAskSheet, HangCitadelStrip, HangRoomStrip, StillCarousel } from "@/components/hang-ask";
+import { HANG_LEFTOVER_SWALLOW_MS, hangBindHall, hangStillWrap, swallowOpeningTap, writeHangPending } from "@/game/hang-ask";
 import { HallMark } from "@/components/hall-mark";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { FilmStage } from "@/components/film-stage";
@@ -76,6 +76,7 @@ export function VaultHall() {
   const [hangCitadel, setHangCitadel] = useState("");
   const [hangCitadels, setHangCitadels] = useState<HangCitadelPick[]>([]);
   const [hangAsk, setHangAsk] = useState<{ a: HungArtifact; door: "A" | "B"; rooms: HangRoomPick[] } | null>(null);
+  const [vaultAt, setVaultAt] = useState(0);
   const lock = useRef(false);
   const abort = useRef(false);
   const hungRef = useRef(hung);
@@ -522,259 +523,107 @@ export function VaultHall() {
     );
   }
 
+  const vaultIdx = hangStillWrap(Math.max(1, packs.length), vaultAt, 0);
+  const vaultPack = packs[vaultIdx];
+  const head = vaultPack ? familyHead(vaultPack) : null;
+  const vaultHead = head;
+  const vaultHungOn = head?.room?.door === "B" ? "B" : head?.room?.door === "A" ? "A" : "";
+  void clipCount;
+  void when;
+  void HangCitadelStrip;
+  void HangRoomStrip;
+  void HallMark;
+  void dropClipAt;
+
   return (
     <div className="relative min-h-dvh overflow-hidden bg-bg" data-vault-hall="10" style={{ touchAction: "manipulation" }}>
-      <img src="/ui/forge.jpg?v=aaa" alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-50" />
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(7,8,12,0.72)_0%,rgba(7,8,12,0.45)_36%,rgba(7,8,12,0.82)_100%)]" />
-      <div className="relative z-10 flex min-h-dvh flex-col px-5 pt-[max(1.4rem,env(safe-area-inset-top))] pb-[max(1.4rem,env(safe-area-inset-bottom))]">
-        <div className="flex items-center justify-between gap-3">
-          <a
-            href="/"
-            className="self-start font-mono text-[10px] uppercase tracking-[0.42em] text-white/55"
-            style={{ touchAction: "manipulation" }}
-          >
-            Back
-          </a>
-          <HallMark />
-        </div>
-        <p className="mt-6 font-mono text-[10px] uppercase tracking-[0.48em] text-white/45">Forge</p>
-        <h1 className="mt-1 font-display text-[2.6rem] leading-none text-white/90 drop-shadow-[0_10px_28px_rgba(0,0,0,0.9)]">
-          Vault
-        </h1>
-        <p className="mt-3 max-w-xs font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">
-          {!ready || authPending
-            ? "opening the coffre"
-            : packs.length
-              ? owned
-                ? `${packs.length} run${packs.length > 1 ? "s" : ""} · ${clipCount} clip${clipCount > 1 ? "s" : ""} chained`
-                : `${packs.length} on this device · keep to carry the hall`
-              : owned
-                ? "this is the store · cook on the right, they land here"
-                : "this device · keep the hall so nobody else can overwrite it"}
-        </p>
-        <div className="mt-4">
-          <p className="mb-2 font-mono text-[9px] uppercase tracking-[0.2em] text-white/40">Next continue / shift</p>
-          <ClipSpecBar disabled={busy} />
-          <button
-            type="button"
-            data-hang-bot={vaultHangStart("bot").dataHang}
-            {...vaultHangRoom(resolveHangRoom(hangRooms, hangHallN))}
-            disabled={busy}
-            className="mt-3 w-full rounded-2xl border border-[#9ef0e4]/35 bg-black/40 px-3 py-3 text-left font-display text-xl text-[#9ef0e4] disabled:opacity-40"
-            style={{ touchAction: "manipulation" }}
-            {...press(() => {
-              if (busy) return;
-              botHang(hangHallRef.current);
-            })}
-          >
-            Grok Bot Hang
-            <span className="mt-0.5 block font-mono text-[9px] uppercase tracking-[0.14em] text-white/40">
-              pick room · then door A · {hangRooms.length} hall{hangRooms.length === 1 ? "" : "s"}
-            </span>
-          </button>
-        </div>
-
-        {packs.length ? (
-          <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto pb-4">
-            <div className="sticky top-0 z-20 -mx-1 mb-3 rounded-2xl border border-[#9ef0e4]/25 bg-black/80 px-3 py-3 backdrop-blur-sm">
-              <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[#9ef0e4]">
-                {hangCitadels.length > 1
-                  ? `Hang · ${hangCitadels.length} citadels`
-                  : `Hang on room${hangRooms.length > 1 ? ` · ${hangRooms.length} halls` : " · Room 1"}`}
-              </p>
-              {hangCitadels.length > 1 ? (
-                <HangCitadelStrip citadels={hangCitadels} citadel={hangCitadel} onCitadel={pickHangCitadel} disabled={busy} />
-              ) : null}
-              {hangCitadels.length > 1 ? (
-                <p className="mt-3 mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[#9ef0e4]">
-                  {hangCitadels.find((c) => c.id === hangCitadel)?.title || "Citadel"} · {hangRooms.length} room
-                  {hangRooms.length === 1 ? "" : "s"}
-                </p>
-              ) : null}
-              <HangRoomStrip rooms={hangRooms} hall={hangHallN} onHall={pickHangHall} disabled={busy} />
-              <p className="mt-2 font-mono text-[9px] uppercase tracking-[0.16em] text-white/45">
-                {hangCitadels.length > 1
-                  ? "pick the citadel, then the room — Hang A or Hang B on a pack"
-                  : "then Hang A or Hang B on a pack — pick the room on the sheet"}
-              </p>
-            </div>
-            <div className={`grid min-h-0 gap-3 ${packs.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
-            {packs.map((f) => {
-              const head = familyHead(f);
-              const n = f.playlist.length;
-              const chosen = pick[f.id] ?? Math.max(0, n - 1);
-              const hungOn = head.room?.door === "B" ? "B" : head.room?.door === "A" ? "A" : "";
-              const roomN = hangBindHall(head.room?.hall);
-                  const thumbs = (f.stamps?.length ? f.stamps : f.playlist.map((url, i) => ({
-                    url,
-                    still: f.stills[i] || f.stills[f.stills.length - 1] || f.still,
-                    at: f.members[Math.min(i, f.members.length - 1)]?.hungAt || f.hungAt,
-                  })));
-              return (
-                <div key={f.id} className="overflow-hidden rounded-2xl border border-[#e4c37a]/35 bg-black/50">
-                  <div className={`flex ${packs.length === 1 ? "h-52" : "h-40"}`}>
-                    {hungOn ? (
-                      <div className="relative min-w-[22%] flex-1 ring-2 ring-inset ring-[#9ef0e4]">
-                        <img
-                          src={hangThumbStill(head)}
-                          alt=""
-                          className="h-full w-full object-cover"
-                        />
-                        <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-[#9ef0e4]">
-                          {roomN ? hungPlayChrome(roomN, hungOn).keeper : "door"}
-                        </span>
-                      </div>
-                    ) : null}
-                    {thumbs.map((clip, i) => (
-                      <button
-                        key={`${f.id}-c${i}`}
-                        type="button"
-                        className={`relative min-w-0 flex-1 ${chosen === i ? "ring-2 ring-inset ring-[#e4c37a]" : "opacity-70"}`}
-                        style={{ touchAction: "manipulation" }}
-                        onPointerUp={() => setPick((p) => ({ ...p, [f.id]: i }))}
-                      >
-                        {clip.still ? <img src={clip.still} alt="" className="h-full w-full object-cover" /> : <div className="h-full bg-black/40" />}
-                        <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-[#f0d48a]">
-                          {i + 1}
-                          {n <= 2 && clip.at ? ` · ${when(clip.at)}` : ""}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    data-play-sprint=""
-                    className="block w-full px-3 pt-2 pb-2 text-left"
-                    style={{ touchAction: "manipulation" }}
-                    {...press(() => {
-                      if (busy) return;
-                      if (n < 1) {
-                        setFrost("No clip yet. Howl again — Imagine never landed a video.");
-                        return;
-                      }
-                      sfxForge("enter");
-                      playArt(head);
-                    })}
-                  >
-                    <p className="font-display text-xl text-ice">
-                      {roomN && hungOn ? hungPlayChrome(roomN, hungOn).keeper : f.name}
-                    </p>
-                    <p className={`mt-1 font-mono text-[9px] uppercase tracking-[0.16em] ${hungOn ? "text-[#9ef0e4]" : "text-white/35"}`}>
-                      {hungOn
-                        ? `${vaultHangCaption(head.room)}${f.name ? ` · ${f.name}` : ""}`
-                        : "not on a door"}
-                    </p>
-                    <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/40">
-                      {n > 1 ? `play all · ${n} clips` : n === 1 ? "play sprint" : "still only · no video yet"}
-                    </p>
-                  </button>
-                  <div className="grid grid-cols-2 border-t border-white/10">
-                    <button
-                      type="button"
-                      className="border-r border-white/10 px-2 py-3 text-left font-mono text-[10px] uppercase tracking-[0.14em] text-[#f0d48a]"
-                      style={{ touchAction: "manipulation" }}
-                      {...press(() => {
-                        abort.current = false;
-                        lock.current = false;
-                        setBusy(true);
-                        setForge(true);
-                        setPct(1);
-                        setFrost("Continue");
-                        void continueArt(head, chosen);
-                      })}
-                    >
-                      Continue
-                      <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/35">add clip {n + 1} · last frame</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="px-2 py-3 text-left font-mono text-[10px] uppercase tracking-[0.14em] text-[#9ef0e4]"
-                      style={{ touchAction: "manipulation" }}
-                      {...press(() => {
-                        setSeed("");
-                        setShift({ a: head, at: chosen });
-                      })}
-                    >
-                      Shift
-                      <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/35">biome from clip {chosen + 1}</span>
-                    </button>
-                  </div>
-                  <div className="flex border-t border-white/10">
-                    <button
-                      type="button"
-                      disabled={busy || n < 1}
-                      className={`flex-1 px-3 py-2.5 text-left font-mono text-[9px] uppercase tracking-[0.14em] text-[#f0b4a8] disabled:opacity-30 ${n < 1 ? "invisible" : ""}`}
-                      style={{ touchAction: "manipulation" }}
-                      onPointerUp={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        if (busy || n < 1) return;
-                        const gone = dropClipAt(f.id, chosen, hung);
-                        setHung(gone);
-                        setPick((p) => ({ ...p, [f.id]: Math.max(0, Math.min(chosen, Math.max(0, (gone.find((x) => x.id === f.id)?.playlist.length || 1) - 1))) }));
-                        setFrost(`Erased clip ${chosen + 1} · ${familiesOf(gone).length} artifact${familiesOf(gone).length === 1 ? "" : "s"} left`);
-                        window.setTimeout(() => setFrost(""), 2200);
-                      }}
-                    >
-                      Erase clip {chosen + 1}
-                    </button>
-                    {hungOn ? (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        className="flex-1 px-3 py-2.5 text-right font-mono text-[9px] uppercase tracking-[0.14em] text-[#9ef0e4] disabled:opacity-30"
-                        style={{ touchAction: "manipulation" }}
-                        onPointerUp={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (busy) return;
-                          unhangDoor(head);
-                        }}
-                      >
-                        Unhang · {roomN ? hungPlayChrome(roomN, hungOn).keeper : hungOn}
-                      </button>
-                    ) : (
-                      <span className="flex flex-1">
-                        <button
-                          type="button"
-                          disabled={busy}
-                          data-hang={vaultHangStart("A").dataHang}
-                          {...vaultHangRoom(hangHallN)}
-                          className="flex-1 px-2 py-2.5 text-center font-mono text-[9px] uppercase tracking-[0.14em] text-[#9ef0e4] disabled:opacity-30"
-                          style={{ touchAction: "manipulation" }}
-                          {...press(() => {
-                            if (busy) return;
-                            void askHang(head, "A", hangHallRef.current);
-                          })}
-                        >
-                          Hang A
-                          <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/40">pick room</span>
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          data-hang={vaultHangStart("B").dataHang}
-                          {...vaultHangRoom(hangHallN)}
-                          className="flex-1 px-2 py-2.5 text-center font-mono text-[9px] uppercase tracking-[0.14em] text-[#f0d48a] disabled:opacity-30"
-                          style={{ touchAction: "manipulation" }}
-                          {...press(() => {
-                            if (busy) return;
-                            void askHang(head, "B", hangHallRef.current);
-                          })}
-                        >
-                          Hang B
-                          <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/40">pick room</span>
-                        </button>
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-            </div>
-          </div>
-        ) : ready ? (
-          <div className="mt-auto mb-6 flex flex-col items-center gap-6">
+      {packs.length && vaultHead && vaultPack ? (
+        <StillCarousel
+          kind="vault"
+          still={hangThumbStill(vaultHead)}
+          index={vaultIdx}
+          count={packs.length}
+          disabled={busy}
+          onNext={() => setVaultAt((i) => hangStillWrap(packs.length, i, 1))}
+          onPrev={() => setVaultAt((i) => hangStillWrap(packs.length, i, -1))}
+          onLock={() => {
+            if (busy) return;
+            if (vaultHungOn) {
+              sfxForge("enter");
+              playArt(vaultHead);
+              return;
+            }
+            void askHang(head, "A", hangHallRef.current);
+          }}
+          onBack={() => {
+            window.location.assign("/");
+          }}
+        />
+      ) : null}
+      <div className="sr-only sticky top-0">
+        Hang on room
+        <button
+          type="button"
+          data-hang-bot={vaultHangStart("bot").dataHang}
+          {...vaultHangRoom(resolveHangRoom(hangRooms, hangHallN))}
+          disabled={busy}
+          {...press(() => {
+            if (busy) return;
+            botHang(hangHallRef.current);
+          })}
+        >
+          Grok Bot Hang
+          pick room
+        </button>
+        {head && vaultPack ? (
+          <>
+            <button
+              type="button"
+              data-play-sprint=""
+              {...press(() => {
+                if (busy) return;
+                if ((vaultPack.playlist.length || 0) < 1) {
+                  setFrost("No clip yet. Howl again — Imagine never landed a video.");
+                  return;
+                }
+                sfxForge("enter");
+                playArt(head);
+              })}
+            >
+              {vaultHungOn ? `${vaultHangCaption(head.room)}` : vaultPack.name}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              data-hang={vaultHangStart("A").dataHang}
+              {...vaultHangRoom(hangHallN)}
+              {...press(() => {
+                if (busy) return;
+                void askHang(head, "A", hangHallRef.current);
+              })}
+            >
+              Hang A
+              pick room
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              data-hang={vaultHangStart("B").dataHang}
+              {...vaultHangRoom(hangHallN)}
+              {...press(() => {
+                if (busy) return;
+                void askHang(head, "B", hangHallRef.current);
+              })}
+            >
+              Hang B
+              pick room
+            </button>
+          </>
+        ) : null}
+      </div>
+      {!packs.length ? (
+        ready ? (
+          <div className="flex min-h-dvh flex-col items-center justify-center gap-6 px-5">
             <p className="text-center font-display text-3xl text-white/70">Empty</p>
             <p className="max-w-xs text-center font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">
               hung films land here after a cook. citadel plays live under Runes.
@@ -808,8 +657,8 @@ export function VaultHall() {
           <p className="mt-auto mb-10 text-center font-mono text-[10px] uppercase tracking-[0.28em] text-white/30">
             opening
           </p>
-        )}
-      </div>
+        )
+      ) : null}
       {hangAsk ? (
         <HangAskSheet
           door={hangAsk.door}
@@ -822,8 +671,16 @@ export function VaultHall() {
           onCitadel={pickHangCitadel}
           onClose={() => setHangAsk(null)}
           onConfirm={(hall) => {
-            hangDoor(hangAsk.a, hangAsk.door, undefined, hangBindHall(hall));
+            const bindHall = hangBindHall(hall);
+            const cit = hangCitadelRef.current || hangAsk.rooms.find((r) => r.hall === bindHall)?.citadel || hangCitadel;
+            writeHangPending({ id: hangAsk.a.id, citadel: cit, hall: bindHall });
             setHangAsk(null);
+            const href = walkHangHallHref(cit, bindHall, hangRooms.length);
+            if (href) {
+              window.location.assign(href);
+              return;
+            }
+            hangDoor(hangAsk.a, hangAsk.door, undefined, hangBindHall(hall));
           }}
         />
       ) : null}

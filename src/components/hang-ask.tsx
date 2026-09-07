@@ -1,61 +1,178 @@
 import { useEffect, useRef, useState } from "react";
 import { vaultHangRoom } from "@/game/path-entry";
-import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, hangBindHall, hangCardHall, hangStripCards, hangStripPick, swallowOpeningTap } from "@/game/hang-ask";
+import {
+  HANG_CONFIRM_ARM_MS,
+  HANG_LEFTOVER_SWALLOW_MS,
+  hangBindHall,
+  hangCardHall,
+  hangStillLane,
+  hangStillSwipe,
+  hangStillWrap,
+  hangStripCards,
+  hangStripPick,
+  swallowOpeningTap,
+} from "@/game/hang-ask";
 import { type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import { press } from "@/lib/press";
 
+function StillStage({
+  still,
+  index,
+  count,
+  onNext,
+  onPrev,
+  onLock,
+  onBack,
+  disabled,
+  kind,
+  lockAttr,
+}: {
+  still: string;
+  index: number;
+  count: number;
+  onNext: () => void;
+  onPrev: () => void;
+  onLock: () => void;
+  onBack: () => void;
+  disabled?: boolean;
+  kind: "citadel" | "room" | "load" | "vault";
+  lockAttr?: Record<string, string | number | undefined>;
+}) {
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const n = Math.max(1, count);
+  const i = hangStillWrap(n, index, 0);
+  function end(e: React.PointerEvent) {
+    if (disabled) return;
+    const from = start.current;
+    start.current = null;
+    if (!from) return;
+    const dx = e.clientX - from.x;
+    const dy = e.clientY - from.y;
+    const swipe = hangStillSwipe(dx, dy);
+    if (swipe === 1) {
+      onNext();
+      return;
+    }
+    if (swipe === -1) {
+      onPrev();
+      return;
+    }
+    const box = e.currentTarget.getBoundingClientRect();
+    const nx = box.width ? (e.clientX - box.left) / box.width : 0.5;
+    if (hangStillLane(nx) === "back") {
+      onBack();
+      return;
+    }
+    onLock();
+  }
+  return (
+    <div
+      className="absolute inset-0 overflow-hidden bg-[#07080c]"
+      data-still-carousel={kind}
+      data-still-index={i}
+      data-still-count={n}
+      style={{ touchAction: "none" }}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        start.current = { x: e.clientX, y: e.clientY };
+      }}
+      onPointerUp={(e) => {
+        e.stopPropagation();
+        end(e);
+      }}
+      onPointerCancel={() => {
+        start.current = null;
+      }}
+    >
+      {still ? (
+        <img src={still} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
+      ) : (
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(158,240,228,0.16),rgba(7,8,12,0.85))]" />
+      )}
+      <button
+        type="button"
+        aria-label="back"
+        data-still-back=""
+        className="absolute left-5 top-[max(1.2rem,env(safe-area-inset-top))] z-10 font-mono text-[18px] leading-none text-white/70"
+        style={{ touchAction: "manipulation" }}
+        onPointerDown={(e) => e.stopPropagation()}
+        {...press(() => {
+          if (disabled) return;
+          onBack();
+        })}
+      >
+        ×
+      </button>
+      {n > 1 ? (
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-[max(1.2rem,env(safe-area-inset-bottom))] z-10 flex justify-center gap-1.5"
+          data-hang-dots={n}
+        >
+          {Array.from({ length: n }, (_, d) => (
+            <span
+              key={d}
+              className={`h-1 w-1 rounded-full ${d === i ? "bg-white/80" : "bg-white/25"}`}
+            />
+          ))}
+        </div>
+      ) : null}
+      {lockAttr ? (
+        <span
+          className="sr-only"
+          {...lockAttr}
+        />
+      ) : null}
+    </div>
+  );
+}
 
 export function HangCitadelStrip({
   citadels,
   citadel,
   onCitadel,
+  onBack,
   disabled,
 }: {
   citadels: HangCitadelPick[];
   citadel: string;
   onCitadel: (id: string) => void;
+  onBack?: () => void;
   disabled?: boolean;
 }) {
+  const start = Math.max(0, citadels.findIndex((c) => c.id === citadel));
+  const [at, setAt] = useState(start);
+  useEffect(() => {
+    setAt(Math.max(0, citadels.findIndex((c) => c.id === citadel)));
+  }, [citadel, citadels]);
   if (citadels.length <= 1) return null;
+  const shown = citadels[hangStillWrap(citadels.length, at, 0)] || citadels[0];
+  if (!shown) return null;
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1" data-hang-citadels={citadels.length}>
-      {citadels.map((c) => {
-        const on = c.id === citadel;
-        return (
-          <button
-            key={c.id}
-            type="button"
-            data-hang-citadel-pick={c.id}
-            aria-pressed={on}
-            disabled={disabled}
-            className={`min-w-[7.2rem] overflow-hidden rounded-2xl border bg-black/50 text-left disabled:opacity-40 ${
-              on ? "border-[#9ef0e4]/70 ring-1 ring-[#9ef0e4]/35" : "border-white/25"
-            }`}
-            style={{ touchAction: "manipulation" }}
-            onPointerDown={(e) => e.stopPropagation()}
-            {...press(() => {
-              if (disabled) return;
-              onCitadel(c.id);
-            })}
-          >
-            {c.thumb ? (
-              <img src={c.thumb} alt="" className="h-[3.6rem] w-full object-cover" />
-            ) : (
-              <div className="h-[3.6rem] w-full bg-[linear-gradient(180deg,rgba(158,240,228,0.16),rgba(7,8,12,0.7))]" />
-            )}
-            <span
-              className={`block px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] ${
-                on ? "text-[#9ef0e4]" : "text-white/65"
-              }`}
-            >
-              {c.title || "Citadel"}
-              <span className="mt-0.5 block text-[9px] tracking-[0.12em] text-white/45">
-                {c.rooms} room{c.rooms === 1 ? "" : "s"}
-              </span>
-            </span>
-          </button>
-        );
-      })}
+    <div className="absolute inset-0" data-hang-citadels={citadels.length}>
+      <StillStage
+        kind="citadel"
+        still={shown.thumb}
+        index={at}
+        count={citadels.length}
+        disabled={disabled}
+        lockAttr={{ "data-hang-citadel-pick": shown.id }}
+        onNext={() => {
+          if (disabled) return;
+          setAt((i) => hangStillWrap(citadels.length, i, 1));
+        }}
+        onPrev={() => {
+          if (disabled) return;
+          setAt((i) => hangStillWrap(citadels.length, i, -1));
+        }}
+        onLock={() => {
+          if (disabled) return;
+          onCitadel(shown.id);
+        }}
+        onBack={() => {
+          if (disabled) return;
+          onBack?.();
+        }}
+      />
     </div>
   );
 }
@@ -64,58 +181,111 @@ export function HangRoomStrip({
   rooms,
   hall,
   onHall,
+  onLock,
+  onBack,
   disabled,
 }: {
   rooms: HangRoomPick[];
   hall: number;
   onHall: (n: number) => void;
+  onLock?: (n: number) => void;
+  onBack?: () => void;
   disabled?: boolean;
 }) {
+  const cards = hangStripCards(rooms);
+  const idx = Math.max(0, cards.findIndex((c) => c.hall === hangCardHall(hall)));
+  const card = cards[idx] || cards[0] || { index: 0, hall: hangCardHall(hall) || 1 };
+  const n = card.hall;
+  const r = rooms[card.index];
+  const pick = (from?: string | null) => {
+    if (disabled) return;
+    onHall(hangCardHall(from) || hangStripPick(rooms, card.index) || n);
+  };
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1" data-hang-rooms="" data-hang-load-halls={rooms.length}>
-      {hangStripCards(rooms).map((card) => {
-        const r = rooms[card.index];
-        const n = card.hall;
-        const pick = (from?: string | null) => {
+    <div className="absolute inset-0" data-hang-rooms="" data-hang-load-halls={rooms.length}>
+      <StillStage
+        kind="room"
+        still={r?.still || ""}
+        index={idx}
+        count={Math.max(1, cards.length)}
+        disabled={disabled}
+        lockAttr={{
+          "data-hang-pick": n,
+          "data-hang-card-index": card.index,
+          ...vaultHangRoom(n),
+        }}
+        onNext={() => {
+          if (disabled || cards.length <= 1) return;
+          const next = cards[hangStillWrap(cards.length, idx, 1)];
+          if (next) onHall(hangStripPick(rooms, next.index) || next.hall);
+        }}
+        onPrev={() => {
+          if (disabled || cards.length <= 1) return;
+          const next = cards[hangStillWrap(cards.length, idx, -1)];
+          if (next) onHall(hangStripPick(rooms, next.index) || next.hall);
+        }}
+        onLock={() => {
           if (disabled) return;
-          onHall(hangCardHall(from) || hangStripPick(rooms, card.index) || n);
-        };
-        return (
-          <button
-            key={`${r?.citadel || ""}-${n}-${card.index}`}
-            type="button"
-            data-hang-pick={n}
-            data-hang-card-index={card.index}
-            {...vaultHangRoom(n)}
-            aria-pressed={hall === n}
-            disabled={disabled}
-            className={`min-w-[6.4rem] overflow-hidden rounded-2xl border bg-black/50 text-left disabled:opacity-40 ${
-              hall === n ? "border-[#9ef0e4]/70 ring-1 ring-[#9ef0e4]/35" : "border-white/25"
-            }`}
-            style={{ touchAction: "manipulation" }}
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              pick(e.currentTarget.getAttribute("data-hang-pick"));
-            }}
-            {...press(() => pick(String(n)))}
-          >
-            {r?.still ? (
-              <img src={r.still} alt="" className="h-[4.4rem] w-full object-cover" />
-            ) : (
-              <div className="h-[4.4rem] w-full bg-[linear-gradient(180deg,rgba(158,240,228,0.16),rgba(7,8,12,0.7))]" />
-            )}
-            <span
-              className={`block px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] ${
-                hall === n ? "text-[#9ef0e4]" : "text-white/65"
-              }`}
-            >
-              Room {n}
-              {r?.living ? " · here" : rooms.length === 1 ? " · only" : ""}
-            </span>
-          </button>
-        );
-      })}
+          pick(String(n));
+          onLock?.(hangCardHall(n) || n);
+        }}
+        onBack={() => {
+          if (disabled) return;
+          onBack?.();
+        }}
+      />
+      <button
+        type="button"
+        data-hang-pick={n}
+        data-hang-card-index={card.index}
+        {...vaultHangRoom(n)}
+        className="sr-only"
+        disabled={disabled}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          pick(e.currentTarget.getAttribute("data-hang-pick"));
+        }}
+        {...press(() => pick(String(n)))}
+      >
+        Room {n}
+      </button>
     </div>
+  );
+}
+
+export function StillCarousel({
+  still,
+  index,
+  count,
+  onNext,
+  onPrev,
+  onLock,
+  onBack,
+  disabled,
+  kind,
+}: {
+  still: string;
+  index: number;
+  count: number;
+  onNext: () => void;
+  onPrev: () => void;
+  onLock: () => void;
+  onBack: () => void;
+  disabled?: boolean;
+  kind: "load" | "vault";
+}) {
+  return (
+    <StillStage
+      still={still}
+      index={index}
+      count={count}
+      onNext={onNext}
+      onPrev={onPrev}
+      onLock={onLock}
+      onBack={onBack}
+      disabled={disabled}
+      kind={kind}
+    />
   );
 }
 
@@ -145,9 +315,12 @@ export function HangAskSheet({
   const [armed, setArmed] = useState(false);
   const [held, setHeld] = useState(rooms);
   const [picked, setPicked] = useState(() => hangCardHall(hall) || 1);
+  const [step, setStep] = useState<"citadel" | "room">(citadels.length > 1 ? "citadel" : "room");
   const pickedRef = useRef(picked);
   const choseRef = useRef(false);
   const citadelRef = useRef(citadel);
+  const lockedCitadel = useRef(citadels.length <= 1);
+  void name;
   useEffect(() => {
     /* Do not release swallow on unmount — confirm click unmounts the sheet
        and leftover touchend would hit Hang B / Play Sprint underneath
@@ -166,6 +339,7 @@ export function HangAskSheet({
       const next = hangCardHall(hall) || 1;
       pickedRef.current = next;
       setPicked(next);
+      if (lockedCitadel.current) setStep("room");
       return;
     }
     const same = rooms[0]?.citadel && held[0]?.citadel && rooms[0].citadel === held[0].citadel;
@@ -183,6 +357,13 @@ export function HangAskSheet({
     pickedRef.current = next;
     setPicked(next);
   }, [hall]);
+  useEffect(() => {
+    if (citadels.length > 1 && !lockedCitadel.current) setStep("citadel");
+    if (citadels.length <= 1) {
+      lockedCitadel.current = true;
+      setStep("room");
+    }
+  }, [citadels.length]);
   const picks = held.length >= rooms.length && (!citadel || held[0]?.citadel === citadel || !held[0]?.citadel) ? held : rooms;
   function pickHall(n: number) {
     const next = hangCardHall(n) || 1;
@@ -191,58 +372,58 @@ export function HangAskSheet({
     setPicked(next);
     onHall(next);
   }
-  const chosen = citadels.find((c) => c.id === citadel);
+  function lockRoom() {
+    if (!armed) return;
+    onConfirm(hangBindHall(picked) || hangBindHall(pickedRef.current));
+  }
+  function lockCitadel(id: string) {
+    lockedCitadel.current = true;
+    onCitadel?.(id);
+    setStep("room");
+  }
   return (
     <div
-      className="fixed inset-0 z-[90] flex flex-col bg-black/92 px-5 pt-[max(1.6rem,env(safe-area-inset-top))] pb-[max(1.6rem,env(safe-area-inset-bottom))]"
+      className="fixed inset-0 z-[90] bg-[#07080c]"
       data-hang-ask={door}
       data-hang-sheet="1"
       data-hang-load-halls={picks.length}
       data-hang-picked={picked}
       data-hang-citadel={citadel || undefined}
       data-hang-armed={armed ? "1" : "0"}
+      data-hang-step={step}
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      <button
-        type="button"
-        className="self-start font-mono text-[10px] uppercase tracking-[0.42em] text-white/55"
-        style={{ touchAction: "manipulation" }}
-        {...press(onClose)}
-      >
-        Close
-      </button>
-      <p className="mt-8 font-mono text-[10px] uppercase tracking-[0.28em] text-white/45">{name}</p>
-      <h2 className="mt-1 font-display text-4xl text-white/90">Hang {door}</h2>
-      <p className="mt-2 max-w-xs font-mono text-[10px] uppercase tracking-[0.16em] text-white/45">
-        {citadels.length > 1
-          ? `Pick any citadel, then the room, then hang door ${door}.`
-          : `Pick the citadel room, then hang door ${door}.`}
-      </p>
-      {citadels.length > 1 ? (
-        <>
-          <p className="mt-5 mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[#9ef0e4]">
-            {citadels.length} citadels · tap one
-          </p>
-          <HangCitadelStrip citadels={citadels} citadel={citadel} onCitadel={onCitadel || (() => {})} />
-        </>
-      ) : null}
-      <p className={`${citadels.length > 1 ? "mt-4" : "mt-5"} mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[#9ef0e4]`}>
-        {chosen?.title ? `${chosen.title} · ` : ""}
-        {picks.length > 1 ? `${picks.length} rooms · tap one` : "one room · confirm to hang"}
-      </p>
-      <HangRoomStrip
-        rooms={picks}
-        hall={picked}
-        onHall={pickHall}
-      />
+      {step === "citadel" && citadels.length > 1 ? (
+        <HangCitadelStrip
+          citadels={citadels}
+          citadel={citadel}
+          onCitadel={lockCitadel}
+          onBack={onClose}
+        />
+      ) : (
+        <HangRoomStrip
+          rooms={picks}
+          hall={picked}
+          onHall={pickHall}
+          onLock={lockRoom}
+          onBack={() => {
+            if (citadels.length > 1) {
+              lockedCitadel.current = false;
+              setStep("citadel");
+              return;
+            }
+            onClose();
+          }}
+        />
+      )}
       {armed ? (
         <button
           type="button"
           data-hang-confirm={door}
           {...vaultHangRoom(picked)}
-          className="mt-6 rounded-2xl border border-[#9ef0e4]/50 px-4 py-3 font-display text-2xl text-[#9ef0e4]"
+          className="sr-only"
           style={{ touchAction: "manipulation" }}
           {...press(() => onConfirm(hangBindHall(picked) || hangBindHall(pickedRef.current)))}
         >
@@ -250,7 +431,7 @@ export function HangAskSheet({
         </button>
       ) : (
         <p
-          className="pointer-events-none mt-6 rounded-2xl border border-white/10 px-4 py-3 font-mono text-[10px] uppercase tracking-[0.16em] text-white/35"
+          className="sr-only"
           data-hang-confirm-wait={door}
         >
           pick a room — then confirm

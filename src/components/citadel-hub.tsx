@@ -6,6 +6,8 @@ import { boltFull } from "@/lib/press";
 import { sfxForge } from "@/game/audio";
 import { HallMark } from "@/components/hall-mark";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { StillCarousel } from "@/components/hang-ask";
+import { hangStillWrap } from "@/game/hang-ask";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
@@ -158,6 +160,7 @@ export function CitadelHub({
   const [packMsg, setPackMsg] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [loadOn, setLoadOn] = useState(false);
+  const [loadIdx, setLoadIdx] = useState(0);
   const [draft, setDraft] = useState("");
   const [naming, setNaming] = useState(false);
   const lastFull = useRef(0);
@@ -310,6 +313,14 @@ export function CitadelHub({
           : [];
   const now = shown[0] || null;
   const nowTitle = now?.title || "Citadel";
+  void hunt;
+  void openId;
+  void draft;
+  void naming;
+  void keepOne;
+  void keepRooms;
+  void saveName;
+  void nowTitle;
 
   async function saveName(id: string, raw: string) {
     const t = await renameSession(id, raw);
@@ -445,240 +456,66 @@ export function CitadelHub({
       </div>
       {loadOn ? (
         <div
-          className="fixed inset-0 z-[200] flex flex-col bg-[#07080c] px-5 pt-[max(1.4rem,env(safe-area-inset-top))] pb-[max(1.1rem,env(safe-area-inset-bottom))]"
-          onPointerUp={(e) => {
-            if (e.target !== e.currentTarget) return;
-            if (Date.now() - loadAt.current < 450) return;
-            setLoadOn(false);
-          }}
+          className="fixed inset-0 z-[200] bg-[#07080c]"
+          data-load-sheet="1"
+          data-still-carousel="load"
         >
-          <button
-            type="button"
-            className="self-start font-mono text-[10px] uppercase tracking-[0.42em] text-white/55"
-            style={{ touchAction: "manipulation" }}
-            onPointerUp={() => setLoadOn(false)}
-          >
-            Back
-          </button>
-          <h2 className="mt-5 font-display text-[2.2rem] leading-none text-white/90">Load</h2>
-          <div className="mt-6 flex flex-1 flex-col gap-5 overflow-auto">
-            {shown.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-6 px-2">
-                <p className="text-center font-mono text-[11px] uppercase tracking-[0.2em] text-white/45">
-                  {hunt && !hub.length
-                    ? "looking for rooms…"
-                    : owned
-                      ? "no rooms in this hall yet. new citadel, or load a json."
-                      : "rooms live on this phone. keep the hall to carry them. or load the json you downloaded."}
-                </p>
-                {authPending || owned ? null : (
-                  <a
-                    href="/login"
-                    className="font-display text-3xl text-[#f0d48a]"
-                    style={{ touchAction: "manipulation" }}
-                  >
-                    Keep
-                  </a>
-                )}
-                <label
-                  className="relative flex h-16 w-full max-w-xs items-center justify-center font-display text-3xl text-[#f0d48a]"
-                  style={{ touchAction: "manipulation" }}
-                >
-                  Load file
-                  <input
-                    type="file"
-                    accept=".json,application/json,text/plain,*/*"
-                    className="absolute inset-0 cursor-pointer opacity-0"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      e.target.value = "";
-                      if (file) void loadRooms(file);
-                    }}
-                  />
-                </label>
-              </div>
-            ) : null}
-            {shown.map((p) => (
-              <div key={p.root.id} className="relative flex flex-col gap-2">
-                <div className="flex items-end justify-between gap-3">
-                <button
-                  type="button"
-                  className="min-w-0 text-left"
-                  style={{ touchAction: "manipulation" }}
-                  onPointerUp={(e) => {
-                    e.stopPropagation();
-                    setOpenId(openId === p.root.id ? null : p.root.id);
-                  }}
-                >
-                  <p className="font-display text-2xl leading-none text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.85)]">
-                    {naming && openId === p.root.id ? (
-                      <input
-                        autoFocus
-                        value={draft}
-                        maxLength={40}
-                        className="w-full bg-transparent font-display text-2xl text-white outline-none"
-                        onChange={(e) => setDraft(e.target.value)}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onBlur={() => void saveName(p.root.id, draft)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            (e.target as HTMLInputElement).blur();
-                          }
-                        }}
-                      />
-                    ) : (
-                      p.title
-                    )}
-                  </p>
-                  <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white/40">
-                    {p.rooms.length} room{p.rooms.length > 1 ? "s" : ""}
-                  </p>
-                </button>
-                <div className="flex items-center gap-3">
-                  <a
-                    href={`/rune?session=${encodeURIComponent(p.root.id)}&drive=${mode}`}
-                    className="font-display text-xl text-[#9ef0e4]"
-                    style={{ touchAction: "manipulation" }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      playSession(p.root.id);
-                    }}
-                  >
-                    Play
-                  </a>
-                  <button
-                    type="button"
-                    aria-label="menu"
-                    className="flex h-11 w-11 items-center justify-center"
-                    style={{ touchAction: "manipulation" }}
-                    onPointerUp={(e) => {
-                      e.stopPropagation();
-                      setOpenId(openId === p.root.id ? null : p.root.id);
-                    }}
-                  >
-                    <span className="flex flex-col gap-[3px]">
-                      <span className="block h-[3px] w-[3px] rounded-full bg-[#f0d48a]" />
-                      <span className="block h-[3px] w-[3px] rounded-full bg-[#f0d48a]" />
-                      <span className="block h-[3px] w-[3px] rounded-full bg-[#f0d48a]" />
-                    </span>
-                  </button>
-                </div>
-                {openId === p.root.id ? (
-                  <div className="absolute right-0 top-full z-50 mt-2 flex min-w-36 flex-col gap-1 rounded-2xl border border-white/15 bg-black/70 px-3 py-2 backdrop-blur-md">
-                    <a
-                      href={`/rune?session=${encodeURIComponent(p.root.id)}&do=more&drive=${mode}`}
-                      className="flex h-11 items-center font-display text-lg text-[#f0d48a]"
-                      style={{ touchAction: "manipulation" }}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        playSession(p.root.id, "more");
-                      }}
-                    >
-                      Continue
-                    </a>
-                    <a
-                      href={`/rune?session=${encodeURIComponent(p.root.id)}&do=room&drive=${mode}`}
-                      className="flex h-11 items-center font-display text-lg text-[#9ef0e4]"
-                      style={{ touchAction: "manipulation" }}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        playSession(p.root.id, "room");
-                      }}
-                    >
-                      Add room
-                    </a>
-                    <button
-                      type="button"
-                      className="flex h-11 items-center font-display text-lg text-white/80"
-                      style={{ touchAction: "manipulation" }}
-                      onPointerUp={(e) => {
-                        e.stopPropagation();
-                        setOpenId(p.root.id);
-                        setDraft(p.title);
-                        setNaming(true);
-                      }}
-                    >
-                      Rename
-                    </button>
-                    <button
-                      type="button"
-                      className="flex h-11 items-center font-display text-lg text-white/80"
-                      style={{ touchAction: "manipulation" }}
-                      onPointerUp={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        setOpenId(null);
-                        void keepOne(p.root.id, p.title);
-                      }}
-                    >
-                      File
-                    </button>
-                  </div>
-                ) : null}
-                </div>
-                {p.rooms.length > 1
-                  ? p.rooms.map((r, i) => (
-                      <div key={r.id} className="flex items-center justify-between gap-3 pl-1">
-                        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/55">
-                          Room {r.hall || i + 1}
-                          {r.id === p.root.id ? " · start" : ""}
-                        </p>
-                        <a
-                          href={`/rune?session=${encodeURIComponent(p.root.id)}&drive=${mode}&hall=${r.hall || i + 1}`}
-                          className="font-display text-lg text-[#9ef0e4]"
-                          style={{ touchAction: "manipulation" }}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            playSession(p.root.id, "play", r.hall || i + 1);
-                          }}
-                        >
-                          Play
-                        </a>
-                      </div>
-                    ))
-                  : null}
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 flex items-center justify-center gap-6">
-            <button
-              type="button"
-              className="min-h-11 px-3 font-mono text-[10px] uppercase tracking-[0.22em] text-white/70"
-              style={{ touchAction: "manipulation" }}
-              onPointerUp={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                void keepRooms();
+          {shown.length ? (
+            <StillCarousel
+              kind="load"
+              still={shown[hangStillWrap(shown.length, loadIdx, 0)]?.root.thumb || ""}
+              index={hangStillWrap(shown.length, loadIdx, 0)}
+              count={shown.length}
+              onNext={() => setLoadIdx((i) => hangStillWrap(shown.length, i, 1))}
+              onPrev={() => setLoadIdx((i) => hangStillWrap(shown.length, i, -1))}
+              onLock={() => {
+                const p = shown[hangStillWrap(shown.length, loadIdx, 0)];
+                if (!p) return;
+                playSession(p.root.id);
               }}
-            >
-              Keep all
-            </button>
-            <button
-              type="button"
-              className="min-h-11 px-3 font-mono text-[10px] uppercase tracking-[0.22em] text-white/55"
-              style={{ touchAction: "manipulation" }}
-              onPointerUp={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                fileRef.current?.click();
-              }}
-            >
-              Load file
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".json,application/json,text/plain"
-              className="hidden"
-              tabIndex={-1}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                e.target.value = "";
-                if (file) void loadRooms(file);
-              }}
+              onBack={() => setLoadOn(false)}
             />
-          </div>
+          ) : (
+            <div className="flex min-h-dvh flex-col items-center justify-center gap-6 px-5">
+              <button
+                type="button"
+                aria-label="back"
+                className="absolute left-5 top-[max(1.2rem,env(safe-area-inset-top))] font-mono text-[18px] text-white/70"
+                style={{ touchAction: "manipulation" }}
+                onPointerUp={() => setLoadOn(false)}
+              >
+                ×
+              </button>
+              <label
+                className="relative flex h-16 w-full max-w-xs items-center justify-center font-display text-3xl text-[#f0d48a]"
+                style={{ touchAction: "manipulation" }}
+              >
+                Load file
+                <input
+                  type="file"
+                  accept=".json,application/json,text/plain,*/*"
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) void loadRooms(file);
+                  }}
+                />
+              </label>
+            </div>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json,text/plain"
+            className="hidden"
+            tabIndex={-1}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void loadRooms(file);
+            }}
+          />
         </div>
       ) : null}
     </div>

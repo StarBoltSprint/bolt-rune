@@ -421,6 +421,17 @@ export function walkHungHref(
   return `/rune?first=${first}&drive=engine&rooms=${cap}&hall=${hall}&stills=0`;
 }
 
+/** After Hang room lock — walk that living hall so door A/B can hang. No door yet. */
+export function walkHangHallHref(citadel?: string | null, hall?: number | string | null, rooms = 1): string {
+  const raw = typeof hall === "number" ? hall : Number(hall);
+  const n = Number.isFinite(raw) && raw >= 1 && raw <= 8 ? Math.round(raw) : 0;
+  if (!n) return "";
+  const cap = Math.max(n, Math.min(8, Math.round(rooms) || n));
+  const cit = String(citadel || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+  if (cit) return `/rune?session=${encodeURIComponent(cit)}&hall=${n}&drive=engine`;
+  return `/rune?drive=engine&rooms=${cap}&hall=${n}&stills=0`;
+}
+
 /** Vault card / unhang line — Room N • Door A Play Sprint from the bound artefact. */
 export function vaultHangCaption(room?: { hall?: number; door?: string | null } | null): string {
   if (!room?.door) return "not on a door";

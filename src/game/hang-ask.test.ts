@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, hangBindHall, hangCardHall, hangStripCards, hangStripPick, sheetConfirmHall, swallowOpeningTap } from "./hang-ask.ts";
+import { walkHangHallHref } from "./enter-graph.ts";
+import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, HANG_PENDING_KEY, hangBindHall, hangCardHall, hangStillLane, hangStillSwipe, hangStillWrap, hangStripCards, hangStripPick, readHangPending, sheetConfirmHall, swallowOpeningTap, takeHangPending, writeHangPending } from "./hang-ask.ts";
 
 function clickOn(target: { closest?: (sel: string) => unknown; getAttribute: (k: string) => string | null }) {
   const e = new Event("click", { bubbles: true, cancelable: true });
@@ -11,6 +12,48 @@ function clickOn(target: { closest?: (sel: string) => unknown; getAttribute: (k:
   Object.defineProperty(e, "composedPath", { value: () => [target] });
   return e;
 }
+
+describe("hang still carousel", () => {
+  it("wraps next/prev and treats edges as back, centre as lock", () => {
+    assert.equal(hangStillWrap(8, 0, 1), 1);
+    assert.equal(hangStillWrap(8, 7, 1), 0);
+    assert.equal(hangStillWrap(8, 0, -1), 7);
+    assert.equal(hangStillWrap(1, 0, 1), 0);
+    assert.equal(hangStillWrap(0, 3, 1), 0);
+    assert.equal(hangStillLane(0.5), "lock");
+    assert.equal(hangStillLane(0.1), "back");
+    assert.equal(hangStillLane(0.9), "back");
+    assert.equal(hangStillSwipe(-80, 10), 1);
+    assert.equal(hangStillSwipe(80, 10), -1);
+    assert.equal(hangStillSwipe(20, 80), 0);
+  });
+
+  it("pending hang stores hall N until the living-hall door tap takes it", () => {
+    const store = new Map<string, string>();
+    const fake = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    };
+    Object.defineProperty(globalThis, "sessionStorage", { value: fake, configurable: true });
+    writeHangPending({ id: "art-1", citadel: "cit-2", hall: 3 });
+    assert.equal(store.get(HANG_PENDING_KEY)?.includes("art-1"), true);
+    const got = readHangPending();
+    assert.deepEqual(got, { id: "art-1", citadel: "cit-2", hall: 3 });
+    assert.deepEqual(takeHangPending(), { id: "art-1", citadel: "cit-2", hall: 3 });
+    assert.equal(readHangPending(), null);
+    writeHangPending({ id: "", citadel: "cit-2", hall: 3 });
+    assert.equal(readHangPending(), null);
+    assert.match(walkHangHallHref("cit-8", 4), /session=cit-8/);
+    assert.match(walkHangHallHref("cit-8", 4), /hall=4/);
+    assert.ok(!walkHangHallHref("cit-8", 4).includes("first="));
+    assert.equal(walkHangHallHref("cit-8", 0), "");
+  });
+});
 
 describe("hang ask leftover tap", () => {
   it("confirm stays unarmed long enough that Hang A leftover click cannot bind", () => {
@@ -159,6 +202,11 @@ describe("hang ask leftover tap", () => {
     assert.match(src, /HangCitadelStrip/);
     assert.match(src, /onCitadel/);
     assert.match(src, /hangStripPick\(rooms, card\.index\)/);
+    assert.match(src, /data-still-carousel/);
+    assert.match(src, /hangStillSwipe/);
+    assert.match(src, /hangStillLane/);
+    assert.doesNotMatch(src, /overflow-x-auto/);
+    assert.doesNotMatch(src, /grid-cols-2/);
     assert.doesNotMatch(src, /onHall\(i \+ 1\)/);
     assert.doesNotMatch(src, /onHall\(card\.index\)/);
     assert.doesNotMatch(src, /Room \{i \+ 1\}/);
@@ -184,6 +232,9 @@ describe("hang ask leftover tap", () => {
     assert.match(vault, /pickHangCitadel/);
     assert.match(vault, /listHangCitadels/);
     assert.match(vault, /citadels=\{hangCitadels\}/);
+    assert.match(vault, /writeHangPending/);
+    assert.match(vault, /walkHangHallHref/);
+    assert.match(vault, /StillCarousel/);
     assert.match(vault, /hangDoor\(hangAsk\.a, hangAsk\.door, undefined, hangBindHall\(hall\)\)/);
     assert.match(vault, /hangBindHall\(hallWant\)/);
     assert.match(vault, /const bindHall = hangBindHall\(hallWant\)/);
@@ -192,7 +243,11 @@ describe("hang ask leftover tap", () => {
     assert.doesNotMatch(vault, /const bindHall = pick\?\.bindHall \|\| hall/);
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     assert.match(engine, /onConfirm=\{\(hall\) => \{/);
-    assert.match(engine, /beginRift\(door, gateFromHung\(hangAsk\.a\), bindHall\)/);
+    assert.match(engine, /writeHangPending/);
+    assert.match(engine, /readHangPending/);
+    assert.match(engine, /takeHangPending/);
+    assert.match(engine, /beginRift\(id, gateFromHung\(a\), bind\)/);
+    assert.match(engine, /walkHangHallHref/);
     assert.match(engine, /hangBindHall\(hall\)/);
     assert.match(engine, /pickHangHall/);
     assert.match(engine, /livingHangHall/);
