@@ -93,8 +93,8 @@ export function genePrompt(g: Gene = loadBrain().gene): string {
       : "LOCKED TRIPOD. Same framing. Dog ≤20% height — no profile-hero.";
   const morph =
     g.morph >= 2
-      ? "Same snow-white Swiss Shepherd, same doors. Zero morph. Never tan or saddle."
-      : "Same snow-white Swiss Shepherd. No morph. Never tan.";
+      ? "Same snow-white Swiss Shepherd, same doors. Zero morph. Never tan, ginger, or saddle."
+      : "Same snow-white Swiss Shepherd. No morph. Never tan or ginger.";
   const dest = g.dest > 1 ? "Last frame: already at the destination." : "";
   return [cam, `At least ${g.strides} planted strides. Body heading follows travel. Never moonwalk. Paws plant — no foot-slide.`, morph, dest].filter(Boolean).join(" ");
 }
@@ -165,7 +165,7 @@ export function digest(grade: Grade) {
 
 export function stillLaws(): string {
   const b = loadBrain();
-  const bits = ["No walking. Feet glued. SMALL figure, rear or 3/4-from-behind — no profile-hero. FULL snow-white coat — no tan, beige, cream, ivory, saddle, or mask."];
+  const bits = ["No walking. Feet glued. SMALL figure, rear or 3/4-from-behind — no profile-hero. FULL snow-white coat — no tan, beige, ginger, saddle, or mask."];
   if (b.camera >= 2) bits.push("Pillars, floor vanishing point and door arches match the start image pixel-for-pixel.");
   if (b.messy >= 2) bits.push("Do not morph the dog or the doors. Same snow-white Swiss Shepherd, no cape, no tan, same stone.");
   return bits.join(" ");
