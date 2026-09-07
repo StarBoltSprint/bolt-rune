@@ -256,6 +256,7 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(cook, /hungPlayChrome\(n, door \|\| "A"\)/);
     assert.match(cook, /line: name && name !== chrome\.name \? name : chrome\.name/);
     assert.match(cook, /quietBiomeFilm/);
+    assert.match(cook, /score: undefined/);
     assert.match(cook, /name: chrome\.name/);
     assert.match(cook, /keeper: chrome\.keeper/);
   });
@@ -467,11 +468,15 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
     assert.match(stage, /hungBiomePlaylist\(raw\)/);
-    assert.match(stage, /a\.loop = Boolean\(holdDoor\) && list\.length <= 1/);
+    assert.match(stage, /a\.loop = Boolean\(holdDoor\)/);
+    assert.match(stage, /if \(!quiet && film\.score && phaseRef\.current === "run"\) syncScore\(t\)/);
+    assert.match(stage, /else g\.rate = 1/);
+    assert.match(stage, /if \(film\.score && !biomeQteQuiet\(holdDoor\)\) startScore/);
     assert.match(stage, /if \(holdDoorRef\.current\) \{\s*\n\s*const fallback = stockBiomeLoop\(\)/);
     assert.doesNotMatch(stage, /if \(holdDoorRef\.current\) \{\s*\n\s*setUsingStill\(true\)/);
     const cook = readFileSync(join(here, "./cook.ts"), "utf8");
     assert.match(cook, /hungBiomePlaylist\(urls\)/);
+    assert.match(cook, /score: undefined/);
   });
 
   it("biome hold is QTE-quiet — leftover door taps stay and never MISS", () => {

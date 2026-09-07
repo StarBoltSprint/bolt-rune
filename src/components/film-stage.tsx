@@ -358,12 +358,12 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       }
       videoRef.current = a;
       armPlate(a, list[startI] || first);
-      armPlate(b, list[startI + 1]);
+      if (!holdDoor) armPlate(b, list[startI + 1]);
       a.muted = true;
       a.defaultMuted = true;
-      a.loop = Boolean(holdDoor) && list.length <= 1;
+      a.loop = Boolean(holdDoor);
       a.playsInline = true;
-      a.playbackRate = ramp ? 0.42 : 1;
+      a.playbackRate = holdDoor ? 1 : ramp ? 0.42 : 1;
       const holdRoom = (film.still || "").includes("citadel-tour");
       const ready = () => {
         if (gone) return;
@@ -405,12 +405,12 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           if (gone || !cached.ok) return;
           next[i] = cached.url;
           platesRef.current = next.slice();
-          if (i === 0) {
+          if (i === 0 && !holdDoor) {
             const play = playableClipSrc(cached.url) || cached.url;
             setSrc(play);
             armPlate(aRef.current, play);
           }
-          if (i === 1) armPlate(bRef.current, cached.url);
+          if (i === 1 && !holdDoor) armPlate(bRef.current, cached.url);
         } catch {
           /* keep remote */
         }
@@ -462,7 +462,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       }
       kick();
     }, 400);
-    if (film.score) startScore(film.score, 0);
+    if (film.score && !biomeQteQuiet(holdDoor)) startScore(film.score, 0);
     return () => {
       v.removeEventListener("canplay", kick);
       window.clearInterval(retry);
@@ -476,6 +476,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       const g = gRef.current;
       const v = videoRef.current;
       if (g.hitstop > 0) g.hitstop -= dt;
+      const quiet = biomeQteQuiet(holdDoorRef.current);
       if (v && v.paused && live && phaseRef.current === "run" && !g.crashed && !g.done) {
         void v.play().catch(() => {});
       }
@@ -486,12 +487,12 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         t = g.fakeT;
       } else if (v) {
         t = clock();
-        if (v.duration && !g.charted && v.duration > 1) {
+        if (!quiet && v.duration && !g.charted && v.duration > 1) {
           g.beats = chartFor(v.duration, g.seed);
           g.charted = true;
         }
         const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
-        if (list.length > 1 && plateRef.current < list.length - 1 && !advancing.current && v.duration > 1 && Number.isFinite(v.duration)) {
+        if (!quiet && list.length > 1 && plateRef.current < list.length - 1 && !advancing.current && v.duration > 1 && Number.isFinite(v.duration)) {
           const nxt = otherPlate();
           const nextUrl = list[plateRef.current + 1];
           if (nextUrl) armPlate(nxt, nextUrl);
@@ -499,7 +500,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           if (left <= 0.18 && v.currentTime > 0.5) goNextPlate();
         }
       }
-      if (film.score && phaseRef.current === "run") syncScore(t);
+      if (!quiet && film.score && phaseRef.current === "run") syncScore(t);
 
       g.trauma = Math.max(0, g.trauma - dt * 2.4);
       if (phaseRef.current === "run") {
@@ -518,10 +519,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         setShake({ x: 0, y: 0, rot: 0 });
         lastShakeOn.current = false;
       }
-      const want = g.crashed || g.done ? 0 : Math.max(PACE_MIN, Math.min(PACE_MAX, g.pace));
-      g.rate += (want - g.rate) * (1 - Math.exp(-12 * dt));
+      const want = quiet || g.crashed || g.done ? (quiet ? 1 : 0) : Math.max(PACE_MIN, Math.min(PACE_MAX, g.pace));
+      if (!quiet) g.rate += (want - g.rate) * (1 - Math.exp(-12 * dt));
+      else g.rate = 1;
       if (v && !g.crashed && !g.done && phaseRef.current === "run") {
-        const native = Math.max(0.25, Math.min(16, g.rate));
+        const native = quiet ? 1 : Math.max(0.25, Math.min(16, g.rate));
         const r = Math.round(native * 20) / 20;
         if (r !== lastRate.current) {
           lastRate.current = r;
@@ -532,7 +534,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           }
         }
         const actual = v.playbackRate || 1;
-        if (!biomeQteQuiet(holdDoorRef.current) && g.rate > actual + 0.12 && !advancing.current && Number.isFinite(v.duration) && v.duration > 1) {
+        if (!quiet && g.rate > actual + 0.12 && !advancing.current && Number.isFinite(v.duration) && v.duration > 1) {
           skipAcc.current += (g.rate - actual) * dt;
           if (skipAcc.current >= 0.04) {
             const jump = skipAcc.current;
@@ -575,6 +577,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         if (custom && (holdDoorRef.current || shouldHoldBiome(list, plateRef.current))) holdBiomePlate(v);
         else finish(g);
       } else if (
+        !quiet &&
         phaseRef.current === "run" &&
         !advancing.current &&
         !usingStill &&
@@ -603,7 +606,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         pace: g.pace,
       };
       const due = now - lastHudAt.current > (coarse.current ? 120 : 64);
-      if (phaseRef.current === "run" && (due || g.i !== lastHudI.current)) {
+      if (phaseRef.current === "run" && !quiet && (due || g.i !== lastHudI.current)) {
         lastHudAt.current = now;
         lastHudI.current = g.i;
         setHud(nextHud);
@@ -1156,12 +1159,20 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           }}
           onEnded={() => {
             if (laneRef.current !== 0) return;
+            if (holdDoorRef.current) {
+              const el = aRef.current;
+              if (el) {
+                el.loop = true;
+                void el.play().catch(() => holdBiomePlate(el));
+              }
+              return;
+            }
             const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
             if (plateRef.current < list.length - 1) {
               goNextPlate();
               return;
             }
-            if (custom && (holdDoorRef.current || shouldHoldBiome(list, plateRef.current))) {
+            if (custom && shouldHoldBiome(list, plateRef.current)) {
               holdBiomePlate(aRef.current);
               return;
             }
@@ -1203,12 +1214,20 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           }}
           onEnded={() => {
             if (laneRef.current !== 1) return;
+            if (holdDoorRef.current) {
+              const el = bRef.current;
+              if (el) {
+                el.loop = true;
+                void el.play().catch(() => holdBiomePlate(el));
+              }
+              return;
+            }
             const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
             if (plateRef.current < list.length - 1) {
               goNextPlate();
               return;
             }
-            if (custom && (holdDoorRef.current || shouldHoldBiome(list, plateRef.current))) {
+            if (custom && shouldHoldBiome(list, plateRef.current)) {
               holdBiomePlate(bRef.current);
               return;
             }
@@ -1479,7 +1498,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
                   try { v.currentTime = 0; } catch { /* */ }
                   void v.play().catch(() => {});
                 }
-                if (film.score) startScore(film.score, 0);
+                if (film.score && !biomeQteQuiet(holdDoor)) startScore(film.score, 0);
               }}
             >
               Run it again

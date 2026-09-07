@@ -394,13 +394,14 @@ export function riftBeats(): Beat[] {
   ];
 }
 
-/** Hung biome stay: no QTE chart, so leftover door taps cannot MISS. */
+/** Hung biome stay: no QTE chart / score, so leftover door taps cannot MISS and play does not hitch. */
 export function quietBiomeFilm(film: Film): Film {
   return {
     ...film,
     beats: [],
     pad: undefined,
     lives: 1,
+    score: undefined,
   };
 }
 
