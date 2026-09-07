@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BOLT_BODY, BOLT_FACE, TOUR_PLATE } from "./rune.ts";
 import { HALL_LOOP, HALL_STILL } from "./stock-room.ts";
+import { playableClipSrc } from "./play-clip.ts";
 import {
   cookHasWalks,
   hallStillOf,
@@ -12,6 +13,7 @@ import {
   isHallPlayStill,
   livingPlayFrame,
   packIdentityStill,
+  playCoverStill,
   playStillOrHall,
   seedMayBankIdle,
   walkClips,
@@ -21,8 +23,19 @@ const HALL = TOUR_PLATE;
 const WALK = "https://imgen.example/hall-walk.mp4";
 const BREATH = "https://imgen.example/hall-breath.mp4";
 const COOKED_HALL = "https://imgen.example/hall-still.jpg";
+const PLAY_WALK = playableClipSrc(WALK);
+const PLAY_BREATH = playableClipSrc(BREATH);
 
 describe("play frame after cook", () => {
+  it("playableClipSrc proxies Imagine mp4s and keeps same-origin stock", () => {
+    assert.equal(playableClipSrc("/films/forge-asteroid.mp4"), "/films/forge-asteroid.mp4");
+    assert.equal(playableClipSrc("/ui/citadel.mp4?v=aaa"), "/ui/citadel.mp4?v=aaa");
+    assert.equal(playableClipSrc(BOLT_BODY), "");
+    const proxied = playableClipSrc("https://imgen.x.ai/vid/walk.mp4?tok=1");
+    assert.match(proxied, /^\/api\/clip\?u=/);
+    assert.doesNotMatch(proxied, /^https:\/\/imgen/);
+  });
+
   it("treats sealed identity refs as Bolt silhouettes, not hall plates", () => {
     assert.equal(isBoltSilhouette(BOLT_BODY), true);
     assert.equal(isBoltSilhouette(BOLT_FACE), true);
@@ -36,6 +49,7 @@ describe("play frame after cook", () => {
     assert.equal(isHallPlayStill(BOLT_BODY), false);
     assert.equal(isHallPlayStill(BOLT_FACE), false);
     assert.equal(isHallPlayStill("/refs/hall-doors.jpg"), false);
+    assert.equal(isHallPlayStill("data:image/jpeg;base64,xxxx"), false);
   });
 
   it("packIdentityStill never packs place-bolt / seed onto the isolated Bolt still", () => {
@@ -67,8 +81,9 @@ describe("play frame after cook", () => {
     });
     assert.equal(frame.phase, "play");
     assert.equal(frame.playFrame, "breath");
-    assert.equal(frame.url, BREATH);
+    assert.equal(frame.url, PLAY_BREATH);
     assert.equal(frame.still, HALL);
+    assert.match(frame.url, /^\/api\/clip\?u=/);
     assert.ok(!isBoltSilhouette(frame.still));
     assert.ok(!isBoltSilhouette(frame.url));
     assert.equal(cookHasWalks(bank), true);
@@ -83,7 +98,7 @@ describe("play frame after cook", () => {
     });
     assert.equal(frame.phase, "play");
     assert.equal(frame.playFrame, "walk");
-    assert.equal(frame.url, WALK);
+    assert.equal(frame.url, PLAY_WALK);
     assert.equal(frame.still, COOKED_HALL);
     assert.notEqual(frame.still, BOLT_BODY);
   });
@@ -139,6 +154,9 @@ describe("play frame after cook", () => {
     assert.equal(playStillOrHall(BOLT_BODY, HALL), HALL);
     assert.equal(playStillOrHall(COOKED_HALL, HALL), COOKED_HALL);
     assert.equal(playStillOrHall("", HALL), HALL);
+    assert.equal(playCoverStill({ seed: BOLT_BODY, room: BOLT_BODY, plate: BOLT_BODY, hall: HALL }), HALL);
+    assert.equal(playCoverStill({ plate: "data:image/jpeg;base64,boltlook", seed: BOLT_BODY }), HALL_STILL);
+    assert.notEqual(playCoverStill({ plate: BOLT_BODY }), BOLT_BODY);
     assert.equal(seedMayBankIdle(BOLT_BODY), false);
     assert.equal(seedMayBankIdle(HALL), true);
     assert.equal(seedMayBankIdle(COOKED_HALL), true);
@@ -167,5 +185,8 @@ describe("play frame after cook", () => {
     assert.match(finish, /lockHall\(frame\.still\)/);
     assert.match(finish, /setPhase\("play"\)/);
     assert.doesNotMatch(finish, /const room = refsMap\.current\.get\("room"\)/);
+    assert.match(src, /playCoverStill\(/);
+    assert.match(src, /playableClipSrc\(/);
+    assert.match(src, /theaterMayPlay|livingNow\(\)/);
   });
 });

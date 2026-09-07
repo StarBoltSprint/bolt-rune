@@ -1,5 +1,7 @@
 /** Persist biome / Bot Biome cook READY so a remount does not look like a new 0% cook. */
 
+import { biomePlaySrc, isPlayableClipSrc, playableClipSrc, stockBiomeLoop } from "./play-clip.ts";
+
 export type CookReadySnap = {
   biome: string;
   urls: string[];
@@ -18,7 +20,24 @@ const READY_KEY = "bolt-cook-ready-v1";
 const DONE_KEY = "bolt-look-forge-done-v1";
 
 export function cookUrlsReady(urls?: string[] | null): string[] {
-  return (urls || []).filter((u) => typeof u === "string" && /\.mp4(\?|$)/i.test(u));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of urls || []) {
+    if (typeof raw !== "string") continue;
+    if (!/\.mp4(\?|$)/i.test(raw) && !raw.includes("xai-vidgen") && !raw.startsWith("/api/clip")) continue;
+    const u = playableClipSrc(raw);
+    if (!u || seen.has(u)) continue;
+    seen.add(u);
+    out.push(u);
+  }
+  return out;
+}
+
+/** READY watch src: playable proxy / same-origin, else stock biome loop. */
+export function biomeReadySrc(urls?: string[] | null, biome?: string | null): string {
+  const ready = cookUrlsReady(urls);
+  const watch = ready.find((u) => isPlayableClipSrc(u)) || biomePlaySrc(ready, biome);
+  return watch || stockBiomeLoop(biome);
 }
 
 /** Hash `#forge/cook` with no READY snap must not mount an empty forging overlay. */
@@ -45,12 +64,15 @@ export function cookOverlayForging(input: { busy?: boolean; cookingIndex?: numbe
 }
 
 export function writeCookReady(snap: CookReadySnap): CookReadySnap | null {
-  const urls = cookUrlsReady(snap.urls);
+  const biome = String(snap.biome || "asteroid").replace(/[^a-z]/g, "").slice(0, 16) || "asteroid";
+  const mapped = cookUrlsReady(snap.urls);
+  const watch = biomeReadySrc([snap.watch || "", ...mapped], biome);
+  const urls = mapped.length ? mapped : watch ? [watch] : [];
   if (!urls.length) return null;
   const next: CookReadySnap = {
-    biome: String(snap.biome || "asteroid").replace(/[^a-z]/g, "").slice(0, 16) || "asteroid",
+    biome,
     urls,
-    watch: snap.watch && urls.includes(snap.watch) ? snap.watch : urls[0],
+    watch: urls.includes(watch) ? watch : urls[0],
     still: snap.still || undefined,
     frost: snap.frost || "MP4 ready · touch the path to enter",
   };
@@ -70,7 +92,8 @@ export function readCookReady(): CookReadySnap | null {
     const snap = JSON.parse(raw) as CookReadySnap;
     const urls = cookUrlsReady(snap?.urls);
     if (!urls.length) return null;
-    return { ...snap, urls, watch: snap.watch && urls.includes(snap.watch) ? snap.watch : urls[0] };
+    const watch = biomeReadySrc([snap.watch || "", ...urls], snap.biome);
+    return { ...snap, urls, watch: urls.includes(watch) ? watch : urls[0] };
   } catch {
     return null;
   }
@@ -122,8 +145,10 @@ export function resetLookForgeDone(key?: string) {
 }
 
 /** After a successful bot/biome cook, remount should resume play — not look + auto-start. */
-export function shouldResumeForgePlay(input: { done?: boolean; liveId?: string | null }): boolean {
-  return Boolean(input.done && input.liveId);
+export function shouldResumeForgePlay(input: { done?: boolean; liveId?: string | null; walks?: number | boolean }): boolean {
+  if (!input.done || !input.liveId) return false;
+  if (input.walks === false || input.walks === 0) return false;
+  return true;
 }
 
 /** /artifacts remount: keep a deeper forge loc; only default to rifts when hash is empty/title. */

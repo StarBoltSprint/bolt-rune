@@ -1,3 +1,4 @@
+import { playableClipSrc } from "./play-clip.ts";
 import { BOLT_BODY, BOLT_FACE, TOUR_PLATE } from "./rune.ts";
 import { HALL_STILL, isHallFilm } from "./stock-room.ts";
 
@@ -25,14 +26,15 @@ export function isBoltSilhouette(u?: string | null): boolean {
   return BOLT_REF.test(u);
 }
 
-/** Hall camera still that may cover play. Rejects sealed Bolt / non-hall refs. */
+/** Hall camera still that may cover play. Rejects sealed Bolt / non-hall refs / grab data URLs. */
 export function isHallPlayStill(u?: string | null): boolean {
   if (!u || isBoltSilhouette(u)) return false;
   if (isHallFilm(u)) return true;
   const s = u.toLowerCase();
   if (s.includes("/refs/")) return false;
   if (s.includes("/ui/citadel.jpg") || s.includes("hall-doors")) return false;
-  return s.startsWith("/films/") || s.startsWith("http") || s.startsWith("data:") || s.startsWith("blob:");
+  if (s.startsWith("data:")) return false;
+  return s.startsWith("/films/") || s.startsWith("http") || s.startsWith("blob:");
 }
 
 /** Sealed pack identity labels only. `place-bolt` / seed / pose must not pack to BOLT_BODY. */
@@ -55,7 +57,7 @@ function bankEntries(bank: PlayBank): [string, PlayClip][] {
 function clipPlayable(clip?: PlayClip | null): clip is PlayClip {
   if (!clip?.url) return false;
   if (isBoltSilhouette(clip.url) || isBoltSilhouette(clip.end)) return false;
-  return true;
+  return Boolean(playableClipSrc(clip.url));
 }
 
 function isWalkKey(k: string) {
@@ -68,9 +70,10 @@ export function walkClips(bank: PlayBank): PlayClip[] {
   const out: PlayClip[] = [];
   const seen = new Set<string>();
   for (const [k, v] of bankEntries(bank)) {
-    if (!isWalkKey(k) || !clipPlayable(v) || seen.has(v.url)) continue;
-    seen.add(v.url);
-    out.push(v);
+    const url = playableClipSrc(v.url);
+    if (!isWalkKey(k) || !clipPlayable(v) || !url || seen.has(url)) continue;
+    seen.add(url);
+    out.push({ url, end: v.end });
   }
   return out;
 }
@@ -79,17 +82,19 @@ export function breathClips(bank: PlayBank): PlayClip[] {
   const out: PlayClip[] = [];
   const seen = new Set<string>();
   const take = (k: string, v: PlayClip) => {
-    if (!clipPlayable(v) || seen.has(v.url)) return;
+    const url = playableClipSrc(v.url);
+    if (!clipPlayable(v) || !url || seen.has(url)) return;
     if (!(k === "idle-spawn" || k.startsWith("idle-spawn←") || /^idle-spawn#/.test(k))) return;
-    seen.add(v.url);
-    out.push(v);
+    seen.add(url);
+    out.push({ url, end: v.end });
   };
   for (const [k, v] of bankEntries(bank)) take(k, v);
   if (out.length) return out;
   for (const [k, v] of bankEntries(bank)) {
-    if (!k.startsWith("idle-") || k.includes("#") || !clipPlayable(v) || seen.has(v.url)) continue;
-    seen.add(v.url);
-    out.push(v);
+    const url = playableClipSrc(v.url);
+    if (!k.startsWith("idle-") || k.includes("#") || !clipPlayable(v) || !url || seen.has(url)) continue;
+    seen.add(url);
+    out.push({ url, end: v.end });
   }
   return out;
 }
@@ -120,6 +125,21 @@ export function playStillOrHall(candidate: string | null | undefined, hall: stri
   return HALL_STILL;
 }
 
+/** Cover shown on play — locked hall still. Never sealed Bolt, never a grab data URL. */
+export function playCoverStill(input: {
+  hall?: string | null;
+  empty?: string | null;
+  start?: string | null;
+  plate?: string | null;
+  placed?: string | null;
+  seed?: string | null;
+  room?: string | null;
+}): string {
+  const still = hallStillOf(input);
+  if (isBoltSilhouette(still) || !still) return HALL_STILL;
+  return still;
+}
+
 export function seedMayBankIdle(startStill?: string | null): boolean {
   return isHallPlayStill(startStill);
 }
@@ -139,7 +159,7 @@ export function livingPlayFrame(input: {
   seed?: string | null;
   room?: string | null;
 }): LivingPlayFrame {
-  const still = hallStillOf(input);
+  const still = playCoverStill(input);
   const walks = walkClips(input.bank);
   if (!walks.length) {
     return {

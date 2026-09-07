@@ -16,6 +16,7 @@ import { Route as RuneRouteImport } from './routes/rune'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as WalkRouteImport } from './routes/walk'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiClipRouteImport } from './routes/api/clip'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -52,6 +53,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiClipRoute = ApiClipRouteImport.update({
+  id: '/api/clip',
+  path: '/api/clip',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -61,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/vault': typeof VaultRoute
   '/walk': typeof WalkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/clip': typeof ApiClipRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +77,7 @@ export interface FileRoutesByTo {
   '/vault': typeof VaultRoute
   '/walk': typeof WalkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/clip': typeof ApiClipRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,14 +88,15 @@ export interface FileRoutesById {
   '/vault': typeof VaultRoute
   '/walk': typeof WalkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/clip': typeof ApiClipRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/artifacts' | '/login' | '/rune' | '/vault' | '/walk' | '/api/auth/$'
+    '/' | '/artifacts' | '/login' | '/rune' | '/vault' | '/walk' | '/api/auth/$' | '/api/clip'
   fileRoutesByTo: FileRoutesByTo
   to:
-    '/' | '/artifacts' | '/login' | '/rune' | '/vault' | '/walk' | '/api/auth/$'
+    '/' | '/artifacts' | '/login' | '/rune' | '/vault' | '/walk' | '/api/auth/$' | '/api/clip'
   id:
     | '__root__'
     | '/'
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/vault'
     | '/walk'
     | '/api/auth/$'
+    | '/api/clip'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -107,6 +117,7 @@ export interface RootRouteChildren {
   VaultRoute: typeof VaultRoute
   WalkRoute: typeof WalkRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiClipRoute: typeof ApiClipRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -160,6 +171,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/clip': {
+      id: '/api/clip'
+      path: '/api/clip'
+      fullPath: '/api/clip'
+      preLoaderRoute: typeof ApiClipRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -171,6 +189,7 @@ const rootRouteChildren: RootRouteChildren = {
   VaultRoute: VaultRoute,
   WalkRoute: WalkRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiClipRoute: ApiClipRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -7,6 +7,7 @@ import {
   bootCookLoc,
   clearCookReady,
   cookOverlayForging,
+  biomeReadySrc,
   cookUrlsReady,
   lookForgeAlreadyDone,
   markLookForgeDone,
@@ -16,6 +17,7 @@ import {
   shouldResumeForgePlay,
   writeCookReady,
 } from "./cook-ready.ts";
+import { playableClipSrc, stockBiomeLoop } from "./play-clip.ts";
 import { parseBoltHash } from "../lib/bolt-history.ts";
 import { claimLookForgeAuto, resetLookForgeAuto, shouldAutoStartBotForge } from "./path-entry.ts";
 
@@ -53,7 +55,7 @@ describe("biome cook READY remount", () => {
   });
 
   it("READY snap remounts cook playable, not forging", () => {
-    const urls = ["https://cdn.example/sprint.mp4"];
+    const urls = [playableClipSrc("https://cdn.example/sprint.mp4")];
     assert.deepEqual(resolveCookStudioMount({ gate: "cook", readyUrls: urls }), {
       gate: "cook",
       forging: false,
@@ -66,16 +68,20 @@ describe("biome cook READY remount", () => {
 
   it("persists READY urls and restores them after remount", () => {
     assert.equal(readCookReady(), null);
+    const remote = "https://cdn.example/asteroid.mp4";
+    const playable = playableClipSrc(remote);
     const snap = writeCookReady({
       biome: "asteroid",
-      urls: ["https://cdn.example/asteroid.mp4", "/films/cook-asteroid.jpg"],
-      watch: "https://cdn.example/asteroid.mp4",
+      urls: [remote, "/films/cook-asteroid.jpg"],
+      watch: remote,
     });
     assert.ok(snap);
-    assert.deepEqual(snap?.urls, ["https://cdn.example/asteroid.mp4"]);
+    assert.deepEqual(snap?.urls, [playable]);
+    assert.equal(snap?.watch, playable);
+    assert.match(playable, /^\/api\/clip\?u=/);
     const got = readCookReady();
     assert.equal(got?.biome, "asteroid");
-    assert.deepEqual(got?.urls, ["https://cdn.example/asteroid.mp4"]);
+    assert.deepEqual(got?.urls, [playable]);
     clearCookReady();
     assert.equal(readCookReady(), null);
   });
@@ -84,6 +90,17 @@ describe("biome cook READY remount", () => {
     assert.deepEqual(cookUrlsReady(["/films/cook-asteroid.jpg", "/films/forge-asteroid.mp4"]), [
       "/films/forge-asteroid.mp4",
     ]);
+  });
+
+  it("biome ready uses a playable src, never a bare Imagine URL", () => {
+    const imagine = "https://imgen.x.ai/vid/asteroid-loop.mp4?sig=1";
+    const src = biomeReadySrc([imagine], "asteroid");
+    assert.match(src, /^\/api\/clip\?u=/);
+    assert.doesNotMatch(src, /^https:\/\/imgen/);
+    assert.equal(biomeReadySrc([], "asteroid"), stockBiomeLoop("asteroid"));
+    assert.equal(biomeReadySrc(["/films/cook-asteroid.jpg"], "asteroid"), "/ui/forge.mp4");
+    assert.equal(biomeReadySrc(["/films/forge-asteroid.mp4"], "asteroid"), "/films/forge-asteroid.mp4");
+    assert.equal(stockBiomeLoop("asteroid"), "/ui/forge.mp4");
   });
 
   it("artifacts remount keeps #forge/cook instead of forcing rifts", () => {
@@ -128,6 +145,8 @@ describe("forge=bot auto-start once", () => {
     assert.equal(lookForgeAlreadyDone("unit"), true);
     assert.equal(shouldResumeForgePlay({ done: true, liveId: "citadel-1" }), true);
     assert.equal(shouldResumeForgePlay({ done: true, liveId: "" }), false);
+    assert.equal(shouldResumeForgePlay({ done: true, liveId: "citadel-1", walks: false }), false);
+    assert.equal(shouldResumeForgePlay({ done: true, liveId: "citadel-1", walks: 0 }), false);
   });
 
   it("kickAutoBotForge claims look-forge auto and skips after READY", () => {
@@ -143,6 +162,8 @@ describe("forge=bot auto-start once", () => {
     assert.match(cook, /resolveCookStudioMount/);
     assert.match(cook, /cookOverlayForging/);
     assert.match(cook, /data-biome-cook="ready"/);
+    assert.match(cook, /biomeReadySrc/);
+    assert.match(cook, /data-biome-src/);
     assert.doesNotMatch(cook, /void cookAll\(\);\s*\n\s*void cookAll/);
     const cine = readFileSync(join(here, "../components/cine-app.tsx"), "utf8");
     assert.match(cine, /bootCookLoc/);

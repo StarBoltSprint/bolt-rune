@@ -418,7 +418,7 @@ function filmFromPlates(name: string, still: string, plates: string[], prompt?: 
 function asPlates(urls: string[], keepStock: boolean) {
   const plates: string[] = [];
   for (const u of urls.filter(Boolean)) {
-    if (!/\.mp4(\?|$)/i.test(u) && !u.includes("xai-vidgen")) continue;
+    if (!/\.mp4(\?|$)/i.test(u) && !u.includes("xai-vidgen") && !u.startsWith("/api/clip")) continue;
     if (!keepStock && /\/films\/forge-[a-z0-9]+\.mp4$/i.test(u)) continue;
     if (!plates.includes(u)) plates.push(u);
   }
