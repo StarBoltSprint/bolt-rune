@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, hangCardHall, sheetConfirmHall, swallowOpeningTap } from "./hang-ask.ts";
+import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, hangCardHall, hangStripCards, hangStripPick, sheetConfirmHall, swallowOpeningTap } from "./hang-ask.ts";
 
 function clickOn(target: { closest?: (sel: string) => unknown; getAttribute: (k: string) => string | null }) {
   const e = new Event("click", { bubbles: true, cancelable: true });
@@ -127,6 +127,35 @@ describe("hang ask leftover tap", () => {
     assert.equal(sheetConfirmHall(undefined, 8), 8);
   });
 
+  it("strip card index is not hall N — tap index 2 binds Room 3, not 8", () => {
+    const eight = [1, 2, 3, 4, 5, 6, 7, 8].map((hall) => ({
+      hall,
+      name: `Room ${hall}`,
+      still: "",
+      living: hall === 8,
+      bindHall: hall === 3 ? 8 : undefined,
+    }));
+    const cards = hangStripCards(eight);
+    assert.equal(cards[2]?.index, 2);
+    assert.equal(cards[2]?.hall, 3);
+    assert.equal(cards[2]?.bindHall, 8);
+    assert.equal(hangStripPick(eight, 2), 3);
+    assert.notEqual(hangStripPick(eight, 2), 8);
+    assert.notEqual(hangStripPick(eight, 2), eight.length);
+    assert.notEqual(hangStripPick(eight, 2), cards[2]?.index);
+    assert.notEqual(hangStripPick(eight, 2), cards[2]?.bindHall);
+    assert.equal(hangStripPick(eight, 7), 8);
+    assert.equal(sheetConfirmHall(hangStripPick(eight, 2), 8), 3);
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
+    assert.match(src, /data-hang-card-index=\{card\.index\}/);
+    assert.match(src, /data-hang-pick=\{n\}/);
+    assert.match(src, /hangStripPick\(rooms, card\.index\)/);
+    assert.doesNotMatch(src, /onHall\(i \+ 1\)/);
+    assert.doesNotMatch(src, /onHall\(card\.index\)/);
+    assert.doesNotMatch(src, /Room \{i \+ 1\}/);
+  });
+
   it("confirm passes the picked hall so Hang A room 2 does not bind room 1", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
@@ -137,7 +166,8 @@ describe("hang ask leftover tap", () => {
     assert.match(src, /if \(choseRef\.current\) return/);
     assert.match(src, /function pickHall/);
     assert.match(src, /data-hang-picked=\{picked\}/);
-    assert.match(src, /hangCardHall\(r\.hall\)/);
+    assert.match(src, /hangStripCards\(rooms\)/);
+    assert.match(src, /hangStripPick\(rooms, card\.index\)/);
     assert.match(src, /onPointerDown/);
     assert.doesNotMatch(src, /onPointerUp=\{\(e\) => \{\s*e\.stopPropagation\(\);\s*pick\(\);/);
     assert.doesNotMatch(src, /pickedRef\.current = picked;/);
@@ -188,6 +218,8 @@ describe("hang ask leftover tap", () => {
     assert.match(engine, /sheetConfirmHall\(hall/);
     assert.match(engine, /confirmHangHall\(rooms, hall\)/);
     assert.match(engine, /goHungHall\(bindHall/);
+    assert.match(engine, /hallsHold\.current\.find\(\(h\) => h\.n === n\)/);
+    assert.match(engine, /applyHall\(\{ \.\.\.slice, n \}, false\)/);
     assert.match(engine, /attachRift\(door, gate, bindHall\)/);
     assert.match(engine, /hungPlayChrome\(chromeHall/);
     assert.match(engine, /if \(hangAsk\) return/);

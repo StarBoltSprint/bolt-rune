@@ -156,6 +156,18 @@ describe("hang room pick", () => {
     assert.equal(confirmHangHall(living2, 8), 8);
   });
 
+  it("8-room citadel living 8 still lists card index 2 as hall 3", () => {
+    const eight = listHangRooms([cit(8, 8)], { id: "cit-1", hall: 8 });
+    assert.deepEqual(
+      eight.map((r) => r.hall),
+      [1, 2, 3, 4, 5, 6, 7, 8],
+    );
+    assert.equal(eight[2]?.hall, 3);
+    assert.notEqual(eight[2]?.hall, 8);
+    assert.notEqual(eight[2]?.hall, eight.length);
+    assert.equal(defaultHangRoom(eight), 8);
+  });
+
   it("Hang confirm pick Room 3 binds 3, not last hall 8", () => {
     const eight = listHangRooms([cit(8, 8)], { id: "cit-1", hall: 8 });
     assert.equal(defaultHangRoom(eight), 8);

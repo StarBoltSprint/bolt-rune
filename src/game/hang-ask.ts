@@ -1,4 +1,4 @@
-import { hallN } from "./rooms.ts";
+import { hallN, type HangRoomPick } from "./rooms.ts";
 
 /** Hang A leftover click typically lands 300–400ms later. Confirm stays off that tap. */
 export const HANG_CONFIRM_ARM_MS = 1100;
@@ -13,6 +13,30 @@ export function hangCardHall(n?: number | string | null): number {
 /** Confirm uses the tapped card N, not the parent column / last hang. */
 export function sheetConfirmHall(picked?: number | string | null, parentHall?: number | string | null): number {
   return hangCardHall(picked) || hangCardHall(parentHall) || 1;
+}
+
+export type HangStripCard = {
+  index: number;
+  hall: number;
+  bindHall?: number;
+};
+
+/**
+ * Strip cards: painted Room N is `r.hall`, never index+1, never bindHall, never list length.
+ * Cook-box Room 8 can pass (index 7 ≡ hall 8) while Room 3 (index 2) must still bind 3.
+ */
+export function hangStripCards(rooms: HangRoomPick[] = []): HangStripCard[] {
+  return rooms.flatMap((r, index) => {
+    const hall = hangCardHall(r.hall);
+    if (!hall) return [];
+    return [{ index, hall, bindHall: hangCardHall(r.bindHall) || undefined }];
+  });
+}
+
+/** Tap the card at `index` → that card's hall N. Never index+1, length, or bindHall. */
+export function hangStripPick(rooms: HangRoomPick[] = [], index: number): number {
+  const card = hangStripCards(rooms)[index];
+  return card?.hall || 0;
 }
 
 const SWALLOW = ["click", "pointerup", "touchend", "mouseup"] as const;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { vaultHangRoom } from "@/game/path-entry";
-import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, hangCardHall, sheetConfirmHall, swallowOpeningTap } from "@/game/hang-ask";
+import { HANG_CONFIRM_ARM_MS, HANG_LEFTOVER_SWALLOW_MS, hangCardHall, hangStripCards, hangStripPick, sheetConfirmHall, swallowOpeningTap } from "@/game/hang-ask";
 import { type HangRoomPick } from "@/game/rooms";
 import { press } from "@/lib/press";
 
@@ -18,43 +18,44 @@ export function HangRoomStrip({
 }) {
   return (
     <div className="flex gap-2 overflow-x-auto pb-1" data-hang-rooms="" data-hang-load-halls={rooms.length}>
-      {rooms.map((r, i) => {
-        const n = hangCardHall(r.hall) || r.hall;
-        const on = hall === n;
-        const pick = () => {
+      {hangStripCards(rooms).map((card) => {
+        const r = rooms[card.index];
+        const n = card.hall;
+        const pick = (from?: string | null) => {
           if (disabled) return;
-          onHall(n);
+          onHall(hangCardHall(from) || hangStripPick(rooms, card.index) || n);
         };
         return (
           <button
-            key={`${r.citadel || ""}-${n}-${i}`}
+            key={`${r?.citadel || ""}-${n}-${card.index}`}
             type="button"
             data-hang-pick={n}
+            data-hang-card-index={card.index}
             {...vaultHangRoom(n)}
-            aria-pressed={on}
+            aria-pressed={hall === n}
             disabled={disabled}
             className={`min-w-[6.4rem] overflow-hidden rounded-2xl border bg-black/50 text-left disabled:opacity-40 ${
-              on ? "border-[#9ef0e4]/70 ring-1 ring-[#9ef0e4]/35" : "border-white/25"
+              hall === n ? "border-[#9ef0e4]/70 ring-1 ring-[#9ef0e4]/35" : "border-white/25"
             }`}
             style={{ touchAction: "manipulation" }}
             onPointerDown={(e) => {
               e.stopPropagation();
-              pick();
+              pick(e.currentTarget.getAttribute("data-hang-pick"));
             }}
-            {...press(pick)}
+            {...press(() => pick(String(n)))}
           >
-            {r.still ? (
+            {r?.still ? (
               <img src={r.still} alt="" className="h-[4.4rem] w-full object-cover" />
             ) : (
               <div className="h-[4.4rem] w-full bg-[linear-gradient(180deg,rgba(158,240,228,0.16),rgba(7,8,12,0.7))]" />
             )}
             <span
               className={`block px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] ${
-                on ? "text-[#9ef0e4]" : "text-white/65"
+                hall === n ? "text-[#9ef0e4]" : "text-white/65"
               }`}
             >
               Room {n}
-              {r.living ? " · here" : rooms.length === 1 ? " · only" : ""}
+              {r?.living ? " · here" : rooms.length === 1 ? " · only" : ""}
             </span>
           </button>
         );

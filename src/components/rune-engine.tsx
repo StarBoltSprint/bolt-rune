@@ -2436,7 +2436,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       return;
     }
     rememberSlice(snapHall());
-    let slice = hallsHold.current[n - 1];
+    /* Index in hallsHold is not hall N — Room 3 is n=3, not hallsHold[2].n
+       when that slot still holds last-hung 8. */
+    let slice = hallsHold.current.find((h) => h.n === n) || hallsHold.current[n - 1];
+    if (slice && slice.n !== n) slice = { ...slice, n };
     if (!slice || !(slice.bank || []).length) {
       const first = pathFirst.current || "m1";
       const still = slice?.still || plateRef.current || startHold.current || HALL_STILL;
@@ -2453,7 +2456,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       };
       hallsHold.current = putSlice(hallsHold.current, slice);
     }
-    applyHall(slice, false);
+    applyHall({ ...slice, n }, false);
     setLiveHall(n);
     roomsHold.current = Math.max(roomsHold.current, n, hallsHold.current.length);
     persist({
