@@ -405,7 +405,6 @@ export function CitadelHub({
         fresh: false,
         plan: false,
         first: undefined,
-        stills: false,
         rooms: undefined,
         hall: hall && hall >= 1 ? hall : undefined,
         forge: undefined,

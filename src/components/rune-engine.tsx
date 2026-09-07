@@ -128,8 +128,10 @@ import {
   packIdentityStill,
   playCoverStill,
   playStillOrHall,
+  preferHalls,
   seedMayBankIdle,
   doorBreathPlayable,
+  sealedWalkPlayable,
   walkClipHoldsSeed,
   walkLastFrameSeed,
   type LivingPlayFrame,
@@ -989,6 +991,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       }))
       .filter((b) => b.url)
       .slice(0, 48);
+    const explicitWipe = Boolean(extra && Object.prototype.hasOwnProperty.call(extra, "bank") && !(extra.bank || []).length);
+    if (!explicitWipe && !snap.bank.length && bank.current.size) {
+      snap.bank = [...bank.current]
+        .map(([key, v]) => ({ key, url: slimU(v.url) || (v.url.startsWith("http") || v.url.startsWith("/") ? v.url : ""), end: slimClip(v.end), start: slimClip(v.start) || undefined }))
+        .filter((b) => b.url)
+        .slice(0, 48);
+    }
     if (snap.halls) {
       snap.halls = snap.halls.slice(0, 8).map((h) => ({
         ...h,
@@ -1004,6 +1013,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           .filter((r) => r.src)
           .slice(0, 8),
       }));
+      if (!explicitWipe) snap.halls = preferHalls(snap.halls, hallsHold.current) || snap.halls;
     }
     if ((extra?.phase ?? phaseRef.current) === "play") {
       markLivePlay(snap.id, snap.here, hallKeep.current || durableStill(snap.plate) || "");
@@ -2241,12 +2251,16 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       lastPose.current,
     );
     let clip = clipFor(at, id);
-    if (!clip || !walkClipHoldsSeed(clip, seed)) {
+    /* Load / Play: sealed bank walks play. Imagine only if the clip is truly missing. */
+    if (!sealedWalkPlayable(clip)) {
       const stock = stockDoorWalk(at, id);
       if (stock && !seed) {
         clip = clip || stock;
         bank.current.set(`${at}→${id}`, stock);
-      } else {
+      } else if (!clip?.url) {
+        setFrost(`cook · ${at} → ${id}`);
+        clip = (await forgeWalkNow(at, id)) || clip;
+      } else if (!walkClipHoldsSeed(clip, seed)) {
         setFrost(`cook · ${at} → ${id}`);
         clip = (await forgeWalkNow(at, id)) || clip;
       }
@@ -2712,7 +2726,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function rememberSlice(slice: HallSlice) {
-    hallsHold.current = putSlice(hallsHold.current, slice);
+    const prev = hallsHold.current.find((h) => h.n === slice.n);
+    const live = (slice.bank || []).filter((b) => b?.url).length;
+    const next =
+      live > 0
+        ? { ...slice, bank: mergeBankClips(slice.bank, prev?.bank) }
+        : prev?.bank?.length
+          ? { ...slice, bank: prev.bank, still: slice.still || prev.still, plate: slice.plate || prev.plate, start: slice.start || prev.start }
+          : slice;
+    hallsHold.current = putSlice(hallsHold.current, next);
     roomsHold.current = Math.max(1, hallsHold.current.length);
   }
 
@@ -5484,13 +5506,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (slice && (wantHall > 1 || (slice.bank || []).length > (s.bank || []).length)) {
       applyHall(slice, false, "hydrate");
     }
-    rememberSlice(snapHall());
-    persist({
-      halls: hallsHold.current.length ? hallsHold.current : undefined,
-      rooms: roomsHold.current,
-      hall: wantHall,
-      from: undefined,
-    });
+    /* Load play hydrates only — never persist an empty/thinner snap over the cooked bank. */
+    if (bank.current.size) rememberSlice(snapHall());
     const localEnd = [...bank.current.values()].map((v) => v.end).find((u) => u && u.startsWith("/films/") && !u.includes("hall-doors")) || "";
     if (!hangArt.current) {
     void (async () => {

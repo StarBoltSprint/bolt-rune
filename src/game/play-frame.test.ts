@@ -19,6 +19,8 @@ import {
   mergeBankClips,
   packIdentityStill,
   pictureNeverStops,
+  preferHalls,
+  sealedWalkPlayable,
   playCoverStill,
   playStillOrHall,
   seedMayBankIdle,
@@ -258,6 +260,7 @@ describe("A↔B last-frame seed chain", () => {
     assert.match(cookIdle, /bank\.current\.set\(`idle-\$\{node\}`, \{ url, end: frame \}\)/);
     assert.doesNotMatch(cookIdle, /if \(!bank\.current\.has\(`idle-\$\{node\}`\)\)/);
     const playWalk = src.slice(src.indexOf("async function playWalk"), src.indexOf("async function saveFilms"));
+    assert.match(playWalk, /sealedWalkPlayable\(clip\)/);
     assert.match(playWalk, /stockDoorWalk\(at, id\)/);
     assert.match(playWalk, /walkLastFrameSeed\(/);
     assert.match(playWalk, /walkClipHoldsSeed\(/);
@@ -311,6 +314,14 @@ describe("picture never stops — Play / Load / forge-complete", () => {
     assert.equal(merged.length, 2);
     assert.equal(merged.find((b) => b.key === "spawn→m1")?.start, COOKED_HALL);
     assert.equal(mergeBankClips([], keep).length, 2);
+    const cooked = [{ n: 1, bank: keep }];
+    const emptyMore = [
+      { n: 1, bank: [] },
+      { n: 2, bank: [] },
+    ];
+    assert.equal(preferHalls(emptyMore, cooked), cooked);
+    assert.equal(sealedWalkPlayable({ url: WALK, end: COOKED_HALL }), true);
+    assert.equal(sealedWalkPlayable({ url: HALL_LOOP, end: HALL_STILL }), false);
   });
 
   it("Films tray hides Still A / Still B when they equal hall/seed", () => {
@@ -324,7 +335,10 @@ describe("picture never stops — Play / Load / forge-complete", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     const hub = readFileSync(join(here, "../components/citadel-hub.tsx"), "utf8");
-    assert.match(hub, /function playSession/);
+    const playAt = hub.indexOf("function playSession");
+    const playSession = hub.slice(playAt, hub.indexOf("return (", playAt));
+    assert.match(playSession, /function playSession/);
+    assert.doesNotMatch(playSession, /stills:\s*false/);
     assert.match(src, /mergeBankClips\(/);
     assert.match(src, /applyHall\(slice, false, "hydrate"\)/);
     assert.match(src, /start: b\.start/);
@@ -335,6 +349,14 @@ describe("picture never stops — Play / Load / forge-complete", () => {
     assert.doesNotMatch(src, /refs\.length > 0 && phase !== "play"/);
     const open = src.slice(src.indexOf("async function openSession"), src.indexOf("function wipeSession"));
     assert.match(open, /holdIdle\(\)/);
+    assert.match(open, /if \(bank\.current\.size\) rememberSlice\(snapHall\(\)\)/);
+    assert.doesNotMatch(open, /rememberSlice\(snapHall\(\)\);\s*persist\(\{/);
+    const persistFn = src.slice(src.indexOf("function persist("), src.indexOf("function goBack("));
+    assert.match(persistFn, /explicitWipe/);
+    assert.match(persistFn, /preferHalls\(snap\.halls, hallsHold\.current\)/);
+    const remember = src.slice(src.indexOf("function rememberSlice"), src.indexOf("function applyHall"));
+    assert.match(remember, /mergeBankClips\(slice\.bank, prev\?\.bank\)/);
+    assert.match(remember, /prev\?\.bank\?\.length/);
     const finish = src.slice(src.indexOf("if (!liveForge.current) return;\n    liveForge.current = false;"));
     assert.match(finish, /holdIdle\(\)/);
     assert.match(src, /BOLT_BODY, lookHall\.current/);

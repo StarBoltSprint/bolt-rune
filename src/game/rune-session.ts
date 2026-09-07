@@ -3,6 +3,7 @@ import { dropCitadelAll, dropCitadelHall, hallN, livingLoadPacks, loadHangHallCo
 import { unbindDroppedHalls } from "@/game/artifacts.ts";
 import { dropHangPending, writeHangFloor } from "@/game/hang-ask.ts";
 import { dropCitadel, dropGuestCitadel, getCitadel, getGuestCitadel, listCitadels, listGuestCitadels, putCitadel, putGuestCitadel } from "@/lib/citadel-cloud";
+import { preferHalls } from "@/game/play-frame.ts";
 
 const DB = "bolt-rune-sessions";
 const TABLE = "sessions";
@@ -922,11 +923,11 @@ export function saveSessionSync(session: RuneSession): RuneSessionMeta {
     rooms: roomCap({
       rooms: keepRooms(packed.rooms, kept.rooms),
       hall: packed.hall || kept.hall,
-      halls: (packed.halls?.length || 0) >= (kept.halls?.length || 0) ? packed.halls : kept.halls,
+      halls: preferHalls(packed.halls, kept.halls),
     }),
     hall: packed.hall || kept.hall,
     title: packed.title || kept.title,
-    halls: (packed.halls?.length || 0) >= (kept.halls?.length || 0) ? packed.halls : kept.halls,
+    halls: preferHalls(packed.halls, kept.halls),
     updated: Math.max(packed.updated || 0, kept.updated || 0, Date.now()),
   };
   merged.rooms = roomCap(merged);

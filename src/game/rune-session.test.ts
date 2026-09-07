@@ -13,9 +13,11 @@ describe("Load hydrate keeps cooked bank start", () => {
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     assert.match(session, /export function packBankClips/);
     assert.match(session, /start \? \{ start \}/);
+    assert.match(session, /preferHalls\(packed\.halls, kept\.halls\)/);
     assert.match(cloud, /start: httpUrl\(b\.start\)/);
     assert.match(engine, /slimClip\(b\.start\)/);
     assert.match(engine, /mergeBankClips/);
+    assert.match(engine, /sealedWalkPlayable/);
   });
 });
 

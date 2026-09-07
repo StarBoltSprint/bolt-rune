@@ -92,6 +92,31 @@ export function walkClipHoldsSeed(
   return from === next;
 }
 
+/** Sealed Imagine walk — Load Door A must play this, never re-Imagine. */
+export function sealedWalkPlayable(
+  clip?: { url?: string | null; end?: string | null; start?: string | null } | null,
+): boolean {
+  return Boolean(clip?.url) && !isStockHallClip(clip);
+}
+
+export function hallBankCount(halls?: { bank?: { url?: string | null }[] }[] | null): number {
+  return (halls || []).reduce((n, h) => n + (h.bank || []).filter((b) => b?.url).length, 0);
+}
+
+/** Keep richer cooked hall banks. More empty halls must not wipe clips. */
+export function preferHalls<T extends { bank?: { url?: string | null }[] }>(
+  packed?: T[] | null,
+  kept?: T[] | null,
+): T[] | undefined {
+  const pc = hallBankCount(packed);
+  const kc = hallBankCount(kept);
+  if (pc !== kc) return (pc > kc ? packed : kept) || undefined;
+  const pl = packed?.length || 0;
+  const kl = kept?.length || 0;
+  if (pl !== kl) return (pl > kl ? packed : kept) || undefined;
+  return packed || kept || undefined;
+}
+
 export type BankRow = { key: string; url: string; end?: string; start?: string };
 
 /** Union two banks. Existing keys keep url/end/start; incoming only fills gaps or adds keys. */
