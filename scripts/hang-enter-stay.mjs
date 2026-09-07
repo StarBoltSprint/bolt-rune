@@ -38,14 +38,20 @@ async function snapStay(page) {
     const play = document.querySelector("[data-biome-play]");
     const engine = document.querySelector("[data-rune=engine]");
     const vid = play?.querySelector("video");
+    const img = play?.querySelector("img");
     const src = vid?.getAttribute("data-url") || vid?.currentSrc || vid?.getAttribute("src") || "";
+    const poster = img?.currentSrc || img?.getAttribute("src") || vid?.getAttribute("poster") || "";
+    const plate = play?.querySelector("[data-biome-plate]")?.getAttribute("data-biome-plate") || "";
     return {
       play: Boolean(play),
       stay: play?.getAttribute("data-biome-stay") === "1",
       door: play?.getAttribute("data-biome-door") || "",
       name: play?.getAttribute("data-biome-name") || "",
       src,
-      hallFilm: /citadel/i.test(src),
+      poster,
+      plate,
+      hallFilm: /citadel/i.test(src) || /\/ui\/forge\.mp4/i.test(src),
+      biomeStill: /cook-forest|\/films\/cook-/.test(poster),
       hall: engine?.getAttribute("data-hall") || "",
       phase: engine?.getAttribute("data-phase") || "",
       rift: engine?.getAttribute("data-rift") || "",
@@ -87,11 +93,16 @@ async function runCase(browser, name, url) {
     await page.waitForSelector("[data-biome-play]", { timeout: 8000 });
     await page.waitForTimeout(1400);
     const stay = await snapStay(page);
-    if (!stay.play || !stay.stay || stay.miss || stay.fracture || stay.room1 || stay.hallFilm) {
+    if (!stay.play || !stay.stay || stay.miss || stay.fracture || stay.room1 || stay.hallFilm || !stay.biomeStill) {
       throw new Error(`${name}: hang hall 2 door A did not stay biome ${JSON.stringify(stay)}`);
     }
+    await page.waitForTimeout(2500);
+    const held = await snapStay(page);
+    if (!held.play || !held.stay || held.fracture || held.room1 || held.hallFilm || !held.biomeStill) {
+      throw new Error(`${name}: biome snapped back to the room ${JSON.stringify(held)}`);
+    }
     await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: false });
-    return { ok: true, name, stay };
+    return { ok: true, name, stay, held };
   } finally {
     await page.close();
   }

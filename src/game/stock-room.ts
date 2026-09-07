@@ -65,6 +65,14 @@ export function isHallFilm(u?: string | null) {
   return s.includes("/ui/citadel.mp4") || s.includes("/films/citadel-tour") || s.includes("/films/citadel.jpg");
 }
 
+/** Landing / living-hall loops. Playing these after Door A is the snap-back to the room. */
+export function isLivingHallLoop(u?: string | null) {
+  if (!u) return false;
+  if (isHallFilm(u)) return true;
+  const s = u.toLowerCase();
+  return s.includes("/ui/forge.mp4") || s.includes("/ui/citadel.jpg") || s.includes("/ui/forge.jpg");
+}
+
 function otherDoor(first: "m1" | "m2"): "m1" | "m2" {
   return first === "m1" ? "m2" : "m1";
 }

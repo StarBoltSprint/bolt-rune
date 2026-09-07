@@ -122,12 +122,15 @@ describe("enter graph · hang any artefact on any door", () => {
     assert.match(enter.still, /cook-forest/);
     assert.notEqual(enter.still, "/films/citadel-tour.jpg");
     assert.ok(!enter.still.includes("citadel-tour"));
-    assert.ok(!enter.clips.some((u) => u.includes("citadel") || u.includes("/ui/citadel")), enter.clips.join(","));
+    assert.ok(!enter.clips.some((u) => u.includes("citadel") || u.includes("/ui/citadel") || u.includes("/ui/forge.mp4")), enter.clips.join(","));
     assert.notEqual(enter.clips[0], HALL_LOOP);
-    assert.ok(enter.clips.length >= 1, "biome playlist missing");
     assert.ok(
-      enter.clips.some((u) => u.includes("forge-forest") || u.includes("/ui/forge.mp4")),
-      `expected forest/stock loop, got ${enter.clips.join(",")}`,
+      !enter.clips.some((u) => u.includes("/ui/forge.mp4")),
+      `hall forge loop leaked into stay play: ${enter.clips.join(",")}`,
+    );
+    assert.ok(
+      enter.clips.every((u) => !u.includes("/ui/forge.mp4") && !u.includes("/ui/citadel")),
+      enter.clips.join(","),
     );
     assert.equal(firstBiomePlate(enter.clips), 0);
     assert.equal(shouldHoldBiome(enter.clips, firstBiomePlate(enter.clips)), true);

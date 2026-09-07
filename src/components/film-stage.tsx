@@ -20,7 +20,7 @@ import { cacheClip } from "@/lib/cook";
 import { playableClipSrc, stockBiomeLoop } from "@/game/play-clip";
 import { HazardLayer } from "@/components/hazard-layer";
 import { doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
-import { doorAtPoint, isHallFilm } from "@/game/stock-room";
+import { doorAtPoint, isHallFilm, isLivingHallLoop } from "@/game/stock-room";
 
 export type RunResult = {
   score: number;
@@ -260,8 +260,14 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       el.load();
     }
     el.onerror = () => {
-      if (isHallFilm(url)) return;
+      if (holdDoorRef.current) {
+        setUsingStill(true);
+        setLive(false);
+        return;
+      }
+      if (isHallFilm(url) || isLivingHallLoop(url)) return;
       if (el.getAttribute("src") === stockBiomeLoop()) return;
+      if (isLivingHallLoop(stockBiomeLoop())) return;
       el.setAttribute("data-url", stockBiomeLoop());
       el.src = stockBiomeLoop();
       el.load();
@@ -304,7 +310,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     laneRef.current = 0;
     swapLock.current = 0;
     const raw = uniqueClips(film.playlist || []);
-    const keep = holdDoor ? raw.filter((u) => !isHallFilm(u)) : raw;
+    const keep = holdDoor ? raw.filter((u) => !isLivingHallLoop(u)) : raw;
     const list = (keep.length ? keep : raw).map(localizeClip);
     platesRef.current = list.slice();
     hallFlagsRef.current = list.map((u) => isHallFilm(u) || Boolean(sprintHallDoor(u, 0.22, 0.42)));
@@ -546,7 +552,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       const listLen = Math.max(1, (platesRef.current.length ? platesRef.current : film.playlist || []).length);
       if (usingStill && phaseRef.current === "run" && t >= film.chart) {
         const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
-        if (custom && shouldHoldBiome(list, plateRef.current)) holdBiomePlate(v);
+        if (custom && (holdDoorRef.current || shouldHoldBiome(list, plateRef.current))) holdBiomePlate(v);
         else finish(g);
       } else if (
         phaseRef.current === "run" &&
@@ -558,7 +564,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         v.duration > 1
       ) {
         const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
-        if (custom && shouldHoldBiome(list, plateRef.current)) holdBiomePlate(v);
+        if (custom && (holdDoorRef.current || shouldHoldBiome(list, plateRef.current))) holdBiomePlate(v);
         else finish(g);
       }
 
@@ -837,15 +843,38 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   function holdBiomePlate(el?: HTMLVideoElement | null) {
     const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
     const i = firstBiomePlate(list);
-    const next = list[i] && !isHallFilm(list[i]) ? list[i] : stockBiomeLoop();
+    const candidate = list[i] && !isLivingHallLoop(list[i]) ? list[i] : "";
+    const next = candidate || (holdDoorRef.current ? "" : stockBiomeLoop());
     plateRef.current = Math.max(0, i);
     advancing.current = false;
+    if (!next || isLivingHallLoop(next)) {
+      setUsingStill(true);
+      setLive(false);
+      return;
+    }
     const v = el || videoRef.current;
-    if (!v) return;
+    if (!v) {
+      setUsingStill(true);
+      return;
+    }
     armPlate(v, next);
     void v.play().then(() => setLive(true)).catch(() => {
-      armPlate(v, stockBiomeLoop());
-      void v.play().then(() => setLive(true)).catch(() => {});
+      if (holdDoorRef.current) {
+        setUsingStill(true);
+        setLive(false);
+        return;
+      }
+      const fallback = stockBiomeLoop();
+      if (isLivingHallLoop(fallback)) {
+        setUsingStill(true);
+        setLive(false);
+        return;
+      }
+      armPlate(v, fallback);
+      void v.play().then(() => setLive(true)).catch(() => {
+        setUsingStill(true);
+        setLive(false);
+      });
     });
   }
 
@@ -1031,6 +1060,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       className="relative h-dvh w-full overflow-hidden bg-bg text-fg select-none"
       data-sprint={ramp ? "1" : undefined}
       data-ramp={ramp ? "1" : undefined}
+      data-biome-plate={holdDoor ? (usingStill || !live ? "still" : "clip") : undefined}
       style={{ touchAction: film.pad === "arrows" ? "none" : "manipulation" }}
       onPointerDown={pointerDown}
       onPointerUp={pointerUp}
@@ -1096,7 +1126,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
               goNextPlate();
               return;
             }
-            if (custom && shouldHoldBiome(list, plateRef.current)) {
+            if (custom && (holdDoorRef.current || shouldHoldBiome(list, plateRef.current))) {
               holdBiomePlate(aRef.current);
               return;
             }
@@ -1106,11 +1136,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           onError={() => {
             const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
             const at = list[plateRef.current] || "";
-            if (isHallFilm(at) && plateRef.current < list.length - 1) {
+            if ((isHallFilm(at) || isLivingHallLoop(at)) && plateRef.current < list.length - 1) {
               goNextPlate();
               return;
             }
-            if (custom && shouldHoldBiome(list, plateRef.current)) {
+            if (custom && (holdDoorRef.current || shouldHoldBiome(list, plateRef.current))) {
               holdBiomePlate(aRef.current);
               return;
             }
@@ -1143,7 +1173,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
               goNextPlate();
               return;
             }
-            if (custom && shouldHoldBiome(list, plateRef.current)) {
+            if (custom && (holdDoorRef.current || shouldHoldBiome(list, plateRef.current))) {
               holdBiomePlate(bRef.current);
               return;
             }
@@ -1153,11 +1183,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           onError={() => {
             const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
             const at = list[plateRef.current] || "";
-            if (isHallFilm(at) && plateRef.current < list.length - 1) {
+            if ((isHallFilm(at) || isLivingHallLoop(at)) && plateRef.current < list.length - 1) {
               goNextPlate();
               return;
             }
-            if (custom && shouldHoldBiome(list, plateRef.current)) {
+            if (custom && (holdDoorRef.current || shouldHoldBiome(list, plateRef.current))) {
               holdBiomePlate(bRef.current);
               return;
             }

@@ -1,7 +1,7 @@
 import type { HungArtifact, HungRoom } from "./artifacts.ts";
 import { stockBiomeLoop } from "./play-clip.ts";
 import type { RiftGate } from "./rune-session.ts";
-import { doorAtPoint, HALL_LOOP, isHallFilm } from "./stock-room.ts";
+import { doorAtPoint, HALL_LOOP, isHallFilm, isLivingHallLoop } from "./stock-room.ts";
 
 export type DoorLetter = "A" | "B";
 export type DoorId = "m1" | "m2";
@@ -310,7 +310,7 @@ export function hallDoorTap(
 }
 
 export function firstBiomePlate(playlist: Array<string | null | undefined> = []): number {
-  const i = playlist.findIndex((u) => u && !isHallFilm(u));
+  const i = playlist.findIndex((u) => u && !isLivingHallLoop(u));
   return i < 0 ? 0 : i;
 }
 
@@ -318,8 +318,8 @@ export function firstBiomePlate(playlist: Array<string | null | undefined> = [])
 export function shouldHoldBiome(playlist: Array<string | null | undefined> = [], i = 0): boolean {
   if (!playlist.length) return false;
   const at = playlist[i];
-  if (at && !isHallFilm(at)) return true;
-  return i >= playlist.length - 1 && playlist.some((u) => u && !isHallFilm(u));
+  if (at && !isLivingHallLoop(at)) return true;
+  return i >= playlist.length - 1 && playlist.some((u) => u && !isLivingHallLoop(u));
 }
 
 /**
@@ -331,11 +331,12 @@ export function stayBiomePlay(enter: DoorEnter): DoorEnter {
   if (enter.kind !== "biome") return enter;
   const still = enter.still && !isHallFilm(enter.still) ? enter.still : biomeStill(enter.biome);
   const rawTrans = enter.trans && /\.mp4(\?|$)/i.test(enter.trans) ? enter.trans : "";
-  const trans = rawTrans && !isHallFilm(rawTrans) ? rawTrans : "";
+  const trans = rawTrans && !isLivingHallLoop(rawTrans) ? rawTrans : "";
   const loops = uniq(
-    [...(enter.playlist || []), ...stockBiomePlaylist(enter.biome), stockBiomeLoop(enter.biome)].filter((u) => u && !isHallFilm(u)),
+    [...(enter.playlist || []), ...stockBiomePlaylist(enter.biome)].filter((u) => u && !isLivingHallLoop(u)),
   );
-  if (!loops.length) loops.push(stockBiomeLoop(enter.biome));
+  const fallback = stockBiomeLoop(enter.biome);
+  if (!loops.length && fallback && !isLivingHallLoop(fallback)) loops.push(fallback);
   const clips = uniq([trans, ...loops].filter(Boolean));
   return {
     ...enter,
