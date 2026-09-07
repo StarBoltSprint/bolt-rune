@@ -753,7 +753,7 @@ export function VaultHall() {
         />
       ) : null}
       {shift ? (
-        <div className="absolute inset-0 z-50 flex flex-col bg-black/82 px-5 pt-[max(1.6rem,env(safe-area-inset-top))] pb-[max(1.6rem,env(safe-area-inset-bottom))]">
+        <div className="fixed inset-0 z-[70] flex flex-col bg-black/90 px-5 pt-[max(1.6rem,env(safe-area-inset-top))] pb-[max(1.6rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
             className="self-start font-mono text-[10px] uppercase tracking-[0.42em] text-white/55"
