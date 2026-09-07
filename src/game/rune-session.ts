@@ -175,6 +175,7 @@ function keepStill(u?: string) {
 
 function metaOf(s: Partial<RuneSession> & RuneSessionMeta): RuneSessionMeta {
   const walks = Array.isArray(s.bank) ? s.bank.filter((b) => b?.url).length : s.walks || 0;
+  const hallNs = (s.halls || []).map((h) => Math.max(0, Number(h.n) || 0));
   return {
     id: s.id,
     name: s.name || "Room",
@@ -183,7 +184,7 @@ function metaOf(s: Partial<RuneSession> & RuneSessionMeta): RuneSessionMeta {
     want: s.want || 2,
     walks,
     thumb: keepUrl(s.thumb) || keepUrl(s.plate) || "/refs/hall-doors.jpg",
-    rooms: Array.isArray(s.halls) && s.halls.length ? s.halls.length : s.rooms,
+    rooms: keepRooms(s.rooms, Math.max(s.halls?.length || 0, ...hallNs, s.hall || 0)),
     hall: s.hall,
     from: s.from,
     via: s.via,
@@ -588,7 +589,7 @@ function keepHalls(halls?: HallSlice[], stills = false): HallSlice[] | undefined
       via: h.via,
       next: h.next,
     }))
-    .filter((h) => h.still || h.bank.length || h.refs.length);
+    .filter((h) => h.n >= 1);
 }
 
 function lightOf(session: RuneSession): RuneSession {

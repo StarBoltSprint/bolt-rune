@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { citadelRoomCount } from "@/game/rooms";
 import type { HallSlice, RiftGate, RuneSession, RuneSessionMeta } from "@/game/rune-session";
 
 type Row = {
@@ -44,7 +45,7 @@ function metaFrom(session: RuneSession): RuneSessionMeta {
     want: session.want || 2,
     walks: Array.isArray(session.bank) ? session.bank.filter((b) => b?.url).length : session.walks || 0,
     thumb: httpUrl(session.thumb) || httpUrl(session.plate) || "/refs/hall-doors.jpg",
-    rooms: Array.isArray(session.halls) && session.halls.length ? session.halls.length : session.rooms,
+    rooms: citadelRoomCount({ rooms: session.rooms, hall: session.hall, halls: session.halls }),
     hall: session.hall,
     from: session.from,
     via: session.via,
@@ -173,7 +174,7 @@ function keepHalls(halls?: HallSlice[]): HallSlice[] | undefined {
         next: h.next,
       };
     })
-    .filter((h) => h.still || h.bank.length);
+    .filter((h) => h.n >= 1);
 }
 
 function pack(session: RuneSession): { meta: RuneSessionMeta; body: string; session: RuneSession } {
@@ -193,7 +194,7 @@ function pack(session: RuneSession): { meta: RuneSessionMeta; body: string; sess
     want: Math.max(1, Math.min(8, Number(session.want) || 2)),
     walks: bank.length,
     thumb: httpUrl(session.thumb) || httpUrl(session.plate) || "/refs/hall-doors.jpg",
-    rooms: Array.isArray(session.halls) && session.halls.length ? session.halls.length : session.rooms,
+    rooms: citadelRoomCount({ rooms: session.rooms, hall: session.hall, halls: session.halls }),
     hall: session.hall,
     walkSecs: session.walkSecs === 6 ? 6 : 10,
     pins: Array.isArray(session.pins) ? session.pins.slice(0, 8) : [],
