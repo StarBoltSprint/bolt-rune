@@ -133,6 +133,7 @@ import {
   playStillOrHall,
   preferHalls,
   seedMayBankIdle,
+  breathTapWalksNow,
   doorBreathPlayable,
   sealedWalkPlayable,
   walkClipHoldsSeed,
@@ -1529,7 +1530,18 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     if (phaseRef.current === "play") {
       const stock = stockHallNow();
-      if (!stock && (playing.current || beatRef.current === "playvid" || beatRef.current === "walk")) {
+      const cutBreath = breathTapWalksNow({
+        here: hereRef.current,
+        door: id,
+        beat: beatRef.current,
+        filmLoop: filmLoop.current,
+      });
+      if (cutBreath) {
+        /* Abort idle-spawn / idle-m1 / idle-m2 / arrival breath — walk the new marker now. */
+        filmLoop.current = false;
+        wrapping.current = false;
+        playing.current = false;
+      } else if (!stock && (playing.current || beatRef.current === "playvid" || beatRef.current === "walk")) {
         queued.current = id;
         return;
       }
@@ -2232,17 +2244,23 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       return;
     }
     walkingTo.current = id;
+    /* Abort any looping breath now (idle-spawn / idle-m1 / idle-m2 / arrival). Never await shotEnd(idle). */
+    filmLoop.current = false;
+    wrapping.current = false;
+    loadGen.current += 1;
     const idleNow = idleFor(at);
     if (doorBreathPlayable(idleNow)) {
-      const breathEnd = await shotEnd(idleNow!.url, breathStill(at) || lastLive.current || "");
-      const keep = walkLastFrameSeed(breathEnd) || breathEnd;
+      const keep = walkLastFrameSeed(
+        breathStill(at),
+        idleNow.end,
+        refsMap.current.get(`pose-${at}`),
+        lastLive.current,
+        lastPose.current,
+      );
       if (keep) {
         refsMap.current.set(`pose-${at}`, keep);
         lastLive.current = keep;
         lastPose.current = keep;
-        bank.current.set(`idle-${at}`, { url: idleNow!.url, end: keep, start: idleNow!.end });
-        const viaIdle = cameFrom.current && cameFrom.current !== at ? cameFrom.current : "start";
-        bank.current.set(`idle-${at}←${viaIdle}`, { url: idleNow!.url, end: keep, start: idleNow!.end });
       }
     }
     const seed = walkLastFrameSeed(

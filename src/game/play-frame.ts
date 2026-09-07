@@ -215,6 +215,33 @@ export function filmTrayStillKeep(
   return !plate || still !== plate;
 }
 
+/** Door A/B aliases; spawn and other marker ids stay as-is. */
+export function playNodeId(id?: string | null): string {
+  const s = String(id || "").trim();
+  if (s === "A" || s === "m1") return "m1";
+  if (s === "B" || s === "m2") return "m2";
+  return s;
+}
+
+/**
+ * Other-marker tap while ANY idle/breath is looping (idle-spawn, idle-m1, idle-m2, arrival).
+ * Walk starts now — never queue until clip end, kickPlay loop boundary, or shotEnd(idle).
+ * Same-node stay / hung 2nd-tap enter is not this. Mid-walk / cook stays queued.
+ */
+export function breathTapWalksNow(opts: {
+  here?: string | null;
+  door?: string | null;
+  beat?: string | null;
+  filmLoop?: boolean;
+}): boolean {
+  const door = playNodeId(opts.door);
+  const here = playNodeId(opts.here);
+  if (!door || door === here) return false;
+  const beat = String(opts.beat || "");
+  if (beat === "playvid" || beat === "walk" || beat === "cook") return false;
+  return Boolean(opts.filmLoop) || beat === "idle" || beat === "shot" || !beat;
+}
+
 /**
  * Visible door breath — a looping idle clip, not the walk and not stock HALL_LOOP.
  * Stock idle-* is the same spawn loop as the walk; play must not treat it as breath.

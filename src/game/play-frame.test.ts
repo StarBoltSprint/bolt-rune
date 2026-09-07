@@ -9,6 +9,7 @@ import { clipWarmSrc, playableClipSrc, sameClipSrc, warmClip, warmedClip } from 
 import {
   arrivalBreathUrl,
   arrivalEndStill,
+  breathTapWalksNow,
   cookHasWalks,
   doorArrivalNeedsCook,
   filmTrayStillKeep,
@@ -20,6 +21,7 @@ import {
   mergeBankClips,
   packIdentityStill,
   pictureNeverStops,
+  playNodeId,
   preferHalls,
   sealedWalkPlayable,
   playCoverStill,
@@ -332,7 +334,13 @@ describe("A↔B last-frame seed chain", () => {
     assert.match(playWalk, /walkClipHoldsSeed\(/);
     assert.match(playWalk, /doorBreathPlayable\(/);
     assert.match(playWalk, /enterDoorBreath\(/);
-    assert.match(playWalk, /shotEnd\(idleNow/);
+    assert.doesNotMatch(playWalk, /shotEnd\(idleNow/);
+    const walkKick = playWalk.slice(0, playWalk.indexOf("playFilm("));
+    assert.doesNotMatch(walkKick, /^\s*await shotEnd\(/m);
+    assert.match(playWalk, /Abort any looping breath now/);
+    assert.match(playWalk, /Never await shotEnd\(idle\)/);
+    assert.match(playWalk, /filmLoop\.current = false/);
+    assert.match(playWalk, /loadGen\.current \+= 1/);
     assert.match(playWalk, /shotEnd\(clip\.url/);
     assert.match(playWalk, /pose-\$\{id\}/);
     assert.match(playWalk, /start: clip\.start \|\| seed/);
@@ -365,6 +373,85 @@ describe("A↔B last-frame seed chain", () => {
     assert.match(forgeNow, /walkLastFrameSeed\(/);
     assert.match(forgeNow, /start: fromStill/);
     assert.match(cookWalks, /start: fromStill/);
+  });
+});
+
+describe("breath tap interrupts any idle — spawn↔A, spawn↔B, A↔B", () => {
+  const idle = { beat: "idle" as const, filmLoop: true };
+  const pairs: Array<{ here: string; door: string; label: string }> = [
+    { here: "spawn", door: "m1", label: "spawn→A" },
+    { here: "spawn", door: "A", label: "spawn→A alias" },
+    { here: "spawn", door: "m2", label: "spawn→B" },
+    { here: "spawn", door: "B", label: "spawn→B alias" },
+    { here: "m1", door: "m2", label: "A→B" },
+    { here: "A", door: "B", label: "A→B alias" },
+    { here: "m2", door: "m1", label: "B→A" },
+    { here: "B", door: "A", label: "B→A alias" },
+    { here: "m1", door: "spawn", label: "A→spawn" },
+    { here: "m2", door: "spawn", label: "B→spawn" },
+  ];
+
+  it("playNodeId maps Door A/B and keeps spawn / other markers", () => {
+    assert.equal(playNodeId("A"), "m1");
+    assert.equal(playNodeId("m1"), "m1");
+    assert.equal(playNodeId("B"), "m2");
+    assert.equal(playNodeId("m2"), "m2");
+    assert.equal(playNodeId("spawn"), "spawn");
+    assert.equal(playNodeId("m3"), "m3");
+    assert.equal(playNodeId(""), "");
+  });
+
+  it("other-marker tap during any looping breath walks now", () => {
+    for (const p of pairs) {
+      assert.equal(breathTapWalksNow({ ...idle, here: p.here, door: p.door }), true, p.label);
+      assert.equal(breathTapWalksNow({ here: p.here, door: p.door, beat: "idle", filmLoop: false }), true, `${p.label} idle no loop`);
+      assert.equal(breathTapWalksNow({ here: p.here, door: p.door, beat: "shot", filmLoop: true }), true, `${p.label} shot`);
+    }
+    assert.equal(breathTapWalksNow({ here: "m3", door: "m1", beat: "idle", filmLoop: true }), true, "other marker→A");
+    assert.equal(breathTapWalksNow({ here: "spawn", door: "m3", beat: "idle", filmLoop: true }), true, "spawn→other marker");
+  });
+
+  it("same-door 2nd tap does not steal hung enter / stay", () => {
+    assert.equal(breathTapWalksNow({ ...idle, here: "m1", door: "m1" }), false);
+    assert.equal(breathTapWalksNow({ ...idle, here: "A", door: "A" }), false);
+    assert.equal(breathTapWalksNow({ ...idle, here: "m2", door: "B" }), false);
+    assert.equal(breathTapWalksNow({ ...idle, here: "spawn", door: "spawn" }), false);
+  });
+
+  it("mid-walk / cook stays queued — do not cut a playing walk", () => {
+    for (const p of pairs) {
+      assert.equal(breathTapWalksNow({ here: p.here, door: p.door, beat: "playvid", filmLoop: false }), false, `${p.label} playvid`);
+      assert.equal(breathTapWalksNow({ here: p.here, door: p.door, beat: "walk", filmLoop: false }), false, `${p.label} walk`);
+      assert.equal(breathTapWalksNow({ here: p.here, door: p.door, beat: "cook", filmLoop: true }), false, `${p.label} cook`);
+    }
+  });
+
+  it("engine goTo / playWalk abort kickPlay idle and never await shotEnd(idle)", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const goTo = src.slice(src.indexOf("function goTo"), src.indexOf("function drainQueue"));
+    const playWalk = src.slice(src.indexOf("async function playWalk"), src.indexOf("async function saveFilms"));
+    const holdIdle = src.slice(src.indexOf("function holdIdle"), src.indexOf("async function playEnterThenIdle"));
+    const enterBreath = src.slice(src.indexOf("async function enterDoorBreath"), src.indexOf("async function saveFilms"));
+    assert.match(goTo, /breathTapWalksNow\(/);
+    assert.match(goTo, /here: hereRef\.current/);
+    assert.match(goTo, /door: id/);
+    assert.match(goTo, /filmLoop: filmLoop\.current/);
+    assert.match(goTo, /Abort idle-spawn \/ idle-m1 \/ idle-m2 \/ arrival breath/);
+    assert.match(goTo, /hungDoorTap\(hereRef\.current, id\) === "enter"/);
+    assert.match(goTo, /void playWalk\(id\)/);
+    assert.match(playWalk, /Abort any looping breath now \(idle-spawn \/ idle-m1 \/ idle-m2 \/ arrival\)/);
+    assert.match(playWalk, /Never await shotEnd\(idle\)/);
+    assert.doesNotMatch(playWalk, /shotEnd\(idleNow/);
+    const walkKick = playWalk.slice(0, playWalk.indexOf("playFilm("));
+    assert.doesNotMatch(walkKick, /^\s*await shotEnd\(/m);
+    assert.match(playWalk, /filmLoop\.current = false/);
+    assert.match(playWalk, /loadGen\.current \+= 1/);
+    assert.match(playWalk, /enterDoorBreath\(/);
+    assert.match(holdIdle, /kickPlay\(breathUrl, true, true\)/);
+    assert.match(enterBreath, /kickPlay\(url, true, true\)/);
+    assert.doesNotMatch(holdIdle, /freezeVis\(/);
+    assert.doesNotMatch(enterBreath, /freezeVis\(/);
   });
 });
 
