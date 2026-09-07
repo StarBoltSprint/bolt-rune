@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type PointerEvent as PE } from "react";
 import {
   FILM_BY_ID,
   gradeOf,
+  cuePictureSpot,
+  cueSide,
   prepareBeats,
   shardsOf,
   spotOf,
@@ -1336,9 +1338,9 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         />
       )}
       {phase === "run" && film.pad === "arrows" && !holdDoor && <CutWash beat={nowBeat ?? undefined} t={hud.t} />}
+      {phase === "run" && holdDoor && <CueFill beat={nowBeat ?? undefined} t={hud.t} />}
       {phase === "run" && (
         <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-40 px-5 pb-[max(0.55rem,env(safe-area-inset-bottom))]">
-          {holdDoor ? <CueFill beat={nowBeat ?? undefined} t={hud.t} /> : null}
           <Resonance value={hud.resonance} score={hud.score} pace={hud.pace} />
         </div>
       )}
@@ -1557,17 +1559,7 @@ function Resonance({ value, score = 0, pace = 1 }: { value: number; score?: numb
   );
 }
 
-function cueSide(beat: Beat): "left" | "right" | "center" {
-  if (beat.kind === "left") return "left";
-  if (beat.kind === "right") return "right";
-  if (beat.kind === "tap" && beat.lane === "c") return "center";
-  if (/jump|vault|↑/i.test(beat.label)) return "center";
-  if (beat.lane === "l") return "left";
-  if (beat.lane === "r") return "right";
-  return "center";
-}
-
-/** Short horizontal fill strip — never a tall pillar, never over Bolt. */
+/** Narrow vertical tick in the picture at the turn / vault — not a Resonance HUD strip. */
 function CueFill({ beat, t }: { beat?: Beat; t: number }) {
   if (!beat) return null;
   const until = beat.at - t;
@@ -1575,31 +1567,30 @@ function CueFill({ beat, t }: { beat?: Beat; t: number }) {
   const fill = until >= 0 ? Math.max(0, Math.min(1, 1 - until / APPROACH)) : 1;
   const live = Math.abs(t - beat.at) < beat.win * 0.55;
   const side = cueSide(beat);
-  const slot =
-    side === "left"
-      ? { left: 0 }
-      : side === "right"
-        ? { right: 0 }
-        : { left: "50%", transform: "translateX(-50%)" };
+  const spot = cuePictureSpot(beat);
   return (
-    <div className="relative mb-2 h-[10px]" data-cue-fill={side} aria-hidden>
-      <div
-        className="absolute overflow-hidden rounded-full bg-white/12"
-        style={{
-          ...slot,
-          width: 52,
-          height: 10,
-          bottom: 0,
-        }}
-      >
+    <div
+      className="pointer-events-none absolute z-30"
+      data-cue-fill={side}
+      data-cue-axis="y"
+      aria-hidden
+      style={{
+        left: `${spot.x * 100}%`,
+        top: `${spot.y * 100}%`,
+        width: 6,
+        height: 34,
+        transform: "translate(-50%, -50%)",
+      }}
+    >
+      <div className="absolute inset-0 overflow-hidden rounded-full bg-white/12">
         <div
-          className="h-full rounded-full"
+          className="absolute bottom-0 left-0 right-0 rounded-full"
           style={{
-            width: `${fill * 100}%`,
+            height: `${fill * 100}%`,
             background: live
-              ? "linear-gradient(90deg, #9ec9d4, #f2fbff)"
-              : "linear-gradient(90deg, #3d6a78, #9ec9d4)",
-            boxShadow: live ? "0 0 8px rgba(158,201,212,0.4)" : "none",
+              ? "linear-gradient(180deg, #f2fbff, #9ec9d4)"
+              : "linear-gradient(180deg, #9ec9d4, #3d6a78)",
+            boxShadow: live ? "0 0 7px rgba(158,201,212,0.35)" : "none",
           }}
         />
       </div>

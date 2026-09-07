@@ -360,7 +360,7 @@ export function turnCue(secs: number, tailStraight = 0) {
   return `TURN SHEET (only these): ${hits.join(". ")}. Camera stays dead-center behind him. Between turns he sprints STRAIGHT down the NEW aisle. No extra turns. No U-turns. No looping.${tail}`;
 }
 
-/** Mid-plate vault — one short centered-bottom fill, not a turn. */
+/** Mid-plate vault — one short in-picture vertical tick, not a HUD bar. */
 export function jumpMarks(secs: number): number[] {
   if (secs <= 6) return [3.3];
   if (secs <= 10) return [4.0];
@@ -392,7 +392,7 @@ export function turnBeatsForRun(plateDurations: number[]): Beat[] {
       out.push(
         b(`j${n}`, Number((acc + at).toFixed(2)), "tap", "c", "↑", {
           win: 1.2,
-          spot: { x: 0.5, y: 0.78 },
+          spot: { x: 0.5, y: 0.58 },
         }),
       );
       n += 1;
@@ -439,6 +439,26 @@ function mulberry32(seed: number) {
 
 export function spotOf(beat: Beat): Spot {
   return beat.spot ?? beat.relic ?? { x: 0.5, y: 0.5 };
+}
+
+export function cueSide(beat: Beat): "left" | "right" | "center" {
+  if (beat.kind === "left") return "left";
+  if (beat.kind === "right") return "right";
+  if (beat.kind === "tap" && beat.lane === "c") return "center";
+  if (/jump|vault|↑/i.test(beat.label)) return "center";
+  if (beat.lane === "l") return "left";
+  if (beat.lane === "r") return "right";
+  return "center";
+}
+
+/** Picture-space tick at the turn lane / vault — never the Resonance HUD row. */
+export function cuePictureSpot(beat: Beat): Spot {
+  const side = cueSide(beat);
+  const spot = spotOf(beat);
+  const y = Math.min(0.66, Math.max(0.44, spot.y > 0.7 ? 0.58 : spot.y));
+  if (side === "left") return { x: Math.min(spot.x, 0.26), y };
+  if (side === "right") return { x: Math.max(spot.x, 0.74), y };
+  return { x: 0.5, y };
 }
 
 /** Scatter hit marks across the picture. Relics keep authored positions. */
