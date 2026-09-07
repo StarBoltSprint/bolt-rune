@@ -154,6 +154,10 @@ describe("hang ask leftover tap", () => {
     const src = readFileSync(join(here, "../components/hang-ask.tsx"), "utf8");
     assert.match(src, /data-hang-card-index=\{card\.index\}/);
     assert.match(src, /data-hang-pick=\{n\}/);
+    assert.match(src, /data-hang-citadel-pick/);
+    assert.match(src, /data-hang-citadels/);
+    assert.match(src, /HangCitadelStrip/);
+    assert.match(src, /onCitadel/);
     assert.match(src, /hangStripPick\(rooms, card\.index\)/);
     assert.doesNotMatch(src, /onHall\(i \+ 1\)/);
     assert.doesNotMatch(src, /onHall\(card\.index\)/);
@@ -177,6 +181,9 @@ describe("hang ask leftover tap", () => {
     assert.doesNotMatch(src, /pickedRef\.current = picked;/);
     const vault = readFileSync(join(here, "../components/vault-hall.tsx"), "utf8");
     assert.match(vault, /onConfirm=\{\(hall\) => \{/);
+    assert.match(vault, /pickHangCitadel/);
+    assert.match(vault, /listHangCitadels/);
+    assert.match(vault, /citadels=\{hangCitadels\}/);
     assert.match(vault, /hangDoor\(hangAsk\.a, hangAsk\.door, undefined, hangBindHall\(hall\)\)/);
     assert.match(vault, /hangBindHall\(hallWant\)/);
     assert.match(vault, /const bindHall = hangBindHall\(hallWant\)/);
@@ -185,11 +192,15 @@ describe("hang ask leftover tap", () => {
     assert.doesNotMatch(vault, /const bindHall = pick\?\.bindHall \|\| hall/);
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     assert.match(engine, /onConfirm=\{\(hall\) => \{/);
-    assert.match(engine, /beginRift\(door, gateFromHung\(hangAsk\.a\), hangBindHall\(hall\)\)/);
+    assert.match(engine, /beginRift\(door, gateFromHung\(hangAsk\.a\), bindHall\)/);
+    assert.match(engine, /hangBindHall\(hall\)/);
     assert.match(engine, /pickHangHall/);
     assert.match(engine, /livingHangHall/);
     assert.match(engine, /hangBindHall/);
     assert.match(engine, /listHangRooms\(/);
+    assert.match(engine, /listHangCitadels/);
+    assert.match(engine, /pickHangCitadel/);
+    assert.match(engine, /citadels=\{hangCitadels\}/);
     assert.match(engine, /liveHangRooms/);
     assert.match(engine, /const \[liveHall, setLiveHall\]/);
     assert.doesNotMatch(engine, /const \[hallN,/);

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bindCitadel, citadelRoomCount, confirmHangHall, defaultHangRoom, hangOpensSheet, holdHangRooms, isBiomeArtefactMeta, listHangRooms, livingHangHall, livingLoadPacks, loadHangHallCount, packCitadels, resolveHangRoom } from "./rooms.ts";
+import { bindCitadel, citadelRoomCount, confirmHangHall, defaultHangRoom, hangOpensSheet, holdHangRooms, isBiomeArtefactMeta, listHangCitadels, listHangRooms, livingHangHall, livingLoadPacks, loadHangHallCount, packCitadels, resolveHangRoom } from "./rooms.ts";
 import type { RuneSessionMeta } from "./rune-session.ts";
 
 function cit(rooms: number, hall = 1, id = "cit-1"): RuneSessionMeta {
@@ -259,7 +259,7 @@ describe("hang room pick", () => {
     assert.equal(load.find((p) => p.root.id === "cit-1")?.rooms.length, 3);
   });
 
-  it("lists each 1-room Load save as a Hang pick when lastPlay is a biome artefact", () => {
+  it("lists each 1-room Load save as a Hang citadel when lastPlay is a biome artefact", () => {
     const forest: RuneSessionMeta = {
       id: "art-lux",
       name: "Luxuriant forest",
@@ -275,20 +275,27 @@ describe("hang room pick", () => {
     const a = { ...cit(1, 1, "cit-a"), updated: 3, title: "Keep", name: "Keep" };
     const b = { ...cit(1, 1, "cit-b"), updated: 2, title: "North", name: "North" };
     const c = { ...cit(1, 1, "cit-c"), updated: 1, title: "South", name: "South" };
-    const rooms = listHangRooms([forest, a, b, c], { id: forest.id, hall: 1, rooms: 1 });
+    const rows = [forest, a, b, c];
+    const last = { id: forest.id, hall: 1, rooms: 1 };
+    const picks = listHangCitadels(rows, last);
     assert.deepEqual(
-      rooms.map((r) => r.hall),
-      [1, 2, 3],
+      picks.map((p) => p.id).sort(),
+      ["cit-a", "cit-b", "cit-c"],
     );
-    assert.deepEqual(
-      rooms.map((r) => r.name),
-      ["Room 1", "Room 2", "Room 3"],
-    );
-    assert.equal(new Set(rooms.map((r) => r.citadel)).size, 3);
     assert.equal(
-      rooms.some((r) => /forest|luxuriant/i.test(r.name)),
+      picks.some((p) => /forest|luxuriant/i.test(p.title)),
       false,
     );
+    const rooms = listHangRooms(rows, last);
+    assert.equal(rooms.length, 1);
+    assert.equal(rooms[0]?.hall, 1);
+    assert.ok(rooms[0]?.citadel && rooms[0].citadel !== forest.id);
+    const north = listHangRooms(rows, last, [], [], [], "cit-b");
+    assert.deepEqual(
+      north.map((r) => r.citadel),
+      ["cit-b"],
+    );
+    assert.equal(north.length, 1);
   });
 
   it("a rooms>1 citadel titled after a biome still lists its halls", () => {
@@ -301,7 +308,7 @@ describe("hang room pick", () => {
     );
   });
 
-  it("lastPlay rooms=2 does not hide Load’s 8-room citadel", () => {
+  it("lastPlay rooms=2 still exposes Load’s 8-room citadel on the picker", () => {
     const eight = cit(8, 2);
     const two = { ...cit(2, 2, "cit-two"), updated: 99, title: "Keep", name: "Keep" };
     const forest: RuneSessionMeta = {
@@ -317,29 +324,38 @@ describe("hang room pick", () => {
       hall: 1,
     };
     const last = { id: two.id, hall: 2, rooms: 2 };
+    const rows = [two, forest, eight];
     const before = listHangRooms([two, forest], last);
     assert.deepEqual(
       before.map((r) => r.hall),
       [1, 2],
     );
-    const after = listHangRooms([two, forest, eight], last);
-    assert.deepEqual(
-      after.map((r) => r.hall),
-      [1, 2, 3, 4, 5, 6, 7, 8],
-    );
+    const picks = listHangCitadels(rows, last);
     assert.equal(
-      after.some((r) => r.citadel === "cit-1"),
+      picks.some((p) => p.id === "cit-1" && p.rooms === 8),
       true,
     );
-    assert.equal(bindCitadel([two, forest, eight], last).citadel, "cit-1");
-    const load = packCitadels([two, forest, eight]);
-    assert.equal(load.find((p) => p.root.id === "cit-1")?.rooms.length, 8);
-    assert.equal(loadHangHallCount(livingLoadPacks([two, forest, eight])), 8);
-    const again = listHangRooms([two, forest, eight], last);
-    assert.deepEqual(
-      again.map((r) => r.hall),
-      after.map((r) => r.hall),
+    assert.equal(
+      picks.some((p) => p.id === "cit-two" && p.rooms === 2),
+      true,
     );
+    const living = listHangRooms(rows, last);
+    assert.deepEqual(
+      living.map((r) => r.hall),
+      [1, 2],
+    );
+    assert.equal(living.every((r) => r.citadel === "cit-two"), true);
+    assert.equal(bindCitadel(rows, last).citadel, "cit-two");
+    const eightRooms = listHangRooms(rows, last, [], [], [], "cit-1");
+    assert.deepEqual(
+      eightRooms.map((r) => r.hall),
+      [1, 2, 3, 4, 5, 6, 7, 8],
+    );
+    assert.equal(eightRooms.every((r) => r.citadel === "cit-1"), true);
+    assert.equal(bindCitadel(rows, last, "cit-1").citadel, "cit-1");
+    const load = packCitadels(rows);
+    assert.equal(load.find((p) => p.root.id === "cit-1")?.rooms.length, 8);
+    assert.equal(loadHangHallCount(livingLoadPacks(rows)), 8);
   });
 
   it("same citadel lastPlay rooms=2 still lists all 8 saved halls", () => {
@@ -358,7 +374,7 @@ describe("hang room pick", () => {
     );
   });
 
-  it("six 1-room Load saves plus a 2-room lastPlay pack list all eight Hang picks", () => {
+  it("six 1-room Load saves plus a 2-room lastPlay pack stay pickable as citadels", () => {
     const two = cit(2, 2);
     const extras = [1, 2, 3, 4, 5, 6].map((i) => ({
       ...cit(1, 1, `cit-n${i}`),
@@ -366,9 +382,21 @@ describe("hang room pick", () => {
       title: `Keep ${i}`,
       name: `Keep ${i}`,
     }));
-    const rooms = listHangRooms([two, ...extras], { id: "cit-1", hall: 2, rooms: 2 });
-    assert.equal(rooms.length, 8);
-    assert.ok(rooms.some((r) => r.citadel && r.citadel !== "cit-1"));
+    const rows = [two, ...extras];
+    const last = { id: "cit-1", hall: 2, rooms: 2 };
+    const rooms = listHangRooms(rows, last);
+    assert.deepEqual(
+      rooms.map((r) => r.hall),
+      [1, 2],
+    );
+    assert.equal(rooms.every((r) => r.citadel === "cit-1"), true);
+    const picks = listHangCitadels(rows, last);
+    assert.equal(picks.length, 7);
+    assert.equal(picks.filter((p) => p.id !== "cit-1").length, 6);
+    const other = listHangRooms(rows, last, [], [], [], "cit-n3");
+    assert.equal(other.length, 1);
+    assert.equal(other[0]?.citadel, "cit-n3");
+    assert.equal(other[0]?.hall, 1);
   });
 
   it("late 2-room hydrate pass does not overwrite an 8-room Hang list", () => {
@@ -398,7 +426,7 @@ describe("hang room pick", () => {
     );
   });
 
-  it("a new 1-room Load save appears on the Hang sheet without replacing older halls", () => {
+  it("a new 1-room Load save appears on the Hang citadel picker without replacing older halls", () => {
     const hall = cit(2, 1);
     const first = listHangRooms([hall], { id: "cit-1", hall: 1 });
     assert.deepEqual(
@@ -407,13 +435,39 @@ describe("hang room pick", () => {
     );
     const added = { ...cit(1, 1, "cit-new"), updated: 5, title: "North", name: "North" };
     const next = listHangRooms([hall, added], { id: "cit-1", hall: 1 });
-    assert.equal(next.length, 3);
+    assert.deepEqual(
+      next.map((r) => r.hall),
+      [1, 2],
+    );
+    assert.equal(next.every((r) => r.citadel === "cit-1"), true);
+    const picks = listHangCitadels([hall, added], { id: "cit-1", hall: 1 });
+    assert.equal(picks.length, 2);
     assert.equal(
-      next.some((r) => r.citadel === "cit-new"),
+      picks.some((p) => p.id === "cit-new"),
       true,
     );
+    const north = listHangRooms([hall, added], { id: "cit-1", hall: 1 }, [], [], [], "cit-new");
+    assert.equal(north.length, 1);
+    assert.equal(north[0]?.citadel, "cit-new");
     const load = packCitadels([hall, added]).filter((p) => !isBiomeArtefactMeta(p.root));
     assert.equal(load.length, 2);
     assert.equal(loadHangHallCount(livingLoadPacks([hall, added])), 3);
+  });
+
+  it("Hang never raises one citadel above 8 rooms when many Loads exist", () => {
+    const eight = cit(8, 3);
+    const more = { ...cit(8, 1, "cit-west"), updated: 9, title: "West", name: "West" };
+    const rooms = listHangRooms([eight, more], { id: "cit-1", hall: 3 }, [], [], [], "cit-1");
+    assert.deepEqual(
+      rooms.map((r) => r.hall),
+      [1, 2, 3, 4, 5, 6, 7, 8],
+    );
+    assert.equal(rooms.length, 8);
+    const west = listHangRooms([eight, more], { id: "cit-1", hall: 3 }, [], [], [], "cit-west");
+    assert.equal(west.length, 8);
+    assert.equal(west.every((r) => r.citadel === "cit-west"), true);
+    const held = holdHangRooms(rooms, west);
+    assert.equal(held.every((r) => r.citadel === "cit-west"), true);
+    assert.equal(held.length, 8);
   });
 });

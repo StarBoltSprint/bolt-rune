@@ -509,8 +509,10 @@ export function listSessions(): RuneSessionMeta[] {
 
 const LAST = "bolt-last-play";
 
-/** Halls persisted on the live citadel — Vault hang picker reads these, not only catalog rooms=1. */
-export function listStoredHallHints(): { hall: number; still: string; name: string }[] {
+/** Halls persisted on one citadel — Vault hang picker reads these, not only catalog rooms=1. */
+export function listStoredHallHints(citadel?: string): { hall: number; still: string; name: string }[] {
+  const want = String(citadel || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+  const match = (s: { id?: string; from?: string }) => !want || s.id === want || s.from === want;
   const seen = new Set<number>();
   const out: { hall: number; still: string; name: string }[] = [];
   const put = (n: number, still: string, name: string) => {
@@ -529,12 +531,14 @@ export function listStoredHallHints(): { hall: number; still: string; name: stri
       put(i, i === (s.hall || 1) ? s.thumb || s.plate || "" : "", `Room ${i}`);
     }
   };
-  for (const s of readMem()) fill(s);
-  for (const s of readStore()) fill(s);
-  for (const s of readCatalog()) fill(s);
+  for (const s of readMem()) if (match(s)) fill(s);
+  for (const s of readStore()) if (match(s)) fill(s);
+  for (const s of readCatalog()) if (match(s)) fill(s);
   const last = lastPlay();
-  if (last?.rooms) fill({ rooms: last.rooms });
-  else if (last?.hall) put(last.hall, "", `Room ${last.hall}`);
+  if (!want || last?.id === want) {
+    if (last?.rooms) fill({ rooms: last.rooms });
+    else if (last?.hall) put(last.hall, "", `Room ${last.hall}`);
+  }
   return out.sort((a, b) => a.hall - b.hall);
 }
 
