@@ -12,6 +12,7 @@ import { RuneEngine } from "@/components/rune-engine";
 import { boltFull, press } from "@/lib/press";
 import { boltBack, boltHome, boltDepth, locFromHash, pushBolt, readBolt, replaceBolt, sameBolt, type BoltLoc } from "@/lib/bolt-history";
 import { bootCookLoc } from "@/game/cook-ready";
+import { hungFilmHold, walkHungHref } from "@/game/enter-graph";
 
 type Screen = "title" | "how" | "play" | "result" | "cook";
 type From = Mark | "idle";
@@ -279,6 +280,11 @@ export function CineApp({ bootScreen, playArt }: { bootScreen?: Screen; playArt?
     } catch {
       /* */
     }
+    const href = walkHungHref(a.room);
+    if (href) {
+      window.location.assign(href);
+      return;
+    }
     setArtId(a.id);
     setCustom(filmOf(a));
     setResult(null);
@@ -330,11 +336,14 @@ export function CineApp({ bootScreen, playArt }: { bootScreen?: Screen; playArt?
   }
 
   if (screen === "play") {
+    const hold = hungFilmHold(custom);
     return (
       <FilmStage
         id={custom?.id ?? "asteroid"}
         original={!custom?.playlist?.length}
         custom={custom?.playlist?.length ? custom : undefined}
+        holdHall={hold.hall}
+        holdDoor={hold.door}
         onExit={() => {
           if (playArt || bootScreen === "cook") window.location.href = "/";
           else boltBack();

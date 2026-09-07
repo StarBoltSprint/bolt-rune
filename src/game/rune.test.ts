@@ -309,7 +309,7 @@ describe("Imagine prompt rails", () => {
     assert.match(ask, /data-hang-rooms=/);
     assert.match(ask, /data-hang-room/);
     assert.match(src, /askHang\(/);
-    assert.match(src, /setHangAsk\(\{ a, door, rooms \}\)/);
+    assert.match(src, /const ask = \{ a, door, rooms \}/);
     assert.match(src, /hangAsk\.rooms/);
     assert.match(src, /hangOpensSheet/);
     assert.match(src, /listHangRooms/);
@@ -409,7 +409,7 @@ describe("Imagine prompt rails", () => {
     assert.doesNotMatch(stage, /<Marks>\s*\n/);
     const vault = src;
     assert.match(vault, /holdDoor=\{live\.room\?\.door === "B" \? "B"/);
-    assert.match(vault, /Room \$\{roomN\} • Door \$\{hungOn\} Play Sprint/);
+    assert.match(vault, /vaultHangCaption\(head\.room\)/);
   });
 
   it("Grok Bot Forge uses a LOCKed hall still/style, else sealed DEFAULT HALL", () => {

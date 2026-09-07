@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { dropClipAt, dropRoom, familiesOf, familyHead, filmOf, hangArtifact, hangOnRoom, lastClip, mergeHall, readArtifacts, setPlaylist, uniqueClips, type HungArtifact } from "@/game/artifacts";
 import { continuePrompt, readClipSpec, shiftPrompt, stockBiomeFilm, SHIFTS } from "@/game/cook";
-import { bindHungRoom } from "@/game/enter-graph";
+import { bindHungRoom, doorLetterOf, hangThumbStill, hungPlayChrome, vaultHangCaption, walkHungHref } from "@/game/enter-graph";
 import { vaultHangRoom, vaultHangStart } from "@/game/path-entry";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/lib/cook";
 import { hangHall, listHall } from "@/lib/hall";
-import { bindCitadel, confirmHangHall, defaultHangRoom, hallN, hangOpensSheet, holdHangRooms, listHangRooms, resolveHangRoom, type HangRoomPick } from "@/game/rooms";
-import { hydrateSessions, lastPlay, listSessions, listStoredHallHints } from "@/game/rune-session";
+import { bindCitadel, defaultHangRoom, hallN, hangOpensSheet, holdHangRooms, listHangRooms, resolveHangRoom, type HangRoomPick } from "@/game/rooms";
+import { hydrateSessions, lastPlay, listSessions, listStoredHallHints, stampPlay } from "@/game/rune-session";
 import { HangAskSheet, HangRoomStrip } from "@/components/hang-ask";
-import { HANG_LEFTOVER_SWALLOW_MS, sheetConfirmHall, swallowOpeningTap } from "@/game/hang-ask";
+import { HANG_LEFTOVER_SWALLOW_MS, hangBindHall, swallowOpeningTap } from "@/game/hang-ask";
 import { HallMark } from "@/components/hall-mark";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { FilmStage } from "@/components/film-stage";
@@ -110,12 +110,15 @@ export function VaultHall() {
   function refreshHangRooms(arts = hungRef.current) {
     const extra = listStoredHallHints().map((h) => ({ ...h, living: false }));
     const computed = listHangRooms(listSessions(), lastPlay(), arts, extra, hangRoomsRef.current);
-    const rooms = holdHangRooms(hangRoomsRef.current, computed);
+    const held = holdHangRooms(hangRoomsRef.current, computed);
+    const bind = hangBindHall(hangHallRef.current);
+    const rooms = held.map((r) => ({ ...r, living: bind ? r.hall === bind : r.living }));
     hangRoomsRef.current = rooms;
     writeHangFloor(rooms.length);
     setHangRooms(rooms);
     setHangHallN((prev) => {
       if (hangAskRef.current && hallN(prev)) return prev;
+      if (bind && rooms.some((r) => r.hall === bind)) return bind;
       return rooms.some((r) => r.hall === prev) ? prev : defaultHangRoom(rooms);
     });
     return rooms;
@@ -158,28 +161,52 @@ export function VaultHall() {
     }).catch(() => {});
   }
 
+  function pickHangHall(n: number) {
+    const hall = hangBindHall(n);
+    if (!hall) return;
+    hangHallRef.current = hall;
+    setHangHallN(hall);
+  }
+
   function hangDoor(a: HungArtifact, door: "A" | "B", from?: HungArtifact[], hallWant?: number | string | null) {
     const cit = bindCitadel(listSessions(), lastPlay());
     const rooms = refreshHangRooms(from?.length ? from : hungRef.current);
-    const hall = sheetConfirmHall(hallWant, hangHallRef.current) || confirmHangHall(rooms, hallWant ?? hangHallRef.current);
-    const pick = rooms.find((r) => r.hall === hall);
+    const bindHall = hangBindHall(hallWant);
+    if (!bindHall) {
+      setFrost("hang missed — pick the room on the sheet");
+      window.setTimeout(() => setFrost(""), 2400);
+      return;
+    }
+    const letter = doorLetterOf(door);
+    const pick = rooms.find((r) => r.hall === bindHall);
     const citadel = pick?.citadel || cit.citadel || undefined;
-    const bindHall = hall;
-    const hung = hangOnRoom(a.id, bindHungRoom(a, door, { citadel, hall: bindHall }), from?.length ? from : hungRef.current);
+    const hung = hangOnRoom(a.id, bindHungRoom(a, letter, { citadel, hall: bindHall }), from?.length ? from : hungRef.current);
     setHung(hung);
-    setHangHallN(hall);
+    hangHallRef.current = bindHall;
+    setHangHallN(bindHall);
     const live = hung.find((x) => x.id === a.id);
-    if (!live?.room?.door) {
+    if (!live?.room?.door || hangBindHall(live.room.hall) !== bindHall || live.room.door !== letter) {
       setFrost("hang missed — pick the room on the sheet");
       window.setTimeout(() => setFrost(""), 2400);
       return;
     }
     persistArt(live);
+    hangGuard.current = (typeof performance !== "undefined" ? performance.now() : Date.now()) + HANG_LEFTOVER_SWALLOW_MS;
+    swallowOpeningTap();
+    setHangRooms((prev) => prev.map((r) => ({ ...r, living: r.hall === bindHall })));
     sfxForge("enter");
+    const roomsN = Math.max(bindHall, hangRoomsRef.current.length, lastPlay()?.rooms || 1);
+    if (citadel || cit.citadel) stampPlay(citadel || cit.citadel, cit.title, bindHall, roomsN);
+    const href = walkHungHref(live.room, roomsN);
+    if (href) {
+      window.location.assign(href);
+      return;
+    }
+    const chrome = hungPlayChrome(bindHall, letter);
     setFrost(
       cit.citadel
-        ? `${cit.title || "Citadel"} · room ${hall} · door ${door}`
-        : `Room ${hall} · door ${door} · Play / Load to walk it`,
+        ? `${cit.title || "Citadel"} · ${chrome.keeper}`
+        : `${chrome.keeper} · Play / Load to walk it`,
     );
     window.setTimeout(() => setFrost(""), 2400);
   }
@@ -198,8 +225,18 @@ export function VaultHall() {
   }
 
   async function askHang(a: HungArtifact, door: "A" | "B", hallWant?: number | string | null) {
+    if (hangAskRef.current) return;
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (now < hangGuard.current) return;
     swallowOpeningTap();
     hangGuard.current = (typeof performance !== "undefined" ? performance.now() : Date.now()) + HANG_LEFTOVER_SWALLOW_MS;
+    const rooms = refreshHangRooms();
+    const hall = resolveHangRoom(rooms, hallWant ?? hangHallRef.current);
+    hangHallRef.current = hall;
+    setHangHallN(hall);
+    const ask = { a, door, rooms };
+    hangAskRef.current = ask;
+    setHangAsk(ask);
     try {
       await hydrateSessions((rows) => {
         if (rows.length) refreshHangRooms(hungRef.current);
@@ -207,10 +244,10 @@ export function VaultHall() {
     } catch {
       /* Load catalog may already be in memory */
     }
-    const rooms = refreshHangRooms();
-    const hall = resolveHangRoom(rooms, hallWant ?? hangHallRef.current);
-    setHangHallN(hall);
-    setHangAsk({ a, door, rooms });
+    if (!hangAskRef.current) return;
+    const next = refreshHangRooms();
+    hangAskRef.current = { ...hangAskRef.current, rooms: next };
+    setHangAsk((cur) => (cur ? { ...cur, rooms: next } : cur));
   }
 
   function playArt(a: HungArtifact) {
@@ -218,6 +255,13 @@ export function VaultHall() {
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
     if (now < hangGuard.current) return;
     const live = hungRef.current.find((x) => x.id === a.id) || a;
+    const roomsN = Math.max(hangBindHall(live.room?.hall) || 1, hangRoomsRef.current.length, lastPlay()?.rooms || 1);
+    const href = walkHungHref(live.room, roomsN);
+    if (href) {
+      if (live.room?.citadel) stampPlay(live.room.citadel, undefined, hangBindHall(live.room.hall) || undefined, roomsN);
+      window.location.assign(href);
+      return;
+    }
     setPlay(live);
   }
 
@@ -432,11 +476,12 @@ export function VaultHall() {
     const live = hung.find((x) => x.id === play.id) || play;
     const film = filmOf(live, hung);
     return (
-      <FilmStage
-        id="sprint"
-        original={false}
-        custom={film}
-        holdDoor={live.room?.door === "B" ? "B" : live.room?.door === "A" ? "A" : undefined}
+        <FilmStage
+          id="sprint"
+          original={false}
+          custom={film}
+          holdHall={hangBindHall(live.room?.hall) || undefined}
+          holdDoor={live.room?.door === "B" ? "B" : live.room?.door === "A" ? "A" : undefined}
         onHallDoor={() => {
           /* hung biome stay — Leave exits */
         }}
@@ -506,7 +551,7 @@ export function VaultHall() {
               <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[#9ef0e4]">
                 Hang on room{hangRooms.length > 1 ? ` · ${hangRooms.length} halls` : " · Room 1"}
               </p>
-              <HangRoomStrip rooms={hangRooms} hall={hangHallN} onHall={setHangHallN} disabled={busy} />
+              <HangRoomStrip rooms={hangRooms} hall={hangHallN} onHall={pickHangHall} disabled={busy} />
               <p className="mt-2 font-mono text-[9px] uppercase tracking-[0.16em] text-white/45">
                 then Hang A or Hang B on a pack — pick the room on the sheet
               </p>
@@ -516,8 +561,8 @@ export function VaultHall() {
               const head = familyHead(f);
               const n = f.playlist.length;
               const chosen = pick[f.id] ?? Math.max(0, n - 1);
-              const hungOn = head.room?.door;
-              const roomN = head.room?.hall || 1;
+              const hungOn = head.room?.door === "B" ? "B" : head.room?.door === "A" ? "A" : "";
+              const roomN = hangBindHall(head.room?.hall);
                   const thumbs = (f.stamps?.length ? f.stamps : f.playlist.map((url, i) => ({
                     url,
                     still: f.stills[i] || f.stills[f.stills.length - 1] || f.still,
@@ -528,9 +573,13 @@ export function VaultHall() {
                   <div className={`flex ${packs.length === 1 ? "h-52" : "h-40"}`}>
                     {hungOn ? (
                       <div className="relative min-w-[22%] flex-1 ring-2 ring-inset ring-[#9ef0e4]">
-                        <img src="/films/citadel-tour.jpg" alt="" className="h-full w-full object-cover" />
+                        <img
+                          src={hangThumbStill(head)}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
                         <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-[#9ef0e4]">
-                          room {roomN}
+                          {roomN ? hungPlayChrome(roomN, hungOn).keeper : "door"}
                         </span>
                       </div>
                     ) : null}
@@ -565,9 +614,13 @@ export function VaultHall() {
                       playArt(head);
                     })}
                   >
-                    <p className="font-display text-xl text-ice">{f.name}</p>
+                    <p className="font-display text-xl text-ice">
+                      {roomN && hungOn ? hungPlayChrome(roomN, hungOn).keeper : f.name}
+                    </p>
                     <p className={`mt-1 font-mono text-[9px] uppercase tracking-[0.16em] ${hungOn ? "text-[#9ef0e4]" : "text-white/35"}`}>
-                      {hungOn ? `Room ${roomN} • Door ${hungOn} Play Sprint` : "not on a door"}
+                      {hungOn
+                        ? `${vaultHangCaption(head.room)}${f.name ? ` · ${f.name}` : ""}`
+                        : "not on a door"}
                     </p>
                     <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/40">
                       {n > 1 ? `play all · ${n} clips` : n === 1 ? "play sprint" : "still only · no video yet"}
@@ -636,7 +689,7 @@ export function VaultHall() {
                           unhangDoor(head);
                         }}
                       >
-                        Unhang · room {roomN} {hungOn}
+                        Unhang · {roomN ? hungPlayChrome(roomN, hungOn).keeper : hungOn}
                       </button>
                     ) : (
                       <span className="flex flex-1">
@@ -721,10 +774,10 @@ export function VaultHall() {
           name={hangAsk.a.name}
           rooms={hangRooms.length >= hangAsk.rooms.length ? hangRooms : hangAsk.rooms}
           hall={hangHallN}
-          onHall={setHangHallN}
+          onHall={pickHangHall}
           onClose={() => setHangAsk(null)}
           onConfirm={(hall) => {
-            hangDoor(hangAsk.a, hangAsk.door, undefined, hall);
+            hangDoor(hangAsk.a, hangAsk.door, undefined, hangBindHall(hall));
             setHangAsk(null);
           }}
         />

@@ -320,14 +320,97 @@ export function biomeQteQuiet(holdDoor?: string | null): boolean {
   return Boolean(holdDoor);
 }
 
-/** Living-hall / FilmStage overlay after Hang Room N — never stuck on Room 1. */
+/** Living-hall / FilmStage overlay after Hang Room N — never stuck on Room 1. Door letter is never blank. */
 export function hungPlayChrome(hall?: number | string | null, door?: string | null): { keeper: string; name: string } {
-  const n = Math.max(1, Math.min(8, Math.round(Number(hall) || 1)));
-  const letter = door === "B" || door === "m2" || door === "b" ? "B" : "A";
+  const raw = typeof hall === "number" ? hall : Number(hall);
+  const n = Number.isFinite(raw) ? Math.max(1, Math.min(8, Math.round(raw))) : 1;
+  const letter = doorLetterOf(door || "A");
   return {
     keeper: `Room ${n} • Door ${letter}`,
     name: "Play Sprint",
   };
+}
+
+/** After Hang Room N Door A — walk that living hall, not a floating FilmStage. */
+export function walkHungHref(
+  room?: { hall?: number | string | null; door?: string | null; citadel?: string } | null,
+  rooms = 1,
+): string {
+  const raw = typeof room?.hall === "number" ? room.hall : Number(room?.hall);
+  const hall = Number.isFinite(raw) && raw >= 1 && raw <= 8 ? Math.round(raw) : 0;
+  if (!hall || !room?.door) return "";
+  const first = room.door === "B" || room.door === "b" || room.door === "m2" ? "m2" : "m1";
+  const cap = Math.max(hall, Math.min(8, Math.round(rooms) || hall));
+  const cit = String(room.citadel || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+  if (cit) return `/rune?session=${encodeURIComponent(cit)}&hall=${hall}&drive=engine`;
+  return `/rune?first=${first}&drive=engine&rooms=${cap}&hall=${hall}&stills=0`;
+}
+
+/** Vault card / unhang line — Room N • Door A Play Sprint from the bound artefact. */
+export function vaultHangCaption(room?: { hall?: number; door?: string | null } | null): string {
+  if (!room?.door) return "not on a door";
+  const raw = typeof room.hall === "number" ? room.hall : Number(room.hall);
+  if (!Number.isFinite(raw) || raw < 1 || raw > 8) return "not on a door";
+  const chrome = hungPlayChrome(raw, room.door);
+  return `${chrome.keeper} ${chrome.name}`;
+}
+
+const ROOM_DOOR = /^Room ([1-8]) • Door ([AB])$/;
+
+/** FilmStage hold from a hung film — Room N • Door A, never a floating biome. */
+export function hungFilmHold(film?: { keeper?: string } | null): { hall?: number; door?: DoorLetter } {
+  const fromKeeper = ROOM_DOOR.exec(String(film?.keeper || ""));
+  if (!fromKeeper) return {};
+  return { hall: Number(fromKeeper[1]), door: fromKeeper[2] as DoorLetter };
+}
+
+/** Vault / hang-strip thumb — never a blank or citadel-tour stand-in when the artefact has a biome still. */
+export function hangThumbStill(
+  a?: {
+    still?: string;
+    name?: string;
+    prompt?: string;
+    playlist?: string[];
+    room?: { still?: string; biome?: string; hall?: number; door?: string } | null;
+  } | null,
+): string {
+  const raw = [a?.still, a?.room?.still].find((u) => u && !/citadel-tour|\/ui\/citadel/i.test(u));
+  if (raw) return raw;
+  return biomeStill(
+    inferBiome({
+      name: a?.name || "",
+      still: a?.still || "",
+      playlist: a?.playlist || [],
+      prompt: a?.prompt || "",
+      room: a?.room as HungArtifact["room"],
+    }),
+  );
+}
+
+/**
+ * Play / vault title: Room N • Door A is the headline.
+ * Biome name (Asteroid) is never the big title once a room is hung.
+ */
+export function hungStageChrome(
+  hall?: number | string | null,
+  door?: string | null,
+  film?: { name?: string; keeper?: string; line?: string } | null,
+): { title: string; play: string; biome: string } {
+  const raw = typeof hall === "number" ? hall : Number(hall);
+  const n = Number.isFinite(raw) && raw >= 1 && raw <= 8 ? Math.round(raw) : 0;
+  const fromKeeper = ROOM_DOOR.exec(String(film?.keeper || ""));
+  const chrome = n
+    ? hungPlayChrome(n, door || fromKeeper?.[2] || "A")
+    : fromKeeper
+      ? hungPlayChrome(Number(fromKeeper[1]), fromKeeper[2])
+      : null;
+  if (!chrome) {
+    return { title: film?.name || "", play: film?.keeper || "", biome: "" };
+  }
+  const biome = [film?.line, film?.name].find(
+    (s) => s && s !== chrome.name && s !== chrome.keeper && s !== "Play Sprint",
+  ) || "";
+  return { title: chrome.keeper, play: chrome.name, biome };
 }
 
 export function firstBiomePlate(playlist: Array<string | null | undefined> = []): number {

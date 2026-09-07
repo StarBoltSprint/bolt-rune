@@ -19,7 +19,7 @@ import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
 import { playableClipSrc, stockBiomeLoop } from "@/game/play-clip";
 import { HazardLayer } from "@/components/hazard-layer";
-import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
+import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, hungStageChrome, shouldHoldBiome, sprintHallDoor } from "@/game/enter-graph";
 import { doorAtPoint, isHallFilm, isLivingHallLoop } from "@/game/stock-room";
 
 export type RunResult = {
@@ -58,6 +58,8 @@ type Props = {
   onHallDoor?: (door: "A" | "B") => void;
   /** Door that opened this sprint — leftover / same-door taps stay on biome. */
   holdDoor?: "A" | "B";
+  /** Bound living hall — title is Room N • Door A, never only the biome name. */
+  holdHall?: number;
 };
 
 type G = {
@@ -153,7 +155,7 @@ function nearSpot(nx: number, ny: number, spot: Spot, box: DOMRect) {
   return dx * dx + dy * dy <= 110 * 110;
 }
 
-export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit, onDone, onHallDoor, holdDoor }: Props) {
+export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit, onDone, onHallDoor, holdDoor, holdHall }: Props) {
   const film = custom ?? FILM_BY_ID[id];
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const aRef = useRef<HTMLVideoElement | null>(null);
@@ -1320,8 +1322,20 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
             </button>
             )}
           </div>
-          <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.22em] text-muted">{film.keeper}</p>
-          <h1 className="font-display text-2xl leading-tight">{film.name}</h1>
+          {(() => {
+            const stage = hungStageChrome(holdHall, holdDoor, film);
+            return (
+              <>
+                <h1 className="mt-2 font-display text-2xl leading-tight">{stage.title || film.name}</h1>
+                {stage.play ? (
+                  <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted">{stage.play}</p>
+                ) : null}
+                {stage.biome ? (
+                  <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-white/45">{stage.biome}</p>
+                ) : null}
+              </>
+            );
+          })()}
         </div>
         <div className="text-right font-mono tabular-nums">
           <p className="text-[11px] uppercase tracking-[0.18em] text-muted">Score</p>

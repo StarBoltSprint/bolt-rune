@@ -1,5 +1,5 @@
 import type { Film, Grade } from "./films";
-import { hungPlayChrome } from "./enter-graph";
+import { hungPlayChrome } from "./enter-graph.ts";
 import { biomeSprintFilm, cookFilm, quietBiomeFilm } from "./cook";
 import { isHallFilm, isLivingHallLoop } from "./stock-room";
 
@@ -34,9 +34,13 @@ let RAM: HungArtifact[] = [];
 
 function keepArt(u?: string) {
   if (!u) return "";
-  if (u.startsWith("http") || u.startsWith("/films/") || u.startsWith("/refs/") || u.startsWith("/ui/")) return u;
-  if (u.startsWith("data:image/") && u.length < 480000) return u;
+  if (u.startsWith("http") || u.startsWith("/films/") || u.startsWith("/refs/") || u.startsWith("/ui/") || u.startsWith("/api/clip")) return u;
+  if (u.startsWith("data:image/") && u.length < 900000) return u;
   return "";
+}
+
+function isCitadelStill(u?: string) {
+  return Boolean(u && /citadel-tour|\/ui\/citadel/i.test(u));
 }
 
 export function artifactId(film: Film) {
@@ -58,12 +62,13 @@ export function mergeHall(hall: HungArtifact[], local: HungArtifact[]): HungArti
     const pN = uniqueClips(prev.playlist || []).length;
     const newer = (a.hungAt || 0) >= (prev.hungAt || 0);
     const keep = aN > pN || (aN === pN && newer) ? a : prev;
+    const room = newer ? (a.room !== undefined ? a.room : prev.room) : prev.room !== undefined ? prev.room : a.room;
     byId.set(a.id, {
       ...keep,
       playlist: uniqueClips([...(prev.playlist || []), ...(a.playlist || [])]),
       still: keep.still || prev.still || a.still,
       grade: a.grade || prev.grade,
-      room: a.room || prev.room || keep.room,
+      room,
     });
   }
   return [...byId.values()].sort((a, b) => (b.hungAt || 0) - (a.hungAt || 0)).slice(0, 24);
@@ -97,12 +102,16 @@ export function filmOf(a: HungArtifact, all?: HungArtifact[]): Film {
   const name = a.name || other?.name || "Artifact";
   const prompt = a.prompt || other?.prompt;
   if (room?.door) {
-    const chrome = hungPlayChrome(room.hall || 1, room.door);
-    return quietBiomeFilm({
-      ...biomeSprintFilm(chrome.name, still || clips[0] || "", clips, prompt || name),
-      name: chrome.name,
-      keeper: chrome.keeper,
-    });
+    const hall = Number(room.hall);
+    if (hall >= 1 && hall <= 8) {
+      const chrome = hungPlayChrome(hall, room.door);
+      return quietBiomeFilm({
+        ...biomeSprintFilm(chrome.name, still || clips[0] || "", clips, prompt || name),
+        name: chrome.name,
+        keeper: chrome.keeper,
+        line: name !== chrome.name ? name : chrome.name,
+      });
+    }
   }
   return cookFilm(name, still, clips.length ? clips : raw, prompt);
 }
@@ -245,7 +254,22 @@ export function hangOnRoom(id: string, room: HungRoom, from?: HungArtifact[]): H
   if (!src.some((a) => a.id === id)) return src;
   const bound = packRoom(room);
   if (!bound) return src;
-  return write(src.map((a) => (a.id === id ? { ...a, room: bound, hungAt: Date.now() } : a)));
+  const before = src.find((a) => a.id === id);
+  const roomStill =
+    bound.still && !isCitadelStill(bound.still)
+      ? bound.still
+      : before?.still && !isCitadelStill(before.still)
+        ? before.still
+        : bound.still;
+  const wired = { ...bound, still: roomStill || bound.still };
+  const next = write(src.map((a) => (a.id === id ? { ...a, room: wired, still: a.still || roomStill, hungAt: Date.now() } : a)));
+  const after = next.find((a) => a.id === id);
+  if (before?.still && after && !after.still) {
+    const restored = next.map((a) => (a.id === id ? { ...a, still: before.still, room: a.room ? { ...a.room, still: a.room.still && !isCitadelStill(a.room.still) ? a.room.still : before.still } : a.room } : a));
+    RAM = restored;
+    return restored;
+  }
+  return next;
 }
 
 export function dropRoom(id: string, from?: HungArtifact[]): HungArtifact[] {

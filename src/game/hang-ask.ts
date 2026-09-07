@@ -15,6 +15,11 @@ export function sheetConfirmHall(picked?: number | string | null, parentHall?: n
   return hangCardHall(picked) || hangCardHall(parentHall) || 1;
 }
 
+/** Bind / confirm N — tapped card only. Never last-hung, parent, or list length. */
+export function hangBindHall(picked?: number | string | null): number {
+  return hangCardHall(picked);
+}
+
 export type HangStripCard = {
   index: number;
   hall: number;
@@ -74,6 +79,10 @@ function hitsHangPick(e: Event): boolean {
   return pathOf(e).some((node) => attrOf(node, "data-hang-pick") != null);
 }
 
+function hitsHangOpen(e: Event): boolean {
+  return pathOf(e).some((node) => attrOf(node, "data-hang") != null || attrOf(node, "data-hang-bot") != null);
+}
+
 export function swallowOpeningTap(ms = HANG_LEFTOVER_SWALLOW_MS, target?: TapTarget | null): () => void {
   const root = target ?? (typeof document !== "undefined" ? document : null);
   if (!root) return () => {};
@@ -83,7 +92,7 @@ export function swallowOpeningTap(ms = HANG_LEFTOVER_SWALLOW_MS, target?: TapTar
        the card uses click/touchend — swallowing first-of-type ate Room 3
        and confirm bound the last hall (8). */
     if (hitsHangPick(e)) return;
-    const steal = hitsConfirm(e) || hitsPlaySprint(e);
+    const steal = hitsConfirm(e) || hitsPlaySprint(e) || hitsHangOpen(e);
     const first = !seen.has(e.type);
     if (first) seen.add(e.type);
     if (!first && !steal) return;
