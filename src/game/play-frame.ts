@@ -149,8 +149,9 @@ function clipUrl(v?: PlayClip | BankRow | null): string {
 
 /**
  * Living breath to loop at spawn / A / B after a walk (or on Load play).
- * Cooked idle-* wins. Never returns the walk. Stock HALL_LOOP is last resort —
- * the picture must not freeze on a still end-frame.
+ * Cooked idle-* for THIS node wins. Never returns the walk.
+ * Never falls across nodes — idle-spawn is not m1/m2 arrival breath (snap-back).
+ * Stock HALL_LOOP is last resort at spawn only — at a door it is the center-hall fail.
  */
 export function arrivalBreathUrl(
   bank: PlayBank,
@@ -171,16 +172,24 @@ export function arrivalBreathUrl(
   for (const hit of [keyed, direct, any]) {
     if (doorBreathPlayable(hit, walk)) return clipUrl(hit);
   }
-  for (const hit of [keyed, direct, any]) {
-    const url = ok(hit);
-    if (url) return url;
-  }
-  for (const [k, v] of entries) {
-    if (!k.startsWith("idle-")) continue;
-    const url = ok(v);
-    if (url) return url;
+  if (node === "spawn") {
+    for (const hit of [keyed, direct, any]) {
+      const url = ok(hit);
+      if (url) return url;
+    }
   }
   return "";
+}
+
+/**
+ * Missing or stock/unplayable door idle — cookIdleAt from walk last-frame.
+ * A url on idle-m1/m2 is not enough: stock HALL_LOOP must not skip the cook.
+ */
+export function doorArrivalNeedsCook(
+  idle?: { url?: string | null; end?: string | null } | null,
+  walkUrl?: string | null,
+): boolean {
+  return !doorBreathPlayable(idle, walkUrl);
 }
 
 /** True when the picture has a looping breath — the primary Play / Load / forge-complete acceptance. */

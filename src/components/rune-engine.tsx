@@ -119,6 +119,7 @@ import {
   arrivalBreathUrl,
   arrivalEndStill,
   cookHasWalks,
+  doorArrivalNeedsCook,
   hallStillOf,
   isBoltSilhouette,
   isHallPlayStill,
@@ -2152,21 +2153,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const frame = livingNow();
     const idle = idleFor(hereRef.current);
     walkFace.current = standFace(hereRef.current);
-    if (isHallFilm(idle?.url) && hereRef.current !== "spawn") stockSprite.current = true;
-    else if (hereRef.current === "spawn") stockSprite.current = false;
+    if (hereRef.current === "spawn") stockSprite.current = false;
     if (hereRef.current === "spawn" && frame.still && !isBoltSilhouette(frame.still)) {
       lockHall(frame.still);
     }
     const walkHere = clipFor(cameFrom.current, hereRef.current)?.url || "";
-    /* Play / Load / forge-complete: living film NEVER stops. Loop idle at spawn, A, B. */
+    const atDoor = hereRef.current === "m1" || hereRef.current === "m2";
+    /* Loop node-local idle. At m1/m2 never leak idle-spawn / HALL_LOOP / livingPlayFrame spawn breath. */
     const breathUrl =
       arrivalBreathUrl(bank.current, hereRef.current, cameFrom.current, walkHere) ||
       (doorBreathPlayable(idle, walkHere) ? idle!.url : "") ||
-      (hereRef.current === "spawn" ? idle?.url || frame.url || "" : "") ||
-      idle?.url ||
-      frame.url ||
-      visSrc() ||
-      "";
+      (atDoor ? "" : idle?.url || frame.url || visSrc() || "");
     if (breathUrl && !isBoltSilhouette(breathUrl)) {
       if (isHallFilm(breathUrl) && hereRef.current !== "spawn") stockSprite.current = true;
       setPose(null);
@@ -2381,17 +2378,19 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (!shown) holdIdle();
   }
 
-  /** Walk ends → loop bank idle immediately. Cook only if truly missing. Never freeze still. */
+  /** Walk ends → loop node idle at arrival pose. Stock/missing door idle cooks from landed. Never freeze still. Never spawn/HALL_LOOP at m1/m2. */
   async function enterDoorBreath(node: string, via: string, walkUrl: string, landed: string) {
     let idle = idleFor(node, via) || bank.current.get(`idle-${node}`);
-    if (!idle?.url) {
+    if (doorArrivalNeedsCook(idle, walkUrl)) {
       const seed = walkLastFrameSeed(landed, lastLive.current, refsMap.current.get(`pose-${node}`)) || landed;
       if (seed) {
         await cookIdleAt(node, seed, walkUrl, via, true);
         idle = idleFor(node, via) || bank.current.get(`idle-${node}`);
       }
     }
-    const url = arrivalBreathUrl(bank.current, node, via, walkUrl) || idle?.url || "";
+    const url =
+      arrivalBreathUrl(bank.current, node, via, walkUrl) ||
+      (doorBreathPlayable(idle, walkUrl) ? idle!.url : "");
     if (!url) {
       holdIdle();
       return true;
