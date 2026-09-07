@@ -35,6 +35,7 @@ import {
   hungEnterNeedsWalk,
   hungFilmHold,
   hungPlayChrome,
+  hungLockHall,
   hungStayHall,
   hungStageChrome,
   riftGateMatchesHall,
@@ -148,7 +149,11 @@ describe("enter graph · hang any artefact on any door", () => {
     assert.equal(enter2.trans, HALL_LOOP);
     assert.ok(enter2.clips[0] === enter2.trans);
     const enter1 = resolveDoorEnter("A", 1, "cit-2", hung);
-    assert.deepEqual(enter1, { kind: "hall", door: "A", hall: 1 });
+    assert.equal(enter1.kind, "biome");
+    if (enter1.kind === "biome") {
+      assert.equal(enter1.hall, 2);
+      assert.equal(enter1.art, id);
+    }
     const otherDoor = resolveDoorEnter("B", 2, "cit-2", hung);
     assert.deepEqual(otherDoor, { kind: "hall", door: "B", hall: 2 });
   });
@@ -183,7 +188,8 @@ describe("enter graph · hang any artefact on any door", () => {
     assert.equal(hallDoorTap(1200, 0, "B", "A"), "stay");
     assert.equal(hallDoorTap(1200, 0, "B"), "enter");
     const missHall = stayBiomePlay(resolveDoorEnter("A", 1, "cit-2", hung));
-    assert.deepEqual(missHall, { kind: "hall", door: "A", hall: 1 });
+    assert.equal(missHall.kind, "biome");
+    if (missHall.kind === "biome") assert.equal(missHall.hall, 2);
     assert.equal(hungHallForDoor("A", 1, hung), 2);
     assert.equal(hungHallForDoor("A", 2, hung), 2);
     assert.equal(latestHungHall(hung), 2);
@@ -821,6 +827,9 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.equal(hungStayHall({ artHall: 1, enterHall: 1, hangRoom: 1, liveHall: 2 }), 2);
     assert.equal(hungStayHall({ artHall: 1, enterHall: 1, hangRoom: 1, doorHall: 2 }), 2);
     assert.notEqual(hungStayHall({ liveHall: 2, hangRoom: 1 }), 1);
+    assert.equal(hungLockHall(hung, "A", { artHall: 1, enterHall: 1, hangRoom: 1, liveHall: 1, doorHall: 1 }), 2);
+    assert.notEqual(hungLockHall(hung, "A", { hangRoom: 1, liveHall: 1 }), 1);
+    assert.equal(hungStayHall({ arts: hung, door: "A", artHall: 1, enterHall: 1, hangRoom: 1, liveHall: 1 }), 2);
     assert.equal(hungStageChrome(1, "A", { keeper: "Room 2 • Door A", name: "Play Sprint", line: "Asteroid" }).title, "Room 2 • Door A");
     assert.notEqual(hungStageChrome(2, "A", { name: "Asteroid Sprint", keeper: "StarBoltSprint", line: "asteroid" }).title, "Asteroid Sprint");
     const cleaned = hydrateRift("cit-2", 2, leak, hung);
@@ -830,18 +839,76 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     const goEnterFn = engine.slice(engine.indexOf("async function goEnter"), engine.indexOf("function enterNext"));
     assert.match(goEnterFn, /hungStayHall/);
-    assert.match(goEnterFn, /Never snap a living Room 2\+ hang down to Room 1/);
+    assert.match(goEnterFn, /Hard-lock hung Room N/);
+    assert.match(goEnterFn, /arts,/);
+    assert.match(goEnterFn, /door: doorLetterOf\(pick\)/);
     assert.match(goEnterFn, /bindHall >= 2 && bindHall !== hallHold\.current/);
+    assert.match(goEnterFn, /bindHall >= 2 \? bindHall : hallHold\.current/);
     const playRift = engine.slice(engine.indexOf("async function playRift"), engine.indexOf("function refreshHung"));
     assert.match(playRift, /hungStayHall/);
+    assert.match(playRift, /arts,/);
+    assert.match(playRift, /door: letter/);
+    assert.match(playRift, /hungLockHall/);
     assert.match(playRift, /liveHall: hallHold\.current/);
     assert.match(engine, /hangRoomRef\.current = hallHold\.current/);
-    assert.match(engine, /hangRoomRef\.current = slice\.n/);
+    assert.match(engine, /slice\.n <= 1 && \(hangRoomRef\.current >= 2 \|\| hungLockHall/);
+    assert.match(engine, /bind <= 1 && hangRoomRef\.current >= 2/);
     const cine = readFileSync(join(here, "../components/cine-app.tsx"), "utf8");
     assert.match(cine, /hungStay \? "sprint" : "asteroid"/);
     assert.match(cine, /custom\?\.playlist\?\.length \|\| hungStay \? custom/);
-    const arts = readFileSync(join(here, "./artifacts.ts"), "utf8");
-    assert.match(arts, /hall: a\.room\.hall/);
+    const artsSrc = readFileSync(join(here, "./artifacts.ts"), "utf8");
+    assert.match(artsSrc, /hall: a\.room\.hall/);
+    assert.match(artsSrc, /room\?\.hall, a\.room\?\.hall, prev\.room\?\.hall/);
+  });
+
+  it("hard-lock: hung Room 2 enter chrome wins when hallHold / hangRoomRef / stale asteroid are all Room 1", () => {
+    const id = "art-h2-hardlock";
+    const hung = hangArtifactOnDoor(id, "A", { hall: 2, citadel: "cit-2" }, [art(id, "forest")]);
+    const leak = {
+      m1: {
+        biome: "asteroid" as const,
+        name: "Asteroid",
+        still: biomeStill("asteroid"),
+        loop: "/films/forge-asteroid.mp4",
+        art: "art-stale-r1",
+      },
+    };
+    assert.equal(hungLockHall(hung, "A", { artHall: 1, enterHall: 1, hangRoom: 1, liveHall: 1, doorHall: 1 }), 2);
+    assert.equal(hungHallForDoor("A", 1, hung), 2);
+    const enter = stayBiomePlay(resolveDoorEnter("A", 1, "cit-2", hung, leak));
+    assert.equal(enter.kind, "biome");
+    if (enter.kind !== "biome") return;
+    assert.equal(enter.hall, 2);
+    assert.equal(enter.art, id);
+    assert.notEqual(enter.name, "Asteroid");
+    assert.deepEqual(hungPlayChrome(enter.hall, enter.door), { keeper: "Room 2 • Door A", name: "Play Sprint" });
+    assert.notEqual(hungPlayChrome(enter.hall, enter.door).keeper, "Room 1 • Door A");
+    const jump = stayBiomePlay(resolveHungEnter("A", 1, "cit-2", hung, leak));
+    assert.equal(jump.kind, "biome");
+    if (jump.kind !== "biome") return;
+    assert.equal(jump.hall, 2);
+    assert.notEqual(jump.name, "Asteroid");
+    const r1 = hangArtifactOnDoor("art-ast-r1", "A", { hall: 1 }, [
+      {
+        id: "art-ast-r1",
+        name: "Asteroid",
+        still: biomeStill("asteroid"),
+        playlist: stockBiomePlaylist("asteroid"),
+        prompt: "asteroid",
+        hungAt: 1,
+        grade: null,
+      },
+    ]);
+    assert.equal(hungLockHall(r1, "A", { hangRoom: 1, liveHall: 1 }), 1);
+    const ast = stayBiomePlay(resolveDoorEnter("A", 1, "", r1));
+    assert.equal(ast.kind, "biome");
+    if (ast.kind !== "biome") return;
+    assert.equal(ast.hall, 1);
+    assert.equal(ast.biome, "asteroid");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const films = readFileSync(join(here, "./films.ts"), "utf8");
+    assert.doesNotMatch(films, /id: "asteroid"[\s\S]{0,400}prepareHoldBeats/);
+    assert.match(films, /id: "asteroid"/);
   });
 
   it("hung Door A/B first tap walks in the hall — second tap same door enters", () => {

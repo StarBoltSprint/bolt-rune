@@ -249,24 +249,27 @@ export function riftGateMatchesHall(
   const art = arts.find((a) => a.id === gate.art);
   const bound = hungHallN(art?.room?.hall);
   if (bound) return bound === n;
+  /* Hall-less leftover is not Room 1 when a Room 2+ hang owns this door. */
+  if (hungLockHall(arts, art?.room?.door) >= 2) return false;
   return Boolean(art?.room?.door) && n === 1;
 }
 
-/** Latest hang on this letter, preferring the living hall. 0 if none. */
+/** Latest hang on this letter. Room 2+ bind wins over living default 1. 0 if none. */
 export function hungHallForDoor(door: DoorLetter, hall: number, arts: HungArtifact[]): number {
   const ordered = [...arts].filter((a) => a.room?.door === door).sort((p, q) => (q.hungAt || 0) - (p.hungAt || 0));
+  const latest = hungHallN(ordered[0]?.room?.hall);
+  if (latest) return latest;
   if (ordered.some((a) => a.room && hallMatches(a.room, hall))) return hall;
-  const other = ordered.find((a) => {
-    const n = a.room?.hall || 0;
-    return n >= 1 && n <= 8;
-  });
-  return other?.room?.hall && other.room.hall >= 1 && other.room.hall <= 8 ? other.room.hall : 0;
+  const other = ordered.find((a) => hungHallN(a.room?.hall));
+  return hungHallN(other?.room?.hall);
 }
 
 export function latestHungHall(arts: HungArtifact[]): number {
-  const ordered = [...arts].filter((a) => a.room?.hall).sort((p, q) => (q.hungAt || 0) - (p.hungAt || 0));
-  const n = ordered[0]?.room?.hall || 0;
-  return n >= 1 && n <= 8 ? n : 0;
+  const ordered = [...(arts || [])].filter((a) => {
+    const n = hungHallN(a?.room?.hall);
+    return n > 0;
+  }).sort((p, q) => (q.hungAt || 0) - (p.hungAt || 0));
+  return hungHallN(ordered[0]?.room?.hall);
 }
 
 /** Enter the hung biome even if the living overlay is still on another hall. */
@@ -278,6 +281,14 @@ export function resolveHungEnter(
   rift?: { m1?: RiftGate; m2?: RiftGate },
 ): DoorEnter {
   const here = stayBiomePlay(resolveDoorEnter(door, hall, citadel, arts, rift));
+  const lock = hungLockHall(arts, door, {
+    enterHall: here.kind === "biome" ? here.hall : hall,
+    liveHall: hall,
+  });
+  /* Biome hall 1 / Asteroid must not stick when the hang bind is Room N. */
+  if (lock >= 2 && (here.kind !== "biome" || hungHallN(here.hall) !== lock)) {
+    return stayBiomePlay(resolveDoorEnter(door, lock, citadel, arts, {}));
+  }
   if (here.kind === "biome") return here;
   const want = hungHallForDoor(door, hall, arts);
   if (want && want !== hall) return stayBiomePlay(resolveDoorEnter(door, want, citadel, arts, {}));
@@ -291,9 +302,13 @@ export function resolveDoorEnter(
   arts: HungArtifact[],
   rift?: { m1?: RiftGate; m2?: RiftGate },
 ): DoorEnter {
-  const restored = hydrateRift(citadel, hall, rift || {}, arts);
+  const lock = hungLockHall(arts, door, { liveHall: hall });
+  const here = hungHallN(hall);
+  /* Default / living 1 never resolves a Room 2+ hang as Room 1 · Asteroid. */
+  const want = here <= 1 && lock >= 2 ? lock : here || hall;
+  const restored = hydrateRift(citadel, want, rift || {}, arts);
   const gate = restored[doorIdOf(door)];
-  if (!gate) return { kind: "hall", door, hall };
+  if (!gate) return { kind: "hall", door, hall: want };
   const biome = asBiome(gate.biome) || inferBiome({ name: gate.name, still: gate.still, playlist: gate.playlist || [], prompt: gate.name });
   const trans = gate.trans && /\.mp4(\?|$)/i.test(gate.trans) ? gate.trans : stockTransUrl(door, biome);
   const playlist = uniq([...(gate.playlist || []), ...stockBiomePlaylist(biome), gate.loop]);
@@ -302,12 +317,12 @@ export function resolveDoorEnter(
     const art = gate.art ? arts.find((a) => a.id === gate.art) : undefined;
     return hungHallN(art?.room?.hall);
   })();
-  const here = hungHallN(hall);
-  if (bound && here && bound !== here) return { kind: "hall", door, hall };
+  const at = hungHallN(want);
+  if (bound && at && bound !== at) return { kind: "hall", door, hall: want };
   return {
     kind: "biome",
     door,
-    hall: bound || here || hall,
+    hall: bound || at || want,
     citadel: citadel || undefined,
     art: gate.art || "",
     biome,
@@ -445,24 +460,61 @@ export function hungEnterBindHall(
 }
 
 /**
+ * Authoritative hung Room N for enter chrome / door resolve.
+ * Latest Room 2–8 hang on this door always wins over living default 1 / Asteroid.
+ * Room 1 only wins when the bind is actually Room 1 (no 2+ hang on this door).
+ */
+export function hungLockHall(
+  arts: HungArtifact[] = [],
+  door?: DoorLetter | string | null,
+  hints?: {
+    artHall?: number | string | null;
+    enterHall?: number | string | null;
+    hangRoom?: number | string | null;
+    liveHall?: number | string | null;
+    doorHall?: number | string | null;
+  },
+): number {
+  const letter = door ? doorLetterOf(door) : "";
+  const ordered = [...arts]
+    .filter((a) => a.room?.door && (!letter || a.room.door === letter))
+    .sort((p, q) => (q.hungAt || 0) - (p.hungAt || 0));
+  const latest = hungHallN(ordered[0]?.room?.hall);
+  if (latest >= 2) return latest;
+  const hintN = [hints?.doorHall, hints?.artHall, hints?.enterHall, hints?.hangRoom, hints?.liveHall]
+    .map(hungHallN)
+    .find((n) => n >= 2);
+  if (latest !== 1 && hintN) return hintN;
+  if (latest === 1) return 1;
+  const any = latestHungHall(arts);
+  if (any >= 2) return any;
+  return (
+    hintN ||
+    latest ||
+    hungHallN(hints?.hangRoom) ||
+    hungHallN(hints?.liveHall) ||
+    hungHallN(hints?.enterHall) ||
+    hungHallN(hints?.artHall) ||
+    hungHallN(hints?.doorHall) ||
+    0
+  );
+}
+
+/**
  * FilmStage / playRift chrome hall after Hang Room N.
- * Living Room 2+ and the hung artefact win over hangRoomRef/default 1
+ * Hung artefact Room N + living Room 2+ win over hangRoomRef/default 1
  * so enter never titles Room 1 · Asteroid.
  */
 export function hungStayHall(opts?: {
+  arts?: HungArtifact[];
+  door?: DoorLetter | string | null;
   artHall?: number | string | null;
   enterHall?: number | string | null;
   hangRoom?: number | string | null;
   liveHall?: number | string | null;
   doorHall?: number | string | null;
 }): number {
-  const live = hungHallN(opts?.liveHall);
-  const door = hungHallN(opts?.doorHall);
-  const bound = hungEnterBindHall(opts?.artHall, opts?.enterHall, opts?.hangRoom);
-  if (bound >= 2) return bound;
-  if (door >= 2) return door;
-  if (live >= 2) return live;
-  return bound || door || live || 0;
+  return hungLockHall(opts?.arts || [], opts?.door, opts);
 }
 
 /** Living-hall / FilmStage overlay after Hang Room N — never stuck on Room 1. Door letter is never blank. */

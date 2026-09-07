@@ -78,6 +78,7 @@ import {
   hungPlayChrome,
   hungEnterBindHall,
   hungHallForDoor,
+  hungLockHall,
   hungStayHall,
   stayBiomePlay,
   stockTransUrl,
@@ -2586,8 +2587,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (!bind) return;
     if (bind === hallHold.current && phaseRef.current === "play" && (bank.current.size || hallsHold.current.find((h) => h.n === bind)?.bank?.length)) {
       setLiveHall(bind);
-      hangRoomRef.current = bind;
-      setHangRoomN(bind);
+      /* Living Room 1 must not wipe a Room 2+ hang bind. */
+      if (!(bind <= 1 && hangRoomRef.current >= 2)) {
+        hangRoomRef.current = bind;
+        setHangRoomN(bind);
+      }
       return;
     }
     rememberSlice(snapHall());
@@ -2634,8 +2638,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     hallsHold.current = putSlice(hallsHold.current, { ...slice, n: bind });
     applyHall({ ...slice, n: bind }, false);
-    hangRoomRef.current = bind;
-    setHangRoomN(bind);
+    /* Hard-lock hung Room N — goHungHall(1) cannot snap hangRoomRef off Room 2+. */
+    if (!(bind <= 1 && hangRoomRef.current >= 2)) {
+      hangRoomRef.current = bind;
+      setHangRoomN(bind);
+    }
     setLiveHall(bind);
     roomsHold.current = Math.max(roomsHold.current, bind, hallsHold.current.length);
     persist({
@@ -2694,8 +2701,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function applyHall(slice: HallSlice, playEnter = false) {
     hallHold.current = slice.n;
-    hangRoomRef.current = slice.n;
-    setHangRoomN(slice.n);
+    /* Living Room 1 slice must not wipe hangRoomRef after Hang Room N. */
+    if (!(slice.n <= 1 && (hangRoomRef.current >= 2 || hungLockHall(readArtifacts()) >= 2))) {
+      hangRoomRef.current = slice.n;
+      setHangRoomN(slice.n);
+    }
     setLiveHall(slice.n);
     viaHold.current = slice.via || "";
     const m1 = slice.next?.m1 ? String(slice.next.m1) : undefined;
@@ -4687,15 +4697,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if (enter.kind === "biome") {
         const bindHall =
           hungStayHall({
+            arts,
+            door: doorLetterOf(pick),
             artHall: arts.find((a) => a.id === enter.art)?.room?.hall,
             enterHall: enter.hall,
             hangRoom: hangRoomRef.current,
             liveHall: hallHold.current,
             doorHall: hungHallForDoor(doorLetterOf(pick), hallHold.current, arts),
           }) || enter.hall;
-        /* Never snap a living Room 2+ hang down to Room 1 / Asteroid. */
+        /* Hard-lock hung Room N — default 1 / Asteroid never titles enter chrome. */
         if (bindHall >= 2 && bindHall !== hallHold.current) await goHungHall(bindHall, false);
-        const restored = hydrateRift(sid.current, hallHold.current, riftRef.current, arts);
+        const restored = hydrateRift(sid.current, bindHall >= 2 ? bindHall : hallHold.current, riftRef.current, arts);
         riftRef.current = restored;
         setRift(restored);
         await playRift(pick, restored[pick] || {
@@ -4797,7 +4809,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         : stayBiomePlay({
             kind: "biome",
             door: doorLetterOf(door),
-            hall: hungEnterBindHall(liveArt?.room?.hall, hangRoomRef.current, hallHold.current) || hangRoomRef.current || hallHold.current,
+            hall:
+              hungLockHall(arts, doorLetterOf(door), {
+                artHall: liveArt?.room?.hall,
+                hangRoom: hangRoomRef.current,
+                liveHall: hallHold.current,
+              }) ||
+              hungEnterBindHall(liveArt?.room?.hall, hangRoomRef.current, hallHold.current) ||
+              hangRoomRef.current ||
+              hallHold.current,
             art: liveGate.art || "",
             biome: (liveGate.biome as BiomeName) || "open",
             name: liveGate.name,
@@ -4806,21 +4826,33 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             playlist: liveGate.playlist || [],
             clips: uniqueClips([liveGate.trans || "", ...(liveGate.playlist || []), liveGate.loop].filter(Boolean)),
           });
+    const letter = doorLetterOf(door);
     const hall =
       hungStayHall({
+        arts,
+        door: letter,
         artHall: liveArt?.room?.hall,
         enterHall: stay.kind === "biome" ? stay.hall : hallHold.current,
         hangRoom: hangRoomRef.current,
         liveHall: hallHold.current,
-        doorHall: hungHallForDoor(doorLetterOf(door), hallHold.current, arts),
+        doorHall: hungHallForDoor(letter, hallHold.current, arts),
+      }) ||
+      hungLockHall(arts, letter, {
+        artHall: liveArt?.room?.hall,
+        enterHall: stay.kind === "biome" ? stay.hall : hallHold.current,
+        hangRoom: hangRoomRef.current,
+        liveHall: hallHold.current,
       }) ||
       hungEnterBindHall(
         liveArt?.room?.hall,
         hangRoomRef.current,
         stay.kind === "biome" ? stay.hall : hallHold.current,
       ) ||
-      hangBindHall(hangRoomRef.current) ||
+      hangBindHall(stay.kind === "biome" && stay.hall >= 2 ? stay.hall : 0) ||
+      hangBindHall(hangRoomRef.current >= 2 ? hangRoomRef.current : 0) ||
+      hangBindHall(hallHold.current >= 2 ? hallHold.current : 0) ||
       hangBindHall(stay.kind === "biome" ? stay.hall : 0) ||
+      hangBindHall(hangRoomRef.current) ||
       hangBindHall(hallHold.current) ||
       1;
     hangRoomRef.current = hall;
@@ -4829,7 +4861,6 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     sprintHold.current = true;
     playing.current = true;
     setRiftBloom(null);
-    const letter = door === "m2" ? "B" : "A";
     setSprint({
       film: riftFilm(stay.name, stay.still, stay.clips, hall, letter),
       door,
@@ -6800,7 +6831,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     .filter((a) => a.room?.door === hungDoor && hangBindHall(a.room?.hall))
     .sort((p, q) => (q.hungAt || 0) - (p.hungAt || 0))[0];
   const chromeHall =
-    hangBindHall(boundArt?.room?.hall) || hangBindHall(hangRoomN) || hangBindHall(liveHall) || 1;
+    hungLockHall(hungArts.length ? hungArts : typeof window === "undefined" ? [] : readArtifacts(), hungDoor, {
+      artHall: boundArt?.room?.hall,
+      hangRoom: hangRoomN,
+      liveHall,
+    }) || hangBindHall(boundArt?.room?.hall) || hangBindHall(hangRoomN) || hangBindHall(liveHall) || 1;
   const chromeDoor = doorLetterOf(boundArt?.room?.door || hungDoor || "A");
   const livingChrome = hungDoor ? hungPlayChrome(chromeHall, chromeDoor) : null;
 
