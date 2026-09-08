@@ -405,6 +405,9 @@ describe("Smoke ship-gate — local lint", () => {
     const beauty = lintSmoke(goodWalk({ prompt: `${assemblePrompt(goodSlots()).prompt} beauty dish` }));
     assert.equal(beauty.smoke, "FAIL");
     assert.ok(beauty.reasons.includes("light-beauty"));
+    const muzzle = lintSmoke(goodWalk({ prompt: `${assemblePrompt(goodSlots()).prompt} muzzle key` }));
+    assert.equal(muzzle.smoke, "FAIL");
+    assert.ok(muzzle.reasons.includes("light-beauty"));
     const smash = lintSmoke(goodWalk({ light: { smash: true } }));
     assert.equal(smash.smoke, "FAIL");
     assert.ok(smash.reasons.includes("light-smash"));
