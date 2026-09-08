@@ -43,9 +43,12 @@ function seatRing(id: HallSeatId, on: boolean) {
 export function DoorChatLine({
   where = "hall",
   box,
+  chrome = true,
 }: {
   where?: "hall" | "play";
   box?: { x: number; y: number; w: number; h: number } | null;
+  /** Pause / forge only. Play must not paint SEATS over the film. */
+  chrome?: boolean;
 }) {
   const [sheet, setSheet] = useState(false);
   const [open, setOpen] = useState<HallSeatId | null>(null);
@@ -134,6 +137,8 @@ export function DoorChatLine({
   const left = box ? box.x + box.w * 0.08 : undefined;
   const width = box ? box.w * 0.84 : undefined;
   const top = box ? box.y + 6 : undefined;
+
+  if (!chrome) return null;
 
   return (
     <div

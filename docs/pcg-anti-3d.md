@@ -24,7 +24,8 @@ The README holds the refuse table, steal table, and smell tests. This note is th
 | Picture-time audio | `src/game/pcg-audio.ts` | Plate + engine buses; pause/mute; grade one-shots |
 | Play input / haptics / a11y | `src/game/pcg-input.ts` | Video-layout A/B; same cue sheet; no XYZ / WASD |
 | EDPCG density / awakening | `src/game/pcg-density.ts` | `smoothstep(m) * noise(s, pictureTime)` → cook slots |
-| Smoke ship-gate | `src/game/smoke-gate.ts` | PASS/FAIL before Hang / cache / enter; `railsVersion` `bolt-1` |
+| Smoke ship-gate | `src/game/smoke-gate.ts` | PASS/FAIL before Hang / cache / enter; spawn behind; still-pair; void; `railsVersion` `bolt-1` |
+| Play chrome | `src/game/play-chrome.ts` | Play = no SEATS/FILMS/ROOMS/REFS; video-layout A/B hits only |
 | Rich cache + LRU pin | `src/game/pcg-rail.ts` | PASS rows only; Keep edges / hung / Hall′ stills never evict |
 | Keep share recipe | `src/game/pcg-share.ts` | Graph + pin keys; visitor never auto-billed |
 
@@ -48,6 +49,8 @@ Four nested clocks (`NESTED_CYCLES_LAW`) — do not mix: micro plate (6–15s) d
 Breath plates **always loop** until walk / Howl / Pause / enter. Never play-once-then-freeze last frame. `walk-spawn-A` ended plays looping `breath-A` (`video.loop=true`); a breath lap replays the same pose and must not recook, arm, raise `m`, advance WFC, or use wall-clock. Idle-decay is NOT a miss: `m · 0.95^Δt` per media second on breath|decay (`tickIdleDecay`), not per lap or frame. Howl is intentional breath (`howlPose`): clock runs, armed off, same pose / `walkFrom` if mid-walk — not Pause, not miss, not Recall −0.05. Hall entry is always spawn + looping `breath-spawn` (`beginPose` / `resetForNewHall`); Continue is breath on the saved pose, never a mid-cut walk. Doors are plan sides + arm state (`DOOR_LAW`), never meshes or a third hitbox. Pose lives in `pcg-pose.ts` and advances only on plate ended.
 
 Every plate change goes `planTransition` → `runTransition` → play (`src/game/transition.ts`). `goTo` never assigns `video.src`. Double buffer: prepare incoming before fade, `commitIncoming` is an opacity + pointer flip. One WAAPI opacity anim — no 8-step `setTimeout`. Same still or breath→breath same pose is a cut; dissolve ≤ 280ms (`prefers-reduced-motion` → 80ms); decay holds with no fade; missing clip or Smoke FAIL decays with no spinner. Howl / Pause abort the fade. Prefetch arrival breath on walk tap. A popping join means last frame of walk-A ≠ frame 0 of breath-A — dissolve cannot fix a bad encode.
+
+**Spawn / play chrome:** spawn is a lock-off behind still. Mood and profile plates are Vault refs only — Smoke FAIL if they try to be breath-spawn (face-on hero spawn = FAIL). Hang / play library accept requires still-pair when `stillStart` / `stillEnd` are present (`stillEnd(walk) ≈ stillStart(breath dest)`, `stillStart(walk-spawn-*) ≈ stillStart(breath-spawn)`); fail closed on the authoring path. Mid-clip near-black frames FAIL. Play paints no text chrome. Pause / forge may show SEATS/FILMS/ROOMS/REFS. Hits are video-layout A/B, not Imagine-baked rectangles. Pose SM is unchanged; walk A↔B stays optional.
 
 `Date.now` that remains elsewhere is not this clock:
 

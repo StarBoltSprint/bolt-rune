@@ -148,6 +148,8 @@ type Props = {
   holdDoor?: "A" | "B";
   /** Bound living hall — title is Room N • Door A, never only the biome name. */
   holdHall?: number;
+  /** Pause / forge chrome (SEATS) — never over living play. */
+  onPaused?: (paused: boolean) => void;
 };
 
 type G = {
@@ -218,7 +220,7 @@ function liveSpot(beat: Beat, t: number): Spot {
   return { x: pr.x, y: pr.y };
 }
 
-export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit, onDone, onHallDoor, holdDoor, holdHall }: Props) {
+export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit, onDone, onHallDoor, holdDoor, holdHall, onPaused }: Props) {
   const film = custom ?? FILM_BY_ID[id];
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const aRef = useRef<HTMLVideoElement | null>(null);
@@ -529,6 +531,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       releasePictureAudio();
       void v?.play().catch(() => {});
       setHud((h) => ({ ...h, paused: false }));
+      onPaused?.(false);
       return;
     }
     playPausedRef.current = true;
@@ -541,6 +544,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       /* */
     }
     setHud((h) => ({ ...h, paused: true, resonance: gRef.current.resonance }));
+    onPaused?.(true);
   }
 
   function pausePlay() {

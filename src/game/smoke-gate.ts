@@ -12,9 +12,27 @@ import { glowContractIssues, MIN_CUE_WINDOW_S, type Cue, type Plate } from "./pc
 import { lintPrompt, RAILS, type PromptSlots } from "./pcg-prompt.ts";
 import { clipCachePut, commitHallPrime, replaceStockEnter, type ClipCacheKind, type HallCommit, type PaidEnterTicket } from "./pcg-rail.ts";
 import { stockBiomeLoop } from "./play-clip.ts";
+import { isHallFilm, isLivingHallLoop } from "./stock-room.ts";
 
 export const RAILS_VERSION = "bolt-1" as const;
 export const SMOKE_BOT_TIMEOUT_MS = 4000;
+export const VOID_LUMA = 0.04;
+
+/** Spawn / breath camera — lock-off BEHIND only. Face-on hero spawn = FAIL. */
+export const SPAWN_CAMERA_LAW = [
+  "lock-off BEHIND only",
+  "face-on hero spawn = FAIL",
+  "profile-as-primary = FAIL",
+  "mood/profile = Vault ref only",
+] as const;
+
+/** Still-pair before Hang / play library accept. Fail closed when authoring provides fields. */
+export const STILL_PAIR_FIELDS = ["stillStart", "stillEnd"] as const;
+export const STILL_PAIR_LAW = [
+  "stillEnd(walk) ≈ stillStart(breath dest)",
+  "stillStart(walk-spawn-*) ≈ stillStart(breath-spawn)",
+  "Required fields: stillStart, stillEnd. Fail closed when the authoring path provides them.",
+] as const;
 
 export type SmokeVerdict = "PASS" | "FAIL";
 export type SmokeKind = "walk" | "breath" | "enter" | "biome";
@@ -78,6 +96,40 @@ export type SmokeSubject = {
   /** Readable L/R bias in [on,off]. Omitted = cue-math proxy. `unknown`/`equal` = FAIL. */
   pixelSide?: "A" | "B" | "equal" | "none" | "unknown";
   bodyOk?: boolean;
+  /** Plate act when kind is biome or when decay must lint as a play encode. */
+  act?: "breath" | "walk" | "enter" | "decay" | string;
+  pose?: "spawn" | "atA" | "atB" | string;
+  posePrimary?: "behind" | "profile" | "face-on" | "side" | "mood";
+  faceReadable?: boolean;
+  mood?: boolean;
+  /** Burned-in encode labels. Play acts FAIL on SEATS/FILMS/ROOMS/REFS. */
+  burnedText?: boolean | string | string[];
+  labels?: string[];
+  encodeText?: string;
+  /** Mid-clip near-black full frames (void). */
+  voidFrames?: boolean | Array<{ t: number; luma?: number }>;
+  blackHole?: boolean;
+  /** Library / pair stills for Hang + play accept. */
+  library?: StillPairRow[];
+  pair?: StillPairHints;
+  authoring?: boolean;
+};
+
+export type StillPairRow = {
+  id?: string;
+  act?: string;
+  poseStart?: string;
+  poseEnd?: string;
+  stillStart?: string;
+  stillEnd?: string;
+  side?: string;
+};
+
+export type StillPairHints = {
+  walkEnd?: string;
+  breathDestStart?: string;
+  walkSpawnStart?: string;
+  breathSpawnStart?: string;
 };
 
 export type SmokeBotBrief = {
@@ -111,6 +163,15 @@ const BODY_BAN =
 const CHROME_BAN =
   /\b(TAP|watermark|watermarks|logo|logos|HUD|UI bar|words on the dog|letters on (?:the )?dog)\b/;
 
+const PLAY_BURN =
+  /\b(SEATS|FILMS|ROOMS|REFS)\b/;
+
+const SPAWN_FACE =
+  /\b(face-on|face on|face readable|hero spawn|muzzle hero)\b/i;
+
+const SPAWN_PROFILE =
+  /\b(profile-hero|profile as primary|side-profile|side hero|mood(?:[-_\s]?(?:loop|film))?)\b/i;
+
 function num(n: number | null | undefined) {
   const x = Number(n);
   return Number.isFinite(x) ? x : 0;
@@ -140,6 +201,32 @@ function withoutRails(prompt: string): string {
   const text = String(prompt || "");
   if (text.startsWith(RAILS)) return text.slice(RAILS.length).trim();
   return text.replace(RAILS, "").trim();
+}
+
+export function playActOf(subject: Pick<SmokeSubject, "act" | "kind" | "slots">): "breath" | "walk" | "enter" | "decay" | "" {
+  const raw = String(subject.act || subject.slots?.act || subject.kind || "").trim();
+  if (/breath/i.test(raw)) return "breath";
+  if (/walk/i.test(raw)) return "walk";
+  if (/enter/i.test(raw)) return "enter";
+  if (/decay/i.test(raw)) return "decay";
+  return "";
+}
+
+export function isSpawnBreathAct(subject: SmokeSubject): boolean {
+  if (subject.pose === "spawn") return true;
+  if (subject.kind === "breath") return true;
+  if (playActOf(subject) === "breath") return true;
+  return /breath-spawn|idle-spawn/i.test(clipOf(subject) + " " + String(subject.still || ""));
+}
+
+export function stillKey(u?: string | null): string {
+  return String(u || "").trim().split("?")[0].toLowerCase();
+}
+
+export function stillApprox(a?: string | null, b?: string | null): boolean {
+  const x = stillKey(a);
+  const y = stillKey(b);
+  return Boolean(x && y && x === y);
 }
 
 /** Howl / Pause never gate. Keep replay of a cached PASS skips. Stock ingest once cached PASS. */
@@ -278,7 +365,40 @@ function lintContainer(subject: SmokeSubject): string[] {
   return reasons;
 }
 
+function spawnHeuristicBlob(subject: SmokeSubject): string {
+  return `${clipOf(subject)} ${subject.still || ""} ${subject.stillStart || ""} ${withoutRails(String(subject.prompt || ""))}`;
+}
+
+function lintSpawnCamera(subject: SmokeSubject): string[] {
+  if (subject.camera === "behind" && subject.posePrimary === "behind" && subject.faceReadable !== true && !subject.mood) {
+    /* tagged lock-off behind — still fail hall mood loops used as spawn */
+    const clip = clipOf(subject);
+    if (isHallFilm(clip) || isLivingHallLoop(clip)) return ["spawn-profile"];
+    return [];
+  }
+  if (subject.camera === "face-on" || subject.posePrimary === "face-on" || subject.faceReadable === true) {
+    return ["spawn-face"];
+  }
+  if (
+    subject.camera === "side" ||
+    subject.camera === "side-profile" ||
+    subject.posePrimary === "profile" ||
+    subject.posePrimary === "side" ||
+    subject.posePrimary === "mood" ||
+    subject.mood === true
+  ) {
+    return ["spawn-profile"];
+  }
+  const blob = spawnHeuristicBlob(subject);
+  const clip = clipOf(subject);
+  if (isHallFilm(clip) || isLivingHallLoop(clip)) return ["spawn-profile"];
+  if (SPAWN_FACE.test(blob)) return ["spawn-face"];
+  if (SPAWN_PROFILE.test(blob)) return ["spawn-profile"];
+  return [];
+}
+
 function lintCamera(subject: SmokeSubject): string[] {
+  if (isSpawnBreathAct(subject)) return lintSpawnCamera(subject);
   const reasons: string[] = [];
   if (subject.camera === "face-on" || subject.camera === "side" || subject.camera === "side-profile") {
     reasons.push("camera-lock");
@@ -326,11 +446,25 @@ function lintDoors(subject: SmokeSubject): string[] {
   return [];
 }
 
+function burnedBlob(subject: SmokeSubject): string {
+  const bits: string[] = [];
+  if (typeof subject.burnedText === "string") bits.push(subject.burnedText);
+  if (Array.isArray(subject.burnedText)) bits.push(...subject.burnedText.map((s) => String(s)));
+  if (Array.isArray(subject.labels)) bits.push(...subject.labels.map((s) => String(s)));
+  if (subject.encodeText) bits.push(String(subject.encodeText));
+  bits.push(withoutRails(String(subject.prompt || "")));
+  return bits.join(" ");
+}
+
 function lintChrome(subject: SmokeSubject): string[] {
   const reasons: string[] = [];
   if (subject.chrome === true) reasons.push("chrome");
   const rest = withoutRails(String(subject.prompt || ""));
   if (rest && CHROME_BAN.test(rest)) reasons.push("chrome-prompt");
+  const act = playActOf(subject);
+  if (act && (subject.burnedText === true || PLAY_BURN.test(burnedBlob(subject)))) {
+    reasons.push("chrome-burn");
+  }
   return reasons;
 }
 
@@ -341,11 +475,105 @@ function lintPath(subject: SmokeSubject): string[] {
   const forkSlot = subject.slots?.fork && subject.slots.fork !== "none";
   const claimsFork = forkCue || Boolean(forkSlot);
   if (claimsFork && subject.pathAhead === false) reasons.push("path-missing");
+  if (isSpawnBreathAct(subject) && subject.pathAhead === false) reasons.push("path-missing");
   if (subject.kind === "walk" && claimsFork) {
     const prompt = String(subject.prompt || "");
     if (prompt && !/gold-cyan|gold cyan/i.test(prompt)) reasons.push("path-gold-cyan");
   }
   return reasons;
+}
+
+function rowId(row: StillPairRow): string {
+  return String(row.id || "").trim();
+}
+
+function isWalkRow(row: StillPairRow): boolean {
+  return row.act === "walk" || /^walk-/i.test(rowId(row));
+}
+
+function isWalkSpawnRow(row: StillPairRow): boolean {
+  return /walk-spawn/i.test(rowId(row)) || (row.act === "walk" && (row.poseStart === "spawn" || /spawn/i.test(rowId(row))));
+}
+
+function walkDest(row: StillPairRow): "atA" | "atB" | "" {
+  if (row.poseEnd === "atA" || row.poseEnd === "atB") return row.poseEnd;
+  const id = rowId(row);
+  if (/walk-A-B|walk-spawn-B/i.test(id)) return "atB";
+  if (/walk-B-A|walk-spawn-A/i.test(id)) return "atA";
+  if (row.side === "B") return "atB";
+  if (row.side === "A") return "atA";
+  return "";
+}
+
+function findBreath(library: StillPairRow[], dest: "spawn" | "atA" | "atB"): StillPairRow | undefined {
+  return library.find((row) => {
+    const id = rowId(row);
+    if (dest === "spawn") return row.act === "breath" && (row.poseStart === "spawn" || /breath-spawn|idle-spawn/i.test(id));
+    if (dest === "atA") return row.act === "breath" && (row.poseStart === "atA" || /breath-A|breath-atA|idle-m1/i.test(id));
+    return row.act === "breath" && (row.poseStart === "atB" || /breath-B|breath-atB|idle-m2/i.test(id));
+  });
+}
+
+/** Library still-pair. Mismatch → FAIL. Authoring without fields → fail closed. */
+export function lintStillPair(library: StillPairRow[] = [], opts: { authoring?: boolean } = {}): string[] {
+  const rows = library.filter((row) => isWalkRow(row) || row.act === "breath" || /breath-|walk-/i.test(rowId(row)));
+  const hasStill = rows.some((row) => stillKey(row.stillStart) || stillKey(row.stillEnd));
+  if (!hasStill) {
+    if (opts.authoring && rows.length) return ["still-pair-required"];
+    return [];
+  }
+  const reasons: string[] = [];
+  const spawnBreath = findBreath(rows, "spawn");
+  for (const walk of rows.filter(isWalkRow)) {
+    if (isWalkSpawnRow(walk) && spawnBreath) {
+      if (!stillKey(walk.stillStart) || !stillKey(spawnBreath.stillStart)) reasons.push("still-pair-required");
+      else if (!stillApprox(walk.stillStart, spawnBreath.stillStart)) reasons.push("still-pair-spawn");
+    }
+    const dest = walkDest(walk);
+    const breath = dest ? findBreath(rows, dest) : undefined;
+    if (breath) {
+      if (!stillKey(walk.stillEnd) || !stillKey(breath.stillStart)) reasons.push("still-pair-required");
+      else if (!stillApprox(walk.stillEnd, breath.stillStart)) reasons.push("still-pair-dest");
+    }
+  }
+  return [...new Set(reasons)];
+}
+
+function lintStillPairSubject(subject: SmokeSubject): string[] {
+  const authoring = Boolean(subject.authoring || subject.when === "hang" || subject.when === "cook");
+  if (subject.library?.length) return lintStillPair(subject.library, { authoring });
+  const pair = subject.pair;
+  if (!pair) return [];
+  const reasons: string[] = [];
+  if (pair.walkEnd || pair.breathDestStart) {
+    if (!stillKey(pair.walkEnd) || !stillKey(pair.breathDestStart)) reasons.push("still-pair-required");
+    else if (!stillApprox(pair.walkEnd, pair.breathDestStart)) reasons.push("still-pair-dest");
+  }
+  if (pair.walkSpawnStart || pair.breathSpawnStart) {
+    if (!stillKey(pair.walkSpawnStart) || !stillKey(pair.breathSpawnStart)) reasons.push("still-pair-required");
+    else if (!stillApprox(pair.walkSpawnStart, pair.breathSpawnStart)) reasons.push("still-pair-spawn");
+  }
+  return reasons;
+}
+
+function lintVoidFrames(subject: SmokeSubject): string[] {
+  if (subject.blackHole === true || subject.voidFrames === true) return ["void-frame"];
+  const frames = Array.isArray(subject.voidFrames) ? subject.voidFrames : [];
+  const dur = num(subject.duration);
+  for (const frame of frames) {
+    const t = num(frame.t);
+    const mid = dur > 0 ? t > 0.05 && t < dur - 0.05 : t > 0;
+    const dark = frame.luma == null || num(frame.luma) <= VOID_LUMA;
+    if (mid && dark) return ["void-frame"];
+  }
+  return [];
+}
+
+/** Hang / play library accept. FAIL closed when still fields are present or authoring. */
+export function acceptPlayLibrary(library: StillPairRow[], opts: { authoring?: boolean } = {}): SmokeGateOut {
+  const reasons = lintStillPair(library, { authoring: opts.authoring !== false });
+  if (reasons.length) return failSmoke(reasons);
+  return { smoke: "PASS", reasons: [], attach: attachSmokePass({ kind: "walk", clip: "library" }) };
 }
 
 function lintCues(subject: SmokeSubject): string[] {
@@ -421,6 +649,8 @@ const BATTERY: Array<(s: SmokeSubject) => string[]> = [
   lintPath,
   lintCues,
   lintContinuity,
+  lintStillPairSubject,
+  lintVoidFrames,
   lintPromptResidue,
 ];
 

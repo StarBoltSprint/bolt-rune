@@ -218,3 +218,10 @@ export function resolvePlayPointer(input: {
 export function laneOfSide(side: PlaySide): "l" | "r" {
   return side === "A" ? "l" : "r";
 }
+
+/** Invisible video-layout A/B hit bands — never Imagine-baked door rectangles. */
+export function playSideHitRect(side: PlaySide, layout: VideoLayout): VideoLayout {
+  const band = layout.w * SIDE_BAND;
+  if (side === "A") return { x: layout.x, y: layout.y, w: band, h: layout.h };
+  return { x: layout.x + layout.w - band, y: layout.y, w: band, h: layout.h };
+}
