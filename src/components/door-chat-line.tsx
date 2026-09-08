@@ -89,7 +89,8 @@ export function DoorChatLine({
                   l.who === "you" ? "text-white/55" : "text-[#9ef0e4]"
                 }`}
               >
-                {l.who === "you" ? "you" : HALL_SEATS[l.seat].label} · {l.text}
+                {l.who === "you" ? "you" : HALL_SEATS[l.seat].label} ·{" "}
+                {l.who === "seat" ? l.text.replace(new RegExp(`^${HALL_SEATS[l.seat].label}\\s*[·:]\\s*`, "i"), "") : l.text}
               </p>
             ))}
         </div>
