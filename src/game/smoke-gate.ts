@@ -13,6 +13,16 @@ import { lintPrompt, RAILS, type PromptSlots } from "./pcg-prompt.ts";
 import { clipCachePut, commitHallPrime, replaceStockEnter, type ClipCacheKind, type HallCommit, type PaidEnterTicket } from "./pcg-rail.ts";
 import { stockBiomeLoop } from "./play-clip.ts";
 import { isHallFilm, isLivingHallLoop } from "./stock-room.ts";
+import {
+  edgeKindOf,
+  matchPose,
+  type EdgeKind,
+  type StillPairPixels,
+  type StillSource,
+} from "./still-pair-match.ts";
+
+export type { EdgeKind, StillPairPixels, StillSource } from "./still-pair-match.ts";
+export { matchPose, edgeKindOf, stillPairOrUndef, SMIR_STILL_PAIR_MATCH } from "./still-pair-match.ts";
 
 export const RAILS_VERSION = "bolt-1" as const;
 export const SMOKE_BOT_TIMEOUT_MS = 4000;
@@ -88,6 +98,11 @@ export const SMIR_LOCKOFF_LOCK = [
 /** SmiR lock-off RIG SURVEY — frame0 constants across siblings. */
 export const SMIR_RIG_LOCK = [
   "SmiR lock-off RIG SURVEY: frame0 constants door-pair width/frame, paws Y, withers Y, mid-pillar X must match across breath/walk siblings.",
+] as const;
+
+/** SmiR still-pair pixel match — ingest only. Tests lock this line. */
+export const SMIR_STILL_PAIR_PIXEL = [
+  "SmiR still-pair: match rig + back-silhouette, not skeletal dog.",
 ] as const;
 
 export const RIG_JUMP = 0.05;
@@ -288,6 +303,8 @@ export type SmokeSubject = {
   /** Library / pair stills for Hang + play accept. */
   library?: StillPairRow[];
   pair?: StillPairHints;
+  /** Decoded stillEnd(A) vs stillStart(B). Ingest only — play never fills this. */
+  stillPair?: StillPairPixels;
   authoring?: boolean;
 };
 
@@ -311,6 +328,8 @@ export type StillPairHints = {
   breathAtBFrame0?: string;
   tailleStillEnd?: number;
   tailleStillStart?: number;
+  /** Optional decoded pair. Additive to stillApprox key equality. */
+  pixels?: StillPairPixels;
 };
 
 export type SmokeBotBrief = {
@@ -838,6 +857,62 @@ function lintStillPairSubject(subject: SmokeSubject): string[] {
   return reasons;
 }
 
+function pairPixelsOf(subject: SmokeSubject): StillPairPixels | undefined {
+  return subject.stillPair || subject.pair?.pixels;
+}
+
+function edgeOfSubject(subject: SmokeSubject): EdgeKind {
+  if (subject.stillPair?.edge) return subject.stillPair.edge;
+  if (subject.pair?.pixels?.edge) return subject.pair.pixels.edge;
+  return edgeKindOf(playActOf(subject) || subject.kind, subject.kind === "walk" ? "breath" : "");
+}
+
+/** Pixel still-pair. Runs only when both bitmaps exist (ingest). */
+export function lintStillPairPixels(subject: SmokeSubject): string[] {
+  const pair = pairPixelsOf(subject);
+  if (!pair?.a || !pair?.b) return [];
+  const got = matchPose(pair.a, pair.b, pair.edge || edgeOfSubject(subject), {
+    marksA: pair.marksA,
+    marksB: pair.marksB,
+  });
+  return got.ok ? [] : got.why;
+}
+
+function lintLibraryPixels(library: StillPairRow[], pixels: Record<string, StillSource>): string[] {
+  const reasons: string[] = [];
+  const rows = library.filter((row) => isWalkRow(row) || row.act === "breath" || /breath-|walk-/i.test(rowId(row)));
+  const spawnBreath = findBreath(rows, "spawn");
+  for (const walk of rows.filter(isWalkRow)) {
+    if (isWalkSpawnRow(walk) && spawnBreath) {
+      const a = pixels[stillKey(walk.stillStart)];
+      const b = pixels[stillKey(spawnBreath.stillStart)];
+      if (a && b) {
+        const got = matchPose(a, b, "breath-walk");
+        if (!got.ok) reasons.push(...got.why);
+      }
+    }
+    const dest = walkDest(walk);
+    const breath = dest ? findBreath(rows, dest) : undefined;
+    if (breath) {
+      const a = pixels[stillKey(walk.stillEnd)];
+      const b = pixels[stillKey(breath.stillStart)];
+      if (a && b) {
+        const got = matchPose(a, b, "walk-breath");
+        if (!got.ok) reasons.push(...got.why);
+      }
+    }
+  }
+  for (const row of rows.filter((r) => r.act === "breath" || /breath-/i.test(rowId(r)))) {
+    const a = pixels[stillKey(row.stillStart)];
+    const b = pixels[stillKey(row.stillEnd)];
+    if (a && b && stillKey(row.stillStart) !== stillKey(row.stillEnd)) {
+      const got = matchPose(a, b, "breath");
+      if (!got.ok) reasons.push(...got.why);
+    }
+  }
+  return [...new Set(reasons)];
+}
+
 function relJump(a: number, b: number): number {
   const base = Math.max(Math.abs(a), 1e-6);
   return Math.abs(b - a) / base;
@@ -921,9 +996,20 @@ function lintVoidFrames(subject: SmokeSubject): string[] {
 }
 
 /** Hang / play library accept. FAIL closed when still fields are present or authoring. */
-export function acceptPlayLibrary(library: StillPairRow[], opts: { authoring?: boolean } = {}): SmokeGateOut {
+export function acceptPlayLibrary(
+  library: StillPairRow[],
+  opts: { authoring?: boolean; pair?: StillPairPixels; pixels?: Record<string, StillSource> } = {},
+): SmokeGateOut {
   const reasons = lintStillPair(library, { authoring: opts.authoring !== false });
-  if (reasons.length) return failSmoke(reasons);
+  if (opts.pair?.a && opts.pair?.b) {
+    const got = matchPose(opts.pair.a, opts.pair.b, opts.pair.edge || "walk-breath", {
+      marksA: opts.pair.marksA,
+      marksB: opts.pair.marksB,
+    });
+    if (!got.ok) reasons.push(...got.why);
+  }
+  if (opts.pixels) reasons.push(...lintLibraryPixels(library, opts.pixels));
+  if (reasons.length) return failSmoke([...new Set(reasons)]);
   return { smoke: "PASS", reasons: [], attach: attachSmokePass({ kind: "walk", clip: "library" }) };
 }
 
@@ -1002,6 +1088,7 @@ const BATTERY: Array<(s: SmokeSubject) => string[]> = [
   lintCues,
   lintContinuity,
   lintStillPairSubject,
+  lintStillPairPixels,
   lintTaille,
   lintLight,
   lintGrade,
@@ -1010,7 +1097,7 @@ const BATTERY: Array<(s: SmokeSubject) => string[]> = [
   lintPromptResidue,
 ];
 
-/** Deterministic local lint. No CV. Pixel-hard items: flags + prompt/cue/aspect proxies (TODO cv). */
+/** Deterministic local lint. Pixel still-pair runs only when stillPair bitmaps exist (ingest). */
 export function lintSmoke(subject: SmokeSubject): SmokeGateOut {
   const cached = subject.alreadyPassed === true || subject.cachedPass || (typeof subject.alreadyPassed === "object" && subject.alreadyPassed?.smoke === "PASS");
   if (!shouldSmoke(subject.when, Boolean(cached))) {
@@ -1212,6 +1299,7 @@ export function subjectFromFilm(
   film: { still?: string; local?: string; playlist?: string[]; line?: string; name?: string },
   kind: SmokeKind = "walk",
   when: SmokeWhen = "hang",
+  stillPair?: StillPairPixels,
 ): SmokeSubject {
   const clip = String(film.playlist?.[0] || film.local || "").trim();
   const still = String(film.still || "").trim();
@@ -1223,5 +1311,6 @@ export function subjectFromFilm(
     stillEnd: still,
     stillStart: still,
     prompt: String(film.line || film.name || ""),
+    stillPair,
   };
 }

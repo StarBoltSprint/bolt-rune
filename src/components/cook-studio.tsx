@@ -16,7 +16,7 @@ import { sfxForge, startBed, unlockAudio } from "@/game/audio";
 import { RuneEngine } from "@/components/rune-engine";
 import { beginRunSeed, clipCachePut, mayImagine, plateSeed, reuseClipBeforeRecook } from "@/game/pcg-rail";
 import { assembleCookPlate } from "@/game/pcg-prompt";
-import { lintSmoke, recallSmokePass, smokeForgeFrost, type SmokeGateOut } from "@/game/smoke-gate";
+import { lintSmoke, recallSmokePass, smokeForgeFrost, type SmokeGateOut, type StillPairPixels } from "@/game/smoke-gate";
 import { lastPlay } from "@/game/rune-session";
 
 type Plate = { status: "wait" | "cook" | "ready" | "fail"; url?: string };
@@ -308,7 +308,7 @@ export function CookStudio({
     return cookFilm(name.slice(0, 42), customStill || (playlist[0] ? "" : world.still), playlist);
   }
 
-  function hangNow(live: string[], smoke?: SmokeGateOut) {
+  function hangNow(live: string[], smoke?: SmokeGateOut, stillPair?: StillPairPixels) {
     const film = makeFilm(live);
     if (!film.playlist?.length) return film;
     const gate =
@@ -320,6 +320,7 @@ export function CookStudio({
         still: film.still,
         stillEnd: film.still,
         prompt: film.line,
+        stillPair,
       });
     if (gate.smoke !== "PASS") {
       setFrost(smokeForgeFrost(gate.reasons));
@@ -650,7 +651,7 @@ export function CookStudio({
     let stillUrl = customStill;
     const got: string[] = [];
     let spec = readClipSpec();
-    function gateCookClip(playable: string, when: "cook" | "stock"): SmokeGateOut {
+    function gateCookClip(playable: string, when: "cook" | "stock", stillPair?: StillPairPixels): SmokeGateOut {
       const plate = assembleCookPlate({
         biome: cookBiome,
         playerVoice: seedLine || worldLine,
@@ -670,6 +671,7 @@ export function CookStudio({
         slots: plate.slots,
         cachedPass: Boolean(recallSmokePass(playable)),
         alreadyPassed: recallSmokePass(playable) || undefined,
+        stillPair,
       });
     }
     const pace = { n: 0, cap: 16 };

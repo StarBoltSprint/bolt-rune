@@ -14,11 +14,13 @@ import {
   SMIR_LIGHT_LOCK,
   SMIR_LOCKOFF_LOCK,
   SMIR_RIG_LOCK,
+  SMIR_STILL_PAIR_PIXEL,
   SMIR_TAILLE_LOCK,
   SPAWN_CAMERA_LAW,
   STILL_PAIR_FIELDS,
   STILL_PAIR_LAW,
   acceptPlayLibrary,
+  lintStillPairPixels,
   mayFlipProfileToBack,
   clearSmokeFail,
   clearSmokePass,
@@ -209,6 +211,25 @@ describe("Smoke ship-gate — local lint", () => {
     const decay = lintSmoke(goodWalk({ kind: "walk", act: "decay", labels: ["SEATS"] }));
     assert.equal(decay.smoke, "FAIL");
     assert.ok(decay.reasons.includes("chrome-burn"));
+  });
+
+  it("pixel still-pair FAIL reasons surface on Hang / library accept", () => {
+    const W = 8;
+    const H = 12;
+    const black = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4) };
+    const gated = lintSmoke(goodWalk({ stillPair: { a: black, b: black, edge: "breath" } }));
+    assert.equal(gated.smoke, "FAIL");
+    assert.ok(gated.reasons.includes("void-frame") || gated.reasons.includes("no-dog"));
+    assert.ok(lintStillPairPixels({ kind: "walk", stillPair: { a: black, b: black, edge: "breath" } }).length);
+    const lib = acceptPlayLibrary(
+      [
+        { id: "walk-spawn-A", act: "walk", poseStart: "spawn", poseEnd: "atA", stillStart: "still-spawn", stillEnd: "still-a" },
+        { id: "breath-A", act: "breath", poseStart: "atA", stillStart: "still-a", stillEnd: "still-a" },
+      ],
+      { authoring: true, pair: { a: black, b: black, edge: "walk-breath" } },
+    );
+    assert.equal(lib.smoke, "FAIL");
+    assert.ok(lib.reasons.includes("void-frame") || lib.reasons.includes("no-dog"));
   });
 
   it("still-pair mismatch and authoring without fields FAIL; match PASS", () => {
@@ -580,7 +601,9 @@ describe("Smoke ship-gate — engine hook + Door seat untouched", () => {
     assert.match(gate, /export function lintSmoke/);
     assert.match(gate, /export async function runSmokeGate/);
     assert.match(gate, /export function lintStillPair/);
+    assert.match(gate, /export function lintStillPairPixels/);
     assert.match(gate, /export function acceptPlayLibrary/);
+    assert.match(gate, /stillPair/);
     assert.match(gate, /RAILS_VERSION = "bolt-1"/);
     assert.match(gate, /Asteroid HOLD/);
     assert.match(gate, /Door seat stays talk-only/);
@@ -613,6 +636,7 @@ describe("Smoke ship-gate — engine hook + Door seat untouched", () => {
       ...SMIR_GRADE_LOCK,
       ...SMIR_LOCKOFF_LOCK,
       ...SMIR_RIG_LOCK,
+      ...SMIR_STILL_PAIR_PIXEL,
     ]) {
       assert.match(readme, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
