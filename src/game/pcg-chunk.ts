@@ -36,6 +36,7 @@ import {
   type HallCommit,
   type PaidEnterTicket,
 } from "./pcg-rail.ts";
+import { lintEnterClip } from "./smoke-gate.ts";
 import type { WalkSecs } from "./rune.ts";
 
 export { bridgeSeed };
@@ -503,7 +504,9 @@ export function cookChunkBridge(opts: {
   }
   const cooked = assembleBridgePrompt(opts.from, opts.to, act, key);
   if (!cooked.lint.ok) return { url: "", key, tickets: 0, imagine: false, credit: "" };
-  const stored = replaceStockEnter(key, opts.url, opts.ticket);
+  const smoke = lintEnterClip(opts.url, opts.to.still, cooked.prompt, BRIDGE_SECS.min);
+  if (smoke.smoke !== "PASS") return { url: "", key, tickets: 0, imagine: false, credit: "" };
+  const stored = replaceStockEnter(key, opts.url, opts.ticket, smoke);
   if (stored) registerStockBridge(opts.from.id, opts.to.id, stored);
   return {
     url: stored,

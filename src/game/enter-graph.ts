@@ -164,13 +164,21 @@ export function bindHungRoom(
   };
 }
 
-/** Pure hang — caller persists with hangOnRoom if needed. */
+/** Pure hang — caller persists with hangOnRoom if needed. Smoke FAIL does not hang. */
 export function hangArtifactOnDoor(
   id: string,
   door: DoorLetter,
-  opts: { hall: number; citadel?: string; still?: string; trans?: string; biome?: BiomeName },
+  opts: {
+    hall: number;
+    citadel?: string;
+    still?: string;
+    trans?: string;
+    biome?: BiomeName;
+    smoke?: { smoke?: string } | null;
+  },
   from: HungArtifact[],
 ): HungArtifact[] {
+  if (opts.smoke && opts.smoke.smoke !== "PASS") return from;
   const a = from.find((x) => x.id === id);
   if (!a) return from;
   const room = bindHungRoom(a, door, opts);

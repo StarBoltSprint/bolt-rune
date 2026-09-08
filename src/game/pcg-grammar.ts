@@ -174,6 +174,7 @@ export function rewriteOnEnter(opts: {
   deadEnd?: boolean;
   fromBiome?: string;
   toBiome?: string;
+  smoke?: { smoke?: string } | null;
 }): EnterRewrite {
   const from = String(opts.fromBiome || "");
   if (opts.deadEnd) return deadEndHold(from);
@@ -181,7 +182,10 @@ export function rewriteOnEnter(opts: {
   if (mayImagine("enter-hot") || mayImagine("walk-toward-door") || mayImagine("speculate")) {
     return { act: "idle", rewrite: "hold", commit: "hold", biome: from, imagine: false };
   }
-  const commit = commitHallPrime(opts.clip);
+  if (opts.smoke && opts.smoke.smoke !== "PASS") {
+    return { act: "idle", rewrite: "hold", commit: "hold", biome: from, imagine: false };
+  }
+  const commit = commitHallPrime(opts.clip, opts.smoke);
   if (commit !== "pass") {
     return { act: "idle", rewrite: "hold", commit: "hold", biome: from, imagine: false };
   }

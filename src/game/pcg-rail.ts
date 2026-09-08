@@ -204,7 +204,14 @@ export function clipCacheGet(key: string): string {
   return durableClip(readClipBag()[key]?.url);
 }
 
-export function clipCachePut(key: string, url: string, kind: ClipCacheKind): string {
+/** Optional Smoke stamp. FAIL never enters the cook cache. */
+export function clipCachePut(
+  key: string,
+  url: string,
+  kind: ClipCacheKind,
+  smoke?: { smoke?: string } | null,
+): string {
+  if (smoke && smoke.smoke !== "PASS") return "";
   const clip = durableClip(url);
   if (!key || !clip) return "";
   const bag = readClipBag();
@@ -345,15 +352,22 @@ export function doorGlowState(opts: {
   return "idle";
 }
 
-/** Graph commit Hall′ only after a playable enter clip exists (PASS). */
-export function commitHallPrime(clip?: string | null): HallCommit {
+/** Graph commit Hall′ only after a playable enter clip exists (PASS). Smoke FAIL holds. */
+export function commitHallPrime(clip?: string | null, smoke?: { smoke?: string } | null): HallCommit {
+  if (smoke && smoke.smoke !== "PASS") return "hold";
   return durableClip(clip) ? "pass" : "hold";
 }
 
-/** Put a cooked enter URL under `s_enter` — confirm / Forge / ticket only. */
-export function replaceStockEnter(key: string, cookedUrl: string, ticket: PaidEnterTicket): string {
+/** Put a cooked enter URL under `s_enter` — confirm / Forge / ticket only. Smoke FAIL drops. */
+export function replaceStockEnter(
+  key: string,
+  cookedUrl: string,
+  ticket: PaidEnterTicket,
+  smoke?: { smoke?: string } | null,
+): string {
+  if (smoke && smoke.smoke !== "PASS") return "";
   if (!mayPaidEnterCook(ticket) || !mayImagine("enter-confirm")) return "";
-  return clipCachePut(key, cookedUrl, "enter");
+  return clipCachePut(key, cookedUrl, "enter", smoke);
 }
 
 /**
