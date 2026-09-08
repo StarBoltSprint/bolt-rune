@@ -15,10 +15,27 @@ npm run dev
 Open `http://localhost:8080`.
 
 - **Runes** — citadel. Play / Load / New citadel.
-- **Vault** — coffre. Continue, Shift, pick a room, Hang A / Hang B.
+- **Vault** — coffre. Continue, Shift, pick a room, Hang A / Hang B. **Hang ref** imports your own walk/breath mp4 (or a `grok.com/imagine/post/…` URL).
 - **Keep** — sign in so the hall is yours.
 
 Stock sprint mp4s are not in this tree (too heavy). Stills, UI, and Imagine CDN clips are.
+
+## Hang refs → play room
+
+Hang import: local mp4 or grok.com/imagine/post URL as room refs.
+Roles: breath-spawn, walk-A, walk-B (later breath-A/B). Keyed spawn|atA|atB.
+Human Hang wins stock on the pose SM / plate graph.
+9:16 preferred. Continuity FAIL + KEEP = flag only — SmiR Hang wins.
+
+Player-owned Imagine videos become hall **room refs** — not a second engine.
+
+1. **Vault → Hang ref** (empty coffre or under Hang A/B). Fullscreen picture. ≤3 beats: Citadel → Room → role.
+2. Attach a local **mp4** and/or paste a **grok.com/imagine/post/…** URL. Roles: `breath-spawn`, `walk-A`, `walk-B` (later breath-A/B). 9:16 preferred.
+3. **Hang** keys the clip into that hall’s pose graph (`spawn | atA | atB`). Human Hang wins stock on the pose SM / plate graph.
+4. **Play / Load** the citadel. Breath and door walks use hung clips when present.
+5. Continuity FAIL on land does **not** block Hang if you **KEEP** — flag only. SmiR Hang wins. Other Smoke FAIL (wide 16:9, zero-byte) still holds.
+
+No wallet. No player API keys. Spec stays free; paid cook only on confirm. Valley play URL unchanged.
 
 ## PCG rail 1
 

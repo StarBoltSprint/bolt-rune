@@ -1,7 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { dropClipAt, dropRoom, familiesOf, familyHead, filmOf, hangArtifact, hangOnRoom, lastClip, mergeHall, readArtifacts, setPlaylist, uniqueClips, type HungArtifact } from "@/game/artifacts";
-import { continuePrompt, readClipSpec, shiftPrompt, stockBiomeFilm, SHIFTS } from "@/game/cook";
+import { continuePrompt, cookFilm, readClipSpec, shiftPrompt, stockBiomeFilm, SHIFTS } from "@/game/cook";
 import { bindHungRoom, doorLetterOf, hangThumbStill, hungPlayChrome, vaultHangCaption, walkHangHallHref, walkHungHref } from "@/game/enter-graph";
+import {
+  bindHangRefRoom,
+  hangMediaSrc,
+  hangRefFlags,
+  hangRefRole,
+  isContinuityOnlyFail,
+  isHangMediaUrl,
+  isImaginePostUrl,
+  parseImaginePostUrl,
+  type HangRefRole,
+} from "@/game/hang-ref";
+import { lintSmoke, mayHang, smokeForgeFrost } from "@/game/smoke-gate";
 import { vaultHangRoom, vaultHangStart } from "@/game/path-entry";
 import { ClipSpecBar } from "@/components/clip-spec";
 import { grabRuneFrame, pollCookPlate, startRuneExtend, startRuneFilm } from "@/lib/cook";
@@ -9,7 +21,7 @@ import { CLIP_TOO_LARGE_FROST, clipRetryFrost, cookClipTooLarge, cookFrameHint, 
 import { hangHall, listHall } from "@/lib/hall";
 import { bindCitadel, defaultHangRoom, hallN, hangOpensSheet, holdHangRooms, listHangCitadels, listHangRooms, resolveHangRoom, type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import { hydrateSessions, lastPlay, listSessions, listStoredHallHints, LOAD_DROP_EVENT, stampPlay } from "@/game/rune-session";
-import { HangAskSheet, StillCarousel, StillChip } from "@/components/hang-ask";
+import { HangAskSheet, HangRefSheet, StillCarousel, StillChip } from "@/components/hang-ask";
 import { HANG_HALL_FLOOR, HANG_LEFTOVER_SWALLOW_MS, hangActEnters, hangBindHall, hangDoorAct, hangStillWrap, swallowOpeningTap, writeHangFloor, writeHangPending, type HangDoorAct } from "@/game/hang-ask";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { FilmStage } from "@/components/film-stage";
@@ -66,6 +78,11 @@ export function VaultHall() {
   const [hangCitadel, setHangCitadel] = useState("");
   const [hangCitadels, setHangCitadels] = useState<HangCitadelPick[]>([]);
   const [hangAsk, setHangAsk] = useState<{ a: HungArtifact; door: "A" | "B"; rooms: HangRoomPick[] } | null>(null);
+  const [hangRef, setHangRef] = useState(false);
+  const [refMedia, setRefMedia] = useState("");
+  const [refRole, setRefRole] = useState<HangRefRole>("breath-spawn");
+  const [refKeep, setRefKeep] = useState(false);
+  const [refFlag, setRefFlag] = useState("");
   const [vaultAt, setVaultAt] = useState(0);
   const [seatChrome, setSeatChrome] = useState(false);
   const lock = useRef(false);
@@ -284,6 +301,107 @@ export function VaultHall() {
     const next = refreshHangRooms();
     hangAskRef.current = { ...hangAskRef.current, rooms: next };
     setHangAsk((cur) => (cur ? { ...cur, rooms: next } : cur));
+  }
+
+  function openHangRef() {
+    if (busy) return;
+    swallowOpeningTap();
+    refreshHangRooms();
+    setHangRef(true);
+    setRefFlag("");
+  }
+
+  function takeRefFile(file: File) {
+    if (!file || !/^video\//i.test(file.type) && !/\.mp4$/i.test(file.name)) {
+      setRefFlag("need an mp4");
+      return;
+    }
+    const prev = refMedia;
+    if (prev.startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(prev);
+      } catch {
+        /* */
+      }
+    }
+    setRefMedia(URL.createObjectURL(file));
+    setRefFlag("9:16 preferred");
+  }
+
+  function takeRefUrl(raw: string) {
+    const t = raw.trim();
+    const post = parseImaginePostUrl(t);
+    if (post.ok) {
+      setRefMedia(post.url);
+      setRefFlag("Imagine post · hang then Play");
+      return;
+    }
+    if (isHangMediaUrl(t)) {
+      setRefMedia(t);
+      setRefFlag("9:16 preferred");
+      return;
+    }
+    setRefFlag("mp4 or grok.com/imagine/post");
+  }
+
+  function hangPlayerRef(hallWant?: number | string | null) {
+    const bindHall = hangBindHall(hallWant ?? hangHallRef.current);
+    const url = hangMediaSrc(refMedia) || (isImaginePostUrl(refMedia) ? refMedia : "");
+    if (!bindHall || !refMedia) {
+      setFrost("hang missed — pick media + room");
+      window.setTimeout(() => setFrost(""), 2400);
+      return;
+    }
+    const role = hangRefRole(refRole);
+    const kind = role.startsWith("breath") ? "breath" : "walk";
+    const smoke = lintSmoke({
+      kind,
+      when: "hang",
+      clip: url || refMedia,
+      still: url || refMedia,
+    });
+    if (!mayHang(smoke, refKeep)) {
+      if (isContinuityOnlyFail(smoke)) {
+        setRefKeep(true);
+        setRefFlag("Continuity FAIL · KEEP to hang");
+        setFrost("Continuity FAIL · KEEP to hang");
+        window.setTimeout(() => setFrost(""), 2800);
+        return;
+      }
+      setFrost(smokeForgeFrost(smoke.reasons) || "smoke FAIL");
+      window.setTimeout(() => setFrost(""), 2800);
+      return;
+    }
+    const flags = hangRefFlags(smoke, refKeep);
+    const film = cookFilm(role, "", [refMedia], role);
+    const hung = hangArtifact(film, true, undefined, smoke, undefined, refKeep);
+    const art = hung[0];
+    if (!art) {
+      setFrost("hang missed");
+      window.setTimeout(() => setFrost(""), 2400);
+      return;
+    }
+    const cit = bindCitadel(listSessions(), lastPlay(), hangCitadelRef.current);
+    const rooms = refreshHangRooms(hung);
+    const pick = rooms.find((r) => r.hall === bindHall);
+    const citadel = pick?.citadel || hangCitadelRef.current || cit.citadel || undefined;
+    const room = bindHangRefRoom(role, {
+      hall: bindHall,
+      citadel,
+      still: art.still,
+      trans: hangMediaSrc(refMedia) || refMedia,
+      flags,
+    });
+    const next = hangOnRoom(art.id, room, hung);
+    setHung(next);
+    const live = next.find((x) => x.id === art.id);
+    if (live) persistArt(live);
+    hangHallRef.current = bindHall;
+    setHangHallN(bindHall);
+    setHangRef(false);
+    sfxForge("page");
+    setFrost(`${role} · hung · Play to walk`);
+    window.setTimeout(() => setFrost(""), 2400);
   }
 
   function playArt(a: HungArtifact) {
@@ -717,16 +835,29 @@ export function VaultHall() {
               </div>
               <div className="flex flex-wrap justify-center gap-2">
                 {vaultHungOn ? (
-                  <StillChip
-                    tone="ice"
-                    disabled={busy}
-                    {...press(() => {
-                      if (busy) return;
-                      unhangDoor(head);
-                    })}
-                  >
-                    Unhang · {vaultRoomN ? hungPlayChrome(vaultRoomN, vaultHungOn).keeper : vaultHungOn}
-                  </StillChip>
+                  <>
+                    <StillChip
+                      tone="ice"
+                      disabled={busy}
+                      {...press(() => {
+                        if (busy) return;
+                        unhangDoor(head);
+                      })}
+                    >
+                      Unhang · {vaultRoomN ? hungPlayChrome(vaultRoomN, vaultHungOn).keeper : vaultHungOn}
+                    </StillChip>
+                    <StillChip
+                      tone="quiet"
+                      disabled={busy}
+                      data-hang-ref-open=""
+                      {...press(() => {
+                        if (busy) return;
+                        openHangRef();
+                      })}
+                    >
+                      Hang ref
+                    </StillChip>
+                  </>
                 ) : (
                   <>
                     <StillChip
@@ -754,6 +885,18 @@ export function VaultHall() {
                     >
                       Hang B
                       <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/40">pick room</span>
+                    </StillChip>
+                    <StillChip
+                      tone="quiet"
+                      disabled={busy}
+                      data-hang-ref-open=""
+                      {...press(() => {
+                        if (busy) return;
+                        openHangRef();
+                      })}
+                    >
+                      Hang ref
+                      <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/40">mp4 / Imagine</span>
                     </StillChip>
                   </>
                 )}
@@ -821,6 +964,18 @@ export function VaultHall() {
             >
               Play / Load
             </a>
+            <button
+              type="button"
+              data-hang-ref-open=""
+              className="font-display text-4xl text-[#9ef0e4] drop-shadow-[0_0_18px_rgba(158,240,228,0.45)]"
+              style={{ touchAction: "manipulation" }}
+              {...press(() => {
+                if (busy) return;
+                openHangRef();
+              })}
+            >
+              Hang ref
+            </button>
             <a
               href="/artifacts"
               className="font-display text-4xl text-[#f0d48a] drop-shadow-[0_0_18px_rgba(228,195,122,0.5)]"
@@ -834,6 +989,26 @@ export function VaultHall() {
             opening
           </p>
         )
+      ) : null}
+      {hangRef ? (
+        <HangRefSheet
+          rooms={hangRooms}
+          hall={hangHallN}
+          onHall={pickHangHall}
+          citadels={hangCitadels}
+          citadel={hangCitadel}
+          onCitadel={pickHangCitadel}
+          onClose={() => setHangRef(false)}
+          media={refMedia}
+          role={refRole}
+          keep={refKeep}
+          flag={refFlag}
+          onMedia={takeRefUrl}
+          onFile={takeRefFile}
+          onRole={setRefRole}
+          onKeep={() => setRefKeep((v) => !v)}
+          onHang={(hall) => hangPlayerRef(hall)}
+        />
       ) : null}
       {hangAsk ? (
         <HangAskSheet

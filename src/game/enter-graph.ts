@@ -1,4 +1,5 @@
 import type { HungArtifact, HungRoom } from "./artifacts.ts";
+import { mayHangPlayerRef } from "./hang-ref.ts";
 import { playableClipSrc, stockBiomeLoop } from "./play-clip.ts";
 import type { RiftGate } from "./rune-session.ts";
 import { doorAtPoint, HALL_LOOP, isHallFilm, isLivingHallLoop } from "./stock-room.ts";
@@ -131,8 +132,10 @@ export function stockTransUrl(_door: DoorLetter | DoorId = "A", _biome?: BiomeNa
 
 function keepClip(u?: string) {
   if (!u) return "";
+  if (u.startsWith("blob:") || u.startsWith("data:video")) return u;
+  if (/^https:\/\/(?:www\.)?grok\.com\/imagine\/post\//i.test(u)) return u;
   if (/\.mp4(\?|$)/i.test(u) || u.includes("xai-vidgen") || u.startsWith("/api/clip") || u.includes("/films/clips/") || u.includes("/films/") || u.includes("/ui/")) {
-    if (/\.(jpe?g|png|webp|gif)(\?|$)/i.test(u)) return "";
+    if (/\.(jpe?g|png|webp|gif)(\?|$)/i.test(u) && !u.includes(".mp4")) return "";
     return u;
   }
   return "";
@@ -151,7 +154,16 @@ function uniq(urls: string[]) {
 export function bindHungRoom(
   a: HungArtifact,
   door: DoorLetter,
-  opts: { hall: number; citadel?: string; still?: string; trans?: string; biome?: BiomeName },
+  opts: {
+    hall: number;
+    citadel?: string;
+    still?: string;
+    trans?: string;
+    biome?: BiomeName;
+    role?: HungRoom["role"];
+    pose?: HungRoom["pose"];
+    flags?: HungRoom["flags"];
+  },
 ): HungRoom {
   const biome = opts.biome || inferBiome(a);
   return {
@@ -161,6 +173,9 @@ export function bindHungRoom(
     citadel: opts.citadel,
     hall: opts.hall,
     biome,
+    role: opts.role || a.room?.role,
+    pose: opts.pose || a.room?.pose,
+    flags: opts.flags || a.room?.flags,
   };
 }
 
@@ -174,11 +189,15 @@ export function hangArtifactOnDoor(
     still?: string;
     trans?: string;
     biome?: BiomeName;
-    smoke?: { smoke?: string } | null;
+    smoke?: { smoke?: string; reasons?: string[] } | null;
+    keep?: boolean;
+    role?: HungRoom["role"];
+    pose?: HungRoom["pose"];
+    flags?: HungRoom["flags"];
   },
   from: HungArtifact[],
 ): HungArtifact[] {
-  if (opts.smoke && opts.smoke.smoke !== "PASS") return from;
+  if (opts.smoke && !mayHangPlayerRef(opts.smoke, opts.keep)) return from;
   const a = from.find((x) => x.id === id);
   if (!a) return from;
   const room = bindHungRoom(a, door, opts);

@@ -7,6 +7,7 @@
 
 import type { HungArtifact, HungRoom } from "./artifacts.ts";
 import { inferBiome } from "./enter-graph.ts";
+import { hangMediaSrc, hangRoleOwnsDoor } from "./hang-ref.ts";
 import { hallDoorPins, type GrammarPin } from "./pcg-grammar.ts";
 import {
   assembleCookPlate,
@@ -108,6 +109,7 @@ export type HungForge = {
     hall?: number;
     biome?: string;
     still?: string;
+    role?: string;
   } | null;
 };
 
@@ -283,6 +285,7 @@ export function hungOnDoor(arts: HungForge[] = [], door: DoorLetter, hall = 1): 
   return [...arts]
     .filter((a) => {
       if (asDoor(a.room?.door) !== door) return false;
+      if (!hangRoleOwnsDoor(a.room?.role, door)) return false;
       const bound = Number(a.room?.hall);
       if (Number.isFinite(bound) && bound >= 1 && bound <= 8) return bound === n;
       return n === 1;
@@ -294,7 +297,9 @@ export function hungOnDoor(arts: HungForge[] = [], door: DoorLetter, hall = 1): 
 export function chunkFromHung(art: HungForge, door: DoorLetter, walkSecs: WalkSecs = 10): Chunk {
   const biome = asGrammarBiome(art.room?.biome || inferBiome(asHungArt(art)));
   const still = art.still || art.room?.still || biomeEntry(biome).still;
-  const loop = (art.playlist || []).find((u) => /\.mp4(\?|$)/i.test(u));
+  const loop =
+    (art.playlist || []).map((u) => hangMediaSrc(u) || u).find((u) => /\.mp4(\?|$)/i.test(u) || u.startsWith("blob:") || u.startsWith("/api/clip")) ||
+    (art.playlist || []).find((u) => /\.mp4(\?|$)/i.test(u));
   return {
     id: `hung-${art.id}`,
     biome,

@@ -131,6 +131,7 @@ import { lintEnterClip, recallSmokePass, smokeForgeFrost } from "@/game/smoke-ga
 import { playDoorAt, playHitRects, playPaintsChrome, playPaintsDoorBox } from "@/game/play-chrome";
 import { isDeadEndPin, pinsForCitadel, rewriteOnEnter } from "@/game/pcg-grammar";
 import { placeHallChunks, resolveChunkEnter } from "@/game/pcg-chunk";
+import { bankPatchesFromHung, overlayHungShelf } from "@/game/hang-ref";
 import { BootScreen } from "@/components/citadel-hub";
 import { HangAskSheet, HangCitadelStrip, HangRoomStrip } from "@/components/hang-ask";
 import { HANG_LEFTOVER_SWALLOW_MS, hangActEnters, hangBindHall, hangDoorAct, readHangPending, swallowOpeningTap, takeHangPending, writeHangPending } from "@/game/hang-ask";
@@ -1788,7 +1789,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       to: "spawn",
       door: "B",
     }).url;
-    return {
+    const stock: PoseClipShelf = {
       "breath-spawn": bank.current.get("idle-spawn")?.url,
       "breath-A": bank.current.get("idle-m1")?.url,
       "breath-B": bank.current.get("idle-m2")?.url,
@@ -1800,6 +1801,19 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       "enter-B": enterB,
       decay: bank.current.get("decay")?.url,
     };
+    /* Human Hang wins stock on the pose SM / plate graph. */
+    return overlayHungShelf(stock, hungArts.length ? hungArts : readArtifacts(), hallHold.current, sid.current);
+  }
+
+  function applyHungRefBank(hall?: number) {
+    const n = hangBindHall(hall ?? hallHold.current) || hallHold.current || 1;
+    const arts = hungArts.length ? hungArts : readArtifacts();
+    const still = lastLive.current || lastPose.current || plateRef.current || "";
+    for (const patch of bankPatchesFromHung(arts, n, sid.current)) {
+      if (!patch.url) continue;
+      const have = bank.current.get(patch.key);
+      bank.current.set(patch.key, { url: patch.url, end: have?.end || still, start: have?.start });
+    }
   }
 
   function posePreloadLib(): PreloadLib {
@@ -1811,6 +1825,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function startHall() {
+    applyHungRefBank();
     const sm = poseRef.current;
     const lib = posePreloadLib();
     const pre = preloadRef.current;
@@ -3353,6 +3368,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     } else {
       bank.current = new Map(incoming.map((b) => [b.key, { url: b.url, end: b.end || "", start: b.start }]));
     }
+    applyHungRefBank(slice.n);
     refsHold.current = forgeTrayRefs(slice.refs || []);
     refsMap.current = new Map(refsHold.current.map((r) => [r.id, r.src]));
     setRefs(refsHold.current);
