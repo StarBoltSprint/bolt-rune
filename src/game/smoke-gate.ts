@@ -85,6 +85,13 @@ export const SMIR_LOCKOFF_LOCK = [
   "Engine must NOT auto-flip/crop profile to fake back — FAIL and decay/old PASS.",
 ] as const;
 
+/** SmiR lock-off RIG SURVEY — frame0 constants across siblings. */
+export const SMIR_RIG_LOCK = [
+  "SmiR lock-off RIG SURVEY: frame0 constants door-pair width/frame, paws Y, withers Y, mid-pillar X must match across breath/walk siblings.",
+] as const;
+
+export const RIG_JUMP = 0.05;
+
 export const PATH_H_MIN = 0.05;
 export const PATH_H_MAX = 0.15;
 export const GRADE_DE_MIN = 12;
@@ -251,6 +258,15 @@ export type SmokeSubject = {
     fog?: "thin" | "thick";
     missStrobe?: boolean;
     doorHuesMid?: boolean;
+    smash?: boolean;
+  };
+  /** Lock-off RIG SURVEY — frame0 constants vs sibling plate. */
+  rig?: {
+    doorPairW?: number;
+    pawsY?: number;
+    withersY?: number;
+    midPillarX?: number;
+    sibling?: { doorPairW?: number; pawsY?: number; withersY?: number; midPillarX?: number };
   };
   /** SmiR color grade samples. */
   grade?: {
@@ -664,7 +680,28 @@ export function lintLight(subject: SmokeSubject): string[] {
   if (L.fog === "thick") reasons.push("light-fog");
   if (L.missStrobe === true) reasons.push("light-miss");
   if (L.doorHuesMid === false) reasons.push("light-hue");
+  if (L.smash === true) reasons.push("light-smash");
   return [...new Set(reasons)];
+}
+
+function rigJump(a?: number, b?: number): boolean {
+  if (typeof a !== "number" || typeof b !== "number" || !Number.isFinite(a) || !Number.isFinite(b)) return false;
+  return Math.abs(a - b) > RIG_JUMP;
+}
+
+export function lintRig(subject: SmokeSubject): string[] {
+  const r = subject.rig;
+  const sib = r?.sibling;
+  if (!r || !sib) return [];
+  if (
+    rigJump(r.doorPairW, sib.doorPairW) ||
+    rigJump(r.pawsY, sib.pawsY) ||
+    rigJump(r.withersY, sib.withersY) ||
+    rigJump(r.midPillarX, sib.midPillarX)
+  ) {
+    return ["rig-jump"];
+  }
+  return [];
 }
 
 export function lintGrade(subject: SmokeSubject): string[] {
@@ -968,6 +1005,7 @@ const BATTERY: Array<(s: SmokeSubject) => string[]> = [
   lintTaille,
   lintLight,
   lintGrade,
+  lintRig,
   lintVoidFrames,
   lintPromptResidue,
 ];

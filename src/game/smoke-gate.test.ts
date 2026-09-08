@@ -13,6 +13,7 @@ import {
   SMIR_GRADE_LOCK,
   SMIR_LIGHT_LOCK,
   SMIR_LOCKOFF_LOCK,
+  SMIR_RIG_LOCK,
   SMIR_TAILLE_LOCK,
   SPAWN_CAMERA_LAW,
   STILL_PAIR_FIELDS,
@@ -404,6 +405,31 @@ describe("Smoke ship-gate — local lint", () => {
     const beauty = lintSmoke(goodWalk({ prompt: `${assemblePrompt(goodSlots()).prompt} beauty dish` }));
     assert.equal(beauty.smoke, "FAIL");
     assert.ok(beauty.reasons.includes("light-beauty"));
+    const smash = lintSmoke(goodWalk({ light: { smash: true } }));
+    assert.equal(smash.smoke, "FAIL");
+    assert.ok(smash.reasons.includes("light-smash"));
+    const fog = lintSmoke(goodWalk({ light: { fog: "thick" } }));
+    assert.equal(fog.smoke, "FAIL");
+    assert.ok(fog.reasons.includes("light-fog"));
+    const missLight = lintSmoke(goodWalk({ light: { missStrobe: true } }));
+    assert.equal(missLight.smoke, "FAIL");
+    assert.ok(missLight.reasons.includes("light-miss"));
+    const hue = lintSmoke(goodWalk({ light: { doorHuesMid: false } }));
+    assert.equal(hue.smoke, "FAIL");
+    assert.ok(hue.reasons.includes("light-hue"));
+    const jump = lintSmoke(
+      goodWalk({
+        rig: {
+          doorPairW: 0.42,
+          pawsY: 0.78,
+          withersY: 0.48,
+          midPillarX: 0.5,
+          sibling: { doorPairW: 0.55, pawsY: 0.78, withersY: 0.48, midPillarX: 0.5 },
+        },
+      }),
+    );
+    assert.equal(jump.smoke, "FAIL");
+    assert.ok(jump.reasons.includes("rig-jump"));
     const withers = lintSmoke(goodWalk({ grade: { withersWhite: false, dE: 3, hueL: "teal", hueR: "gold" } }));
     assert.equal(withers.smoke, "FAIL");
     assert.ok(withers.reasons.includes("grade-withers") || withers.reasons.includes("grade-de"));
@@ -421,14 +447,29 @@ describe("Smoke ship-gate — local lint", () => {
     assert.ok(flip.reasons.includes("camera-flip"));
     const ok = lintSmoke(
       goodWalk({
-        light: { faceBrightest: false, pawStable: true, forkBrighter: true, fog: "thin", doorHuesMid: true },
+        light: {
+          faceBrightest: false,
+          pawStable: true,
+          forkBrighter: true,
+          fog: "thin",
+          doorHuesMid: true,
+          smash: false,
+        },
         grade: { hueL: "teal", hueR: "gold", withersWhite: true, dE: 20, breathStable: true },
+        rig: {
+          doorPairW: 0.42,
+          pawsY: 0.78,
+          withersY: 0.48,
+          midPillarX: 0.5,
+          sibling: { doorPairW: 0.43, pawsY: 0.79, withersY: 0.49, midPillarX: 0.51 },
+        },
       }),
     );
     assert.equal(ok.smoke, "PASS");
     for (const line of SMIR_LIGHT_LOCK) assert.match(line, /light|face|fork|beauty|paw|teal|haze|chrome/i);
     for (const line of SMIR_GRADE_LOCK) assert.match(line, /teal|gold|duotone|ΔE|split|grade/i);
     for (const line of SMIR_LOCKOFF_LOCK) assert.match(line, /lock-off|splice|flip/i);
+    for (const line of SMIR_RIG_LOCK) assert.match(line, /RIG SURVEY|door-pair|paws Y|withers Y|mid-pillar/i);
   });
 
   it("Howl / Pause / Keep replay skip; stock cached PASS skips", () => {
@@ -547,6 +588,7 @@ describe("Smoke ship-gate — engine hook + Door seat untouched", () => {
       ...SMIR_LIGHT_LOCK,
       ...SMIR_GRADE_LOCK,
       ...SMIR_LOCKOFF_LOCK,
+      ...SMIR_RIG_LOCK,
     ]) {
       assert.match(readme, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }

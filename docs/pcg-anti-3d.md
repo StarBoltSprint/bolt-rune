@@ -27,7 +27,7 @@ The README holds the refuse table, steal table, and smell tests. This note is th
 | Smoke ship-gate | `src/game/smoke-gate.ts` | PASS/FAIL before Hang / cache / enter; spawn behind; still-pair; void; `railsVersion` `bolt-1` |
 | Play chrome | `src/game/play-chrome.ts` | Play = no SEATS/FILMS/ROOMS/REFS; video-layout A/B hits only |
 | Smoke taille / black hole | `src/game/smoke-gate.ts` + `transition.ts` | SmiR taille lock; never empty video; hold stillEnd on ended/gap |
-| Smoke door / light / grade | `src/game/smoke-gate.ts` | Architecture in plate; lighting A/B; L teal R gold; lock-off no splice |
+| Smoke door / light / grade | `src/game/smoke-gate.ts` | Architecture in plate; lighting A/B; L teal R gold; lock-off no splice; RIG SURVEY |
 | Rich cache + LRU pin | `src/game/pcg-rail.ts` | PASS rows only; Keep edges / hung / Hall′ stills never evict |
 | Keep share recipe | `src/game/pcg-share.ts` | Graph + pin keys; visitor never auto-billed |
 
@@ -115,6 +115,8 @@ Smoke: sample L jamb, R jamb, withers — hues in bands, ΔE L vs R above floor,
 SmiR lock-off: lens nailed behind him facing doors every play frame. One plate one camera one act — never splice profile+behind in one mp4.
 
 Engine must NOT auto-flip/crop profile to fake back — FAIL and decay/old PASS.
+
+SmiR lock-off RIG SURVEY: frame0 constants door-pair width/frame, paws Y, withers Y, mid-pillar X must match across breath/walk siblings.
 
 ## Smell tests
 
