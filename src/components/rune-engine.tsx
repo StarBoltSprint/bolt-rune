@@ -7012,7 +7012,6 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       liveHall,
     }) || hangBindHall(boundArt?.room?.hall) || hangBindHall(hangRoomN) || hangBindHall(liveHall) || 1;
   const chromeDoor = doorLetterOf(boundArt?.room?.door || hungDoor || "A");
-  const livingChrome = hungDoor ? hungPlayChrome(chromeHall, chromeDoor) : null;
 
   return (
     <div
@@ -7042,6 +7041,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       data-marks={pins.length}
       data-rift={rift.m1 || rift.m2 ? "1" : "0"}
       data-hall-wired={phase === "play" && (rift.m1 || rift.m2) ? "1" : undefined}
+      data-living-hall={phase === "play" && (rift.m1 || rift.m2) ? chromeHall : undefined}
+      data-living-door={phase === "play" && (rift.m1 || rift.m2) ? chromeDoor : undefined}
       data-pick={pick ? "1" : "0"}
       data-cook={cook ? "1" : "0"}
       data-slot-reason={slotReason || undefined}
@@ -7263,15 +7264,6 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           </div>
         ) : null}
       </div>
-      {phase === "play" && (rift.m1 || rift.m2) ? (
-        <p
-          className="pointer-events-none absolute left-4 right-4 top-[max(0.75rem,env(safe-area-inset-top))] z-[70] text-center font-mono text-[11px] uppercase tracking-[0.22em] text-white/70"
-          data-living-hall={chromeHall}
-          data-living-door={chromeDoor}
-        >
-          {livingChrome ? `${livingChrome.keeper} ${livingChrome.name}` : ""}
-        </p>
-      ) : null}
       {phase === "play" || beat === "cook" || beat === "playvid" ? null : (
       <button
         type="button"

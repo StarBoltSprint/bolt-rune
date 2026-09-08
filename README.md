@@ -22,7 +22,7 @@ Stock sprint mp4s are not in this tree (too heavy). Stills, UI, and Imagine CDN 
 
 ## Hall seats (Door + Smoke)
 
-Two Grok Bots sit in the Hang/play hall picture — not a side chat, not Connect Wallet.
+Two Grok Bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Not a side chat, not Connect Wallet, not a permanent bottom row.
 
 | Seat | Role | Default bot id | Wake env | Wake file |
 | --- | --- | --- | --- | --- |
@@ -39,6 +39,7 @@ Cook stays outside (Imagine cook). Asteroid HOLD.
 4. Wake files are public **markers** (seat + bot id + which env to read). They do not hold URLs.
 5. `GET /api/door-chat` returns the roster + `wired` (boolean). It never returns the wake URL.
 6. Director/Cook can wake Smoke from the hall picture, or `window.__boltSeats.wake("smoke", "walk / breath / biome")`.
+7. Hall / hung play paints no `Room N • Door A Play Sprint` header. Picture is the UI. Resonance and in-picture cues stay.
 
 ```bash
 # .env on valley — example only

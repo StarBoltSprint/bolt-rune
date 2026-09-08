@@ -143,4 +143,25 @@ describe("hall door-chat wiring", () => {
     assert.doesNotMatch(hop, /Connect Wallet|wallet/i);
     assert.doesNotMatch(hop, /process\.env\.XAI_API_KEY/);
   });
+
+  it("Door + Smoke live in a closed top seat sheet — no bottom row, no Room N header", () => {
+    const line = readFileSync(join(here, "../components/door-chat-line.tsx"), "utf8");
+    const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    assert.match(line, /const \[sheet, setSheet\] = useState\(false\)/);
+    assert.match(line, /data-seat-sheet=\{sheet \? "open" : "closed"\}/);
+    assert.match(line, /data-seat-handle/);
+    assert.match(line, /data-seat-close/);
+    assert.match(line, /data-seat-dismiss/);
+    assert.match(line, /data-seat-panel/);
+    assert.match(line, /safe-area-inset-top/);
+    assert.doesNotMatch(line, /safe-area-inset-bottom/);
+    assert.doesNotMatch(line, /bottom: top != null/);
+    assert.match(line, /hopDoorChat/);
+    assert.match(engine, /<DoorChatLine where="hall" box=\{picBox\}/);
+    assert.doesNotMatch(engine, /livingChrome \? `\$\{livingChrome\.keeper\}/);
+    assert.doesNotMatch(engine, /Room N • Door A Play Sprint/);
+    assert.match(stage, /if \(holdHall \|\| holdDoor\) return null/);
+    assert.match(stage, /Resonance/);
+  });
 });

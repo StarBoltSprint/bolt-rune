@@ -361,7 +361,7 @@ describe("hang ask leftover tap", () => {
     assert.match(goHung, /if \(!slice\.still \|\| \(hintStill && \/citadel-tour/);
     assert.match(engine, /applyHall\(\{ \.\.\.slice, n: bind \}, false\)/);
     assert.match(engine, /attachRift\(door, gate, bindHall\)/);
-    assert.match(engine, /hungPlayChrome\(chromeHall/);
+    assert.match(engine, /data-living-hall=\{phase === "play" && \(rift\.m1 \|\| rift\.m2\) \? chromeHall : undefined\}/);
     assert.match(engine, /if \(hangAsk\) return/);
     assert.match(engine, /if \(now < hangGuard\.current\) return/);
     assert.match(engine, /hangGuard\.current/);

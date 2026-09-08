@@ -488,6 +488,7 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
     assert.match(stage, /holdHall/);
     assert.match(stage, /hungStageChrome\(holdHall, holdDoor, film\)/);
+    assert.match(stage, /if \(holdHall \|\| holdDoor\) return null/);
     assert.match(stage, /hungBiomePlaylist/);
     assert.match(stage, /playableClipSrc\(src\)/);
     assert.match(stage, /stockBiomeLoop\(\)/);
