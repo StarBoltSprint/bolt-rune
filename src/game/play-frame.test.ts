@@ -373,6 +373,7 @@ describe("A↔B last-frame seed chain", () => {
     assert.doesNotMatch(holdIdle, /atDoor \? "" :[\s\S]*\|\|\s*frame\.url \|\|\s*visSrc\(\) \|\|\s*""\s*\|\|/);
     assert.doesNotMatch(holdIdle, /freezeVis\(/);
     assert.doesNotMatch(holdIdle, /stickCover\(arrival\)/);
+    assert.match(holdIdle, /holdEndedPicture/);
     const playFilm = src.slice(src.indexOf("function playFilm("), src.indexOf("async function cookFilm"));
     assert.doesNotMatch(playFilm, /freezeVis\(/);
     assert.match(playFilm, /addEventListener\("ended"/);

@@ -56,6 +56,7 @@ export const TAILLE_SPAWN_MIN = 0.22;
 export const TAILLE_SPAWN_MAX = 0.32;
 export const TAILLE_WITHERS = 0.25;
 export const TAILLE_WITHERS_SLACK = 0.06;
+export const TAILLE_WALK_DOOR_MIN = 0.35;
 export const TAILLE_WALK_DOOR_MAX = 0.4;
 export const TAILLE_WALK_HERO = 0.7;
 export const TAILLE_JUMP = 0.15;
@@ -652,7 +653,13 @@ function lintTaille(subject: SmokeSubject): string[] {
     if (spawnH < TAILLE_SPAWN_MIN || spawnH > TAILLE_SPAWN_MAX) reasons.push("taille-spawn");
   }
   if (typeof doorH === "number" && Number.isFinite(doorH)) {
-    if (doorH >= TAILLE_WALK_HERO - 0.02 || doorH > TAILLE_WALK_DOOR_MAX + 0.02) reasons.push("taille-walk");
+    if (
+      doorH < TAILLE_WALK_DOOR_MIN - 0.02 ||
+      doorH >= TAILLE_WALK_HERO - 0.02 ||
+      doorH > TAILLE_WALK_DOOR_MAX + 0.02
+    ) {
+      reasons.push("taille-walk");
+    }
   }
   if (typeof t?.bboxH === "number" && Number.isFinite(t.bboxH) && t.bboxH >= TAILLE_WALK_HERO - 0.02) {
     reasons.push("taille-walk");

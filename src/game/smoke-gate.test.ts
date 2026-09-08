@@ -298,6 +298,9 @@ describe("Smoke ship-gate — local lint", () => {
     const hero = lintSmoke(goodWalk({ kind: "walk", taille: { spawnH: 0.27, doorH: 0.7 } }));
     assert.equal(hero.smoke, "FAIL");
     assert.ok(hero.reasons.includes("taille-walk"));
+    const doorTiny = lintSmoke(goodWalk({ kind: "walk", taille: { doorH: 0.2 } }));
+    assert.equal(doorTiny.smoke, "FAIL");
+    assert.ok(doorTiny.reasons.includes("taille-walk"));
     const pairJump = lintSmoke(goodWalk({ pair: { tailleStillEnd: 0.27, tailleStillStart: 0.48 } }));
     assert.equal(pairJump.smoke, "FAIL");
     assert.ok(pairJump.reasons.includes("taille-pair"));

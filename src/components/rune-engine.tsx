@@ -2612,6 +2612,26 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       }
       return;
     }
+    /* Missing next — IMMEDIATELY hold stillEnd; decay or freeze last frame. Never a void. */
+    holdEndedPicture(lastLive.current || plateRef.current || frame.still);
+    const decayUrl = poseShelf().decay;
+    if (decayUrl) {
+      const decayPlan = planTransition(
+        currentTransitionPlate(),
+        {
+          clip: decayUrl,
+          stillStart: lastLive.current || plateRef.current,
+          stillEnd: lastLive.current || plateRef.current,
+          pose: poseOfNode(hereRef.current),
+          act: "decay",
+        },
+        { decayUrl },
+      );
+      void runTransition(decayPlan, plateTransitionIO(() => {
+        kickPlay(decayUrl, true, true);
+      }));
+      return;
+    }
     setPlayFrameKind(frame.playFrame === "fail" ? "hall" : frame.playFrame || "breath");
     filmLoop.current = true;
     setLoopOn(true);
