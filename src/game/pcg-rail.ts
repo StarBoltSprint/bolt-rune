@@ -3,6 +3,7 @@
  * PCG rail 2 — enter-ready glow, hot-path enter never Imagines, Hall′ after clip.
  * PCG rail 3 — graph grammar pins live in pcg-grammar.ts (seed + momentum).
  * Chunk bridge keys H(s, fromId, toId, act) live in pcg-chunk.ts and hook this cache.
+ * Picture-time — sum of played plate durations; never Date.now in the generator.
  * Asteroid HOLD. No Imagine on walk-toward-door speculation.
  */
 
@@ -84,7 +85,7 @@ export function isRunSeed(v?: string | null): v is string {
   return !!v && /^s[a-z0-9]{8,32}$/i.test(v);
 }
 
-/** Fresh run seed `s` — New citadel / first Play. */
+/** Fresh run seed `s` — New citadel / first Play. Date.now here is an id, not the film clock. */
 export function newRunSeed(): string {
   return `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -207,7 +208,7 @@ export function clipCachePut(key: string, url: string, kind: ClipCacheKind): str
   const clip = durableClip(url);
   if (!key || !clip) return "";
   const bag = readClipBag();
-  bag[key] = { url: clip, kind, at: Date.now() };
+  bag[key] = { url: clip, kind, at: Date.now() }; // LRU stamp only — not picture-time / peak
   writeClipBag(bag);
   return clip;
 }
@@ -378,4 +379,70 @@ export function resolveEnterHotPath(opts: EnterLookup & { hung?: boolean }): Ent
     imagine: false,
     commit: commitHallPrime(hit.url),
   };
+}
+
+/* ── Picture-time clock: film strip, never wall clock ── */
+
+/** 8s quiet / calm (decree 505). Lean starts after this. */
+export const PICTURE_CALM_MS = 8000;
+/** ~45s the world answers — peak window opens. */
+export const PICTURE_PEAK_MS = 45000;
+/** 45–90s cosmos (decree 504). Peak window closes. */
+export const PICTURE_PEAK_END_MS = 90000;
+/** ~60s bone for phase 0–1. */
+export const PICTURE_BONE_MS = 60000;
+/** Peak / relic need high momentum — rail-3 relic τ. */
+export const PEAK_MOMENTUM_TAU = 0.7;
+
+export type PlayedPlate = number | { durationMs?: number | null };
+export type PicturePhase = "calm" | "lean" | "peak" | "recede";
+
+function plateMs(plate: PlayedPlate | null | undefined): number {
+  if (plate == null) return 0;
+  const raw = typeof plate === "number" ? plate : Number(plate.durationMs);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return raw;
+}
+
+/**
+ * Picture-time = sum of played plate durations.
+ * Pause the film (no new plate durations) → this number does not move.
+ * Never Date.now / setTimeout — those are wall clock, not the strip.
+ */
+export function pictureTimeMs(playedPlates: ReadonlyArray<PlayedPlate | null | undefined> = []): number {
+  let t = 0;
+  for (const plate of playedPlates) t += plateMs(plate);
+  return t;
+}
+
+/** phase score = (picture-time / bone) × momentum m. Wall clock is ignored. */
+export function picturePhase01(tMs: number, momentum = 0): number {
+  const t = Math.max(0, Number(tMs) || 0);
+  const m = Math.max(0, Math.min(1, Number(momentum) || 0));
+  return Math.max(0, Math.min(1, (t / PICTURE_BONE_MS) * m));
+}
+
+/**
+ * Named phase from picture-time × m.
+ * Peak only if the 45–90s window AND m ≥ τ. Quiet 0–8s is never peak.
+ */
+export function picturePhase(tMs: number, momentum = 0): PicturePhase {
+  const t = Math.max(0, Number(tMs) || 0);
+  const m = Number(momentum) || 0;
+  if (t >= PICTURE_PEAK_END_MS) return "recede";
+  if (mayPeak(t, m)) return "peak";
+  if (t >= PICTURE_CALM_MS) return "lean";
+  return "calm";
+}
+
+/** Peak only if phase window AND m high. No Date.now. */
+export function mayPeak(tMs: number, momentum = 0): boolean {
+  const t = Math.max(0, Number(tMs) || 0);
+  const m = Number(momentum) || 0;
+  return t >= PICTURE_PEAK_MS && t < PICTURE_PEAK_END_MS && m >= PEAK_MOMENTUM_TAU;
+}
+
+/** Relic slot follows peak: window + high m. No wall-clock spawner. */
+export function mayRelic(tMs: number, momentum = 0): boolean {
+  return mayPeak(tMs, momentum);
 }

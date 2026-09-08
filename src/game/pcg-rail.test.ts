@@ -21,10 +21,19 @@ import {
   lookupEnterClip,
   mayImagine,
   mayPaidEnterCook,
+  mayPeak,
+  mayRelic,
   mergeClipCache,
   newRunSeed,
   packClipCache,
   pcgHash,
+  PEAK_MOMENTUM_TAU,
+  picturePhase,
+  picturePhase01,
+  pictureTimeMs,
+  PICTURE_CALM_MS,
+  PICTURE_PEAK_END_MS,
+  PICTURE_PEAK_MS,
   plateSeed,
   readRunSeed,
   registerStockBridge,
@@ -502,5 +511,113 @@ describe("PCG rail 3 — graph grammar pins", () => {
     const readme = readFileSync(join(here, "../../README.md"), "utf8");
     assert.match(readme, /PCG rail 3/);
     assert.match(readme, /graph, not a map/);
+  });
+});
+
+describe("PCG picture-time — film strip, never wall clock", () => {
+  it("pictureTimeMs sums played plate durations only", () => {
+    assert.equal(pictureTimeMs([]), 0);
+    assert.equal(pictureTimeMs([12000, 12000, 12000]), 36000);
+    assert.equal(pictureTimeMs([{ durationMs: 10000 }, { durationMs: 15000 }]), 25000);
+    assert.equal(pictureTimeMs([8000, null, { durationMs: 0 }, { durationMs: -3 }, undefined]), 8000);
+    const paused = [12000, 12000];
+    assert.equal(pictureTimeMs(paused), pictureTimeMs(paused));
+    assert.ok(pictureTimeMs([...paused, 12000]) > pictureTimeMs(paused));
+  });
+
+  it("phase ignores wall clock — pause the film, world does not progress", () => {
+    const plates = [12000, 12000, 12000];
+    const realNow = Date.now;
+    try {
+      const t1 = pictureTimeMs(plates);
+      const p1 = picturePhase(t1, 0.9);
+      const s1 = picturePhase01(t1, 0.9);
+      Date.now = () => 9_999_999_999_000;
+      const t2 = pictureTimeMs(plates);
+      const p2 = picturePhase(t2, 0.9);
+      const s2 = picturePhase01(t2, 0.9);
+      const peakLater = mayPeak(t2, 0.9);
+      assert.equal(t1, 36000);
+      assert.equal(t1, t2);
+      assert.equal(p1, p2);
+      assert.equal(s1, s2);
+      assert.equal(p1, "lean");
+      assert.equal(peakLater, false);
+      assert.equal(mayPeak(t1, 0.9), mayPeak(t2, 0.9));
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it("peak only if phase window AND m high — quiet never peaks", () => {
+    assert.equal(PEAK_MOMENTUM_TAU, RELIC_MOMENTUM_TAU);
+    assert.equal(picturePhase(0, 1), "calm");
+    assert.equal(picturePhase(PICTURE_CALM_MS - 1, 1), "calm");
+    assert.equal(mayPeak(PICTURE_CALM_MS, 1), false);
+    assert.equal(mayPeak(4000, 1), false);
+    assert.equal(mayRelic(4000, 1), false);
+    assert.equal(picturePhase(20_000, 0.9), "lean");
+    assert.equal(mayPeak(PICTURE_PEAK_MS, 0.2), false);
+    assert.equal(mayPeak(PICTURE_PEAK_MS, PEAK_MOMENTUM_TAU), true);
+    assert.equal(mayRelic(50_000, 1), true);
+    assert.equal(picturePhase(50_000, 1), "peak");
+    assert.equal(picturePhase(50_000, 0.2), "lean");
+    assert.equal(picturePhase(PICTURE_PEAK_END_MS, 1), "recede");
+    assert.equal(mayPeak(PICTURE_PEAK_END_MS, 1), false);
+  });
+
+  it("relic pin refuses quiet picture-time even when m is high", () => {
+    const s = "spicturetime01";
+    assert.ok(legendaryRelicPin(s, 0, 1));
+    assert.equal(legendaryRelicPin(s, 0, 1, 4000), null);
+    assert.equal(growPins(s, 1, 0, 4000).some(isRelicPin), false);
+    assert.equal(growPins(s, 1, 0, 50_000).some(isRelicPin), true);
+    const pinned = pinsForCitadel({ s, i: 0, momentum: 1, pictureTimeMs: 4000 });
+    assert.equal(pinned.some(isRelicPin), false);
+    const late = pinsForCitadel({ s, i: 0, momentum: 1, pictureTimeMs: 50_000 });
+    assert.equal(late.some(isRelicPin), true);
+  });
+
+  it("helper source and README name the anti-3D laws; Asteroid HOLD; seats untouched", () => {
+    const rail = readFileSync(join(here, "./pcg-rail.ts"), "utf8");
+    const clock = rail.slice(rail.indexOf("/* ── Picture-time clock"));
+    assert.match(clock, /export function pictureTimeMs/);
+    assert.match(clock, /export function picturePhase/);
+    assert.match(clock, /export function mayPeak/);
+    assert.doesNotMatch(clock, /Date\.now\s*\(|setTimeout\s*\(/);
+    const readme = readFileSync(join(here, "../../README.md"), "utf8");
+    assert.match(readme, /strip of films, not a volume you stand in/);
+    assert.match(readme, /Voxel WFC \/ marching cubes \/ navmesh/);
+    assert.match(readme, /Unconstrained diffusion worlds/);
+    assert.match(readme, /Wall-clock spawners/);
+    assert.match(readme, /Perlin height \/ caves/);
+    assert.match(readme, /Poisson disk props/);
+    assert.match(readme, /LOD streaming cells/);
+    assert.match(readme, /Physics \/ ragdoll \/ IK/);
+    assert.match(readme, /Billboard HUD/);
+    assert.match(readme, /Minimap \/ fog of war/);
+    assert.match(readme, /Infinite terrain chunking/);
+    assert.match(readme, /WFC on time cells/);
+    assert.match(readme, /Slot grammar \+ last frame \+ dest still \+ linter/);
+    assert.match(readme, /Picture-time = Σ played plate durations/);
+    assert.match(readme, /Prefab chunks \/ Hang/);
+    assert.match(readme, /put prop at `\(x,y,z\)`/);
+    assert.match(readme, /change leg count/);
+    assert.match(readme, /Pause the film/);
+    assert.match(readme, /graph \+ clips/);
+    assert.match(readme, /Camera is a sentence/);
+    assert.match(readme, /docs\/pcg-anti-3d\.md/);
+    assert.match(readme, /## PCG role-WFC/);
+    assert.match(readme, /## PCG chunk library/);
+    assert.match(readme, /## PCG anti-3D \/ film-strip laws/);
+    const doc = readFileSync(join(here, "../../docs/pcg-anti-3d.md"), "utf8");
+    assert.match(doc, /strip of films, not a volume you stand in/);
+    assert.match(doc, /pictureTimeMs/);
+    assert.match(doc, /Asteroid HOLD/);
+    const asteroid = FILM_BY_ID.asteroid.beats.map((beat) => beat.at);
+    assert.deepEqual(asteroid, [7.0, 12.3, 16.3, 21.6, 25.6, 30.9, 34.9, 40.2, 44.2, 49.5, 53.5]);
+    const seats = readFileSync(join(here, "../components/door-chat-line.tsx"), "utf8");
+    assert.doesNotMatch(seats, /pictureTimeMs|pcg-anti-3d|mayPeak/);
+    assert.doesNotMatch(rail, /prepareHoldBeats/);
   });
 });

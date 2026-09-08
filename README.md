@@ -36,11 +36,49 @@ Citadel is a graph, not a map. A grammar grows **pins** from run seed `s` + mome
 
 Every Imagine plate is two layers: **rails** (terminals — camera, Bolt, lens, chrome ban, gold-cyan path; never sampled) then **slots** (biome / act / fork / trail / floor / leftover / fromTo / still / destStill / seed) from tiny enums only. `assemblePrompt(slots)` fills the template; the linter checksums rails, blocks morph / banned flavor / missing lock, and fails → stock, no Imagine. Player voice maps Rome→ember, Mars→asteroid, space→asteroid, or one short flavor clause — never camera or body. Graph pins stay in `pcg-grammar.ts` (rail 3). Asteroid HOLD. No Pack seats expansion.
 
+## PCG anti-3D / film-strip laws
+
+Bolt Rune has a strip of films, not a volume you stand in. If a technique needs coordinates, collision, or a ticking world sim, throw it out.
+
+One source of truth: **graph + clips**. Camera is a sentence. Move is an act enum. Asteroid HOLD. No Pack seats expansion.
+
+Deeper notes: [`docs/pcg-anti-3d.md`](docs/pcg-anti-3d.md). Picture-time lives in `src/game/pcg-rail.ts` (`pictureTimeMs` / `picturePhase` / `mayPeak`).
+
+### Refuse
+
+| Technique | Why |
+| --- | --- |
+| **Voxel WFC / marching cubes / navmesh** | XYZ volume. Neighbors are time cells, not floor tiles. |
+| **Unconstrained diffusion worlds** (Imagine as dungeon master) | Diffusion renders a filled template. It does not invent the graph. |
+| **Wall-clock spawners** (`Date.now` / `setTimeout` for peak/relic) | The picture is the clock. Pause the film → world must freeze. |
+| **Perlin height / caves** | Heightmaps are a volume. |
+| **Poisson disk props** | `put prop at (x,y,z)` is the wrong engine. |
+| **LOD streaming cells** | Chunk streaming is a world sim. |
+| **Physics / ragdoll / IK** | Collision + ticking bodies. |
+| **Billboard HUD** | Words on the dog. Picture is the UI. |
+| **Minimap / fog of war** | Map of a volume. |
+| **Infinite terrain chunking** | Endless XYZ. We have a ~60s bone of plates. |
+
+### Steal
+
+| Steal | Not |
+| --- | --- |
+| **WFC on time cells (roles) + biome adjacency** | XYZ tiles |
+| **Slot grammar + last frame + dest still + linter** | Chatty Imagine as DM |
+| **Picture-time = Σ played plate durations**; phase = that × momentum `m`; peak only if phase window **and** `m` high | `Date.now()` in the generator |
+| **Prefab chunks / Hang**, seeds `s_i`, prefetch stock cook on confirm | Live spawners |
+
+### Smell tests
+
+- If output is mesh / heightmap / put prop at `(x,y,z)` → wrong engine
+- If model can change leg count and clip is accepted → not an engine
+- Pause the film — if world still progresses → clock is wrong
+
 ## PCG role-WFC
 
 1D time-strip of plate-roles — not a 2D map, not STWFC T×Y×X. WFC collapses the ~60s bone (5–8 plates). Neighbors are **time**. Roles (`calm | lean-L | lean-R | fork | peak | decay | breath | enter`) unlock prompt slots only; never free-text Imagine. Quiet 0–8s cannot be peak|enter. Peak only if t≥45s and momentum ≥ τ. Trail never jumps none→full. Contradiction → decay + stock, never a spinner. Every sample is `H(s, cell, observe)`. Offline New Citadel preview may still `collapseStrip` from 0 with seed `s`. Asteroid HOLD. No Pack seats.
 
-**Online + tap-as-observe** is required so miss/idle can kill a peak already in the future domain — otherwise the EDPCG curve lies. Before Play: window bans, collapse cell 0 to calm|breath, propagate. After plate `i`, `applyTapObserve(strip, i, tap, m, pictureTime)` bans what the act forbids (miss → peak off i+1 and i+2 + decay boost; idle → peak+fork off i+1; clean + m≥τ + picture-time in the peak window → keep peak). Then `advanceOnline` observes the lowest-entropy uncollapsed cell (prefer i+1 if tied) and propagates. Picture-time is the sum of played plate durations — never `Date.now()`. Partial cook: Imagine only for a confirmed (collapsed) plate. Live empty i+1 → force decay; if decay is banned → breath stock; never pause the picture.
+**Online + tap-as-observe** is required so miss/idle can kill a peak already in the future domain — otherwise the EDPCG curve lies. Before Play: window bans, collapse cell 0 to calm|breath, propagate. After plate `i`, `applyTapObserve(strip, i, tap, m, pictureTime)` bans what the act forbids (miss → peak off i+1 and i+2 + decay boost; idle → peak+fork off i+1; clean + m≥τ + picture-time in the peak window → keep peak). Then `advanceOnline` observes the lowest-entropy uncollapsed cell (prefer i+1 if tied) and propagates. Picture-time is the sum of played plate durations (`pictureTimeMs`) — never `Date.now()`. Partial cook: Imagine only for a confirmed (collapsed) plate. Live empty i+1 → force decay; if decay is banned → breath stock; never pause the picture.
 
 ## PCG chunk library
 

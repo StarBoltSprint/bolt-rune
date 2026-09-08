@@ -10,10 +10,10 @@
  *   Legendary: Hall → Hall + Relic pin only if momentum ≥ τ (extra pin, not a third front door)
  */
 
-import { commitHallPrime, mayImagine, pcgHash, type HallCommit } from "./pcg-rail.ts";
+import { commitHallPrime, mayImagine, mayRelic, pcgHash, PEAK_MOMENTUM_TAU, type HallCommit } from "./pcg-rail.ts";
 import { compileCitadel, type RuneGraph, type RuneNode, type WalkSecs } from "./rune.ts";
 
-export const RELIC_MOMENTUM_TAU = 0.7;
+export const RELIC_MOMENTUM_TAU = PEAK_MOMENTUM_TAU;
 
 export type PinKind = "door-a" | "door-b" | "relic";
 export type GrammarRewrite = "rewrite" | "hold";
@@ -37,6 +37,8 @@ export type GrowPinsOpts = {
   s: string;
   i?: number;
   momentum?: number;
+  /** Picture-time (sum of played plate durations). When set, relic also needs the peak window. */
+  pictureTimeMs?: number;
   existing?: RuneNode[];
   /** Manual Hang / Load pins already on the graph — never move or drop them. */
   hung?: boolean;
@@ -88,9 +90,11 @@ export function hallDoorPins(s: string, i = 0): GrammarPin[] {
 /**
  * Legendary relic — extra pin, not a third front door.
  * Empty when momentum is below τ.
+ * Optional picture-time: relic also needs the peak window (no Date.now spawner).
  */
-export function legendaryRelicPin(s: string, i: number, momentum: number): GrammarPin | null {
+export function legendaryRelicPin(s: string, i: number, momentum: number, pictureMs?: number): GrammarPin | null {
   if (!(Number(momentum) >= RELIC_MOMENTUM_TAU)) return null;
+  if (pictureMs != null && !mayRelic(pictureMs, momentum)) return null;
   const dx = (seed01(s, i, "relic-x") - 0.5) * 0.12;
   const dy = (seed01(s, i, "relic-y") - 0.5) * 0.08;
   return {
@@ -104,9 +108,9 @@ export function legendaryRelicPin(s: string, i: number, momentum: number): Gramm
 }
 
 /** Pin growth driven by run seed `s` + momentum. Always two doors. Relic only if m ≥ τ. */
-export function growPins(s: string, momentum = 0, i = 0): GrammarPin[] {
+export function growPins(s: string, momentum = 0, i = 0, pictureMs?: number): GrammarPin[] {
   const doors = hallDoorPins(s, i);
-  const relic = legendaryRelicPin(s, i, momentum);
+  const relic = legendaryRelicPin(s, i, momentum, pictureMs);
   return relic ? [...doors, relic] : doors;
 }
 
@@ -133,7 +137,7 @@ function hasBothDoors(pins: RuneNode[]): boolean {
  */
 export function pinsForCitadel(opts: GrowPinsOpts): RuneNode[] {
   const existing = sanitizePins(opts.existing);
-  const grown = growPins(String(opts.s || ""), Number(opts.momentum) || 0, Number(opts.i) || 0);
+  const grown = growPins(String(opts.s || ""), Number(opts.momentum) || 0, Number(opts.i) || 0, opts.pictureTimeMs);
   const relic = grown.find(isRelicPin) || null;
   const keptRelic = existing.find(isRelicPin);
 

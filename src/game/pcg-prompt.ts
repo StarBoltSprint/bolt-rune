@@ -4,7 +4,7 @@
  * Asteroid HOLD. Graph pins live in pcg-grammar.ts (rail 3). No Pack seats.
  */
 
-import { plateSeed } from "./pcg-rail.ts";
+import { pictureTimeMs, plateSeed, type PlayedPlate } from "./pcg-rail.ts";
 import {
   actFromRole,
   beginOnline,
@@ -325,7 +325,7 @@ export function stubFork(density = 0): ForkSlot {
   return "none";
 }
 
-/** Trail from momentum + phase. */
+/** Trail from momentum + picture-time phase (never Date.now). */
 export function stubTrail(momentum = 0, phase = 0): TrailSlot {
   const m = Number(momentum) + Number(phase);
   if (m >= 0.7) return "full";
@@ -394,6 +394,8 @@ export function slotsFromEngine(input: {
   density?: number;
   momentum?: number;
   phase?: number;
+  /** Played plate durations — phase derives from picture-time × m when `phase` is omitted. */
+  playedPlates?: ReadonlyArray<PlayedPlate | null | undefined>;
   from?: string | null;
   to?: string | null;
   leftover?: boolean | LeftoverSlot | null;
@@ -434,6 +436,11 @@ export function slotsFromEngine(input: {
         : input.idle
           ? Array.from({ length: Math.max(0, i) }, () => "idle" as const)
           : [];
+  const pictureTimes =
+    input.pictureTimes ||
+    (input.playedPlates?.length
+      ? input.playedPlates.map((_, n) => pictureTimeMs(input.playedPlates!.slice(0, n + 1)))
+      : undefined);
   const live =
     input.online ||
     (taps.length
@@ -445,7 +452,7 @@ export function slotsFromEngine(input: {
           idle: Boolean(input.idle),
           doorCell,
           taps,
-          pictureTimes: input.pictureTimes,
+          pictureTimes,
         })
       : i === 0
         ? beginOnline({ s: run, i, momentum, miss: Boolean(input.miss), idle: Boolean(input.idle), doorCell })
@@ -630,6 +637,7 @@ export function assembleCookPlate(input: {
   density?: number;
   momentum?: number;
   phase?: number;
+  playedPlates?: ReadonlyArray<PlayedPlate | null | undefined>;
   miss?: boolean;
   idle?: boolean;
   doorCell?: number | null;
@@ -655,6 +663,7 @@ export function assembleCookPlate(input: {
     density: input.density,
     momentum: input.momentum ?? 0.3,
     phase: input.phase,
+    playedPlates: input.playedPlates,
     miss: input.miss,
     idle: input.idle,
     doorCell: input.doorCell,
