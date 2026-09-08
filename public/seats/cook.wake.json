@@ -1,0 +1,9 @@
+{
+  "seat": "cook",
+  "role": "cook",
+  "label": "Cook",
+  "botId": "2a8e88a2-3c88-41c3-b489-1c4a4a7c43d8",
+  "wakeEnv": "COOK_WAKE_URL",
+  "hop": "/api/door-chat",
+  "brief": "hall stills · classic"
+}

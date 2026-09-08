@@ -4,5 +4,6 @@
   "label": "Smoke",
   "botId": "0d69dbc8-a28a-4bb6-b53b-2d50d0329af9",
   "wakeEnv": "SMOKE_WAKE_URL",
-  "hop": "/api/door-chat"
+  "hop": "/api/door-chat",
+  "brief": "walk / breath / biome"
 }

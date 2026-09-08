@@ -101,6 +101,8 @@ describe("grok seat secrets", () => {
     assert.match(server, /inspectSeatWakeDebug/);
     assert.match(server, /globalThis/);
     assert.match(server, /process\.env\.SMOKE_WAKE_URL/);
+    assert.match(server, /process\.env\.COOK_WAKE_URL/);
+    assert.match(server, /process\.env\.CONTINUITY_WAKE_URL/);
     assert.doesNotMatch(server, /VITE_SMOKE_WAKE_URL|VITE_DOOR_WAKE_URL/);
     assert.doesNotMatch(shared, /process\.env[.\[]|=\s*process\.env\b/);
     assert.doesNotMatch(line, /process\.env|VITE_SMOKE|loadSeatSecretEnv/);

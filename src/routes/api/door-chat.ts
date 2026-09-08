@@ -2,12 +2,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import { inspectSeatWakeDebug, loadSeatSecretEnv } from "@/game/door-chat-env.server";
 import {
   HALL_SEAT_IDS,
+  PACK_SKILL,
   doorChatPayload,
   isHallSeat,
   publicRoster,
   readWakeReply,
   resolveHopWakeUrl,
   resolveSeatWake,
+  unwiredDirectorFallback,
   type DoorChatHopResult,
   type HallSeatId,
 } from "@/game/door-chat";
@@ -25,14 +27,18 @@ function roster() {
     const wake = resolveSeatWake(id, env);
     return { ...wake, public: true };
   });
+  const publicSeats = publicRoster(
+    Object.fromEntries(seats.map((s) => [s.id, s.botId])) as Record<HallSeatId, string>,
+  );
   return {
     hop: "/api/door-chat",
-    seats: publicRoster(Object.fromEntries(seats.map((s) => [s.id, s.botId])) as Record<HallSeatId, string>).seats.map(
-      (seat) => ({
-        ...seat,
-        wired: seats.find((s) => s.id === seat.id)?.wired === true,
-      }),
-    ),
+    pack: PACK_SKILL,
+    owner: "smir",
+    mesh: false,
+    seats: publicSeats.seats.map((seat) => ({
+      ...seat,
+      wired: seats.find((s) => s.id === seat.id)?.wired === true,
+    })),
     wakeDebug: inspectSeatWakeDebug(),
   };
 }
@@ -43,7 +49,7 @@ async function hopWake(seat: HallSeatId, text: unknown, source?: string, ownerWa
   const packed = doorChatPayload({ seat, text, source, botId: wake.botId });
   if (!packed.ok) return { ok: false, seat, error: packed.error, wired: wake.wired };
   const hop = resolveHopWakeUrl(wake.wakeUrl, ownerWake);
-  if (!hop.wired) return { ok: false, seat, error: "wake-unwired", wired: false };
+  if (!hop.wired) return unwiredDirectorFallback(seat);
 
   const headers: Record<string, string> = { "content-type": "application/json" };
   const secret = String(env.DOOR_CHAT_WAKE_SECRET || "").trim();
