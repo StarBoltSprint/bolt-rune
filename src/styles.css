@@ -298,3 +298,68 @@
     opacity: 0;
   }
 }
+
+/* Resonance — readout of m only. Bottom 9:16 safe edge. Never a hitbox. */
+.resonance-chrome {
+  pointer-events: none;
+  position: absolute;
+  left: 9%;
+  right: 9%;
+  bottom: max(0.55rem, env(safe-area-inset-bottom));
+  height: 3.6%;
+  z-index: 20;
+}
+.resonance-capsule {
+  height: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--color-ice) 22%, transparent);
+  background: color-mix(in oklab, var(--color-bg) 42%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-fg) 8%, transparent);
+}
+.resonance-fill {
+  height: 100%;
+  width: calc(var(--resonance-fill, 0) * 100%);
+  border-radius: inherit;
+  transform-origin: left center;
+  transition:
+    width 180ms ease-out,
+    background 180ms ease-out,
+    box-shadow 180ms ease-out,
+    opacity 180ms ease-out;
+}
+.resonance-chrome[data-tone="quiet"] .resonance-fill {
+  opacity: 0.42;
+  background: linear-gradient(90deg, #2a4148 0%, #4d6d76 100%);
+  box-shadow: none;
+}
+.resonance-chrome[data-tone="lean"] .resonance-fill {
+  opacity: 0.92;
+  background: linear-gradient(90deg, #3d6a78 0%, #9ec9d4 52%, #e8c882 100%);
+  box-shadow: 0 0 10px rgba(158, 201, 212, 0.38);
+}
+.resonance-chrome[data-tone="peak"] .resonance-fill {
+  opacity: 1;
+  background: linear-gradient(90deg, #4a8894 0%, #c5e6ee 48%, #f2d48a 100%);
+  box-shadow: 0 0 14px rgba(232, 200, 130, 0.42);
+}
+.resonance-chrome[data-paused="1"] .resonance-fill,
+.resonance-chrome[data-paused="1"] .resonance-capsule {
+  transition: none;
+  animation: none;
+}
+.resonance-chrome[data-drain]:not([data-paused="1"]) .resonance-fill {
+  animation: resonance-drain 260ms ease-out;
+}
+@keyframes resonance-drain {
+  0% {
+    width: calc(var(--resonance-fill, 0) * 100%);
+  }
+  32% {
+    width: calc(var(--resonance-fill, 0) * 22%);
+    opacity: 0.55;
+  }
+  100% {
+    width: calc(var(--resonance-fill, 0) * 100%);
+  }
+}
