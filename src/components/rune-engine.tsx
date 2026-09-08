@@ -66,6 +66,7 @@ import { cookFrameHint } from "@/lib/cook-progress";
 import { COOK_BUSY_WAIT_MS, COOK_START_ACCEPTED_PCT, cookBusyGiveUpFrost, cookBusyNext, cookBusyWaitFrost, isCookSlotBlock, isLocalSlotHold } from "@/lib/cook-busy";
 import { BIOMES, biomePlaylist, riftFilm, riftPrompt, type BiomeId } from "@/game/cook";
 import { FilmStage } from "@/components/film-stage";
+import { DoorChatLine } from "@/components/door-chat-line";
 import { dropRoom, hangArtifact, hangOnRoom, isClip, mergeHall, readArtifacts, uniqueClips, ROOM_ONE_STILL, type HungArtifact } from "@/game/artifacts";
 import {
   biomeStill,
@@ -6300,7 +6301,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   if (sprint) {
     return (
-      <div data-biome-play="1" data-biome-stay="1" data-biome-door={sprint.door} data-biome-name={sprint.name} data-biome-hall={sprint.hall}>
+      <div className="relative min-h-dvh" data-biome-play="1" data-biome-stay="1" data-biome-door={sprint.door} data-biome-name={sprint.name} data-biome-hall={sprint.hall} data-hall-seats="play">
         <FilmStage
           id={sprint.film.id}
           original={false}
@@ -6316,6 +6317,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             /* stay on biome — Leave calls onExit */
           }}
         />
+        <DoorChatLine where="play" />
       </div>
     );
   }
@@ -7303,6 +7305,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           Reset
         </button>
       ) : null}
+      {phase === "play" ? <DoorChatLine where="hall" box={picBox} /> : null}
       {phase === "play" ? (
         <div className="pointer-events-none absolute inset-0 z-[80]" data-doors="1">
           {(["m1", "m2"] as const).map((id) => {

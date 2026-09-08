@@ -1,0 +1,8 @@
+{
+  "seat": "door",
+  "role": "say",
+  "label": "Door",
+  "botId": "002bcd41-29f7-4cf0-9eba-d67fad9fa3f6",
+  "wakeEnv": "DOOR_WAKE_URL",
+  "hop": "/api/door-chat"
+}
