@@ -195,7 +195,8 @@ describe("PCG input — engine hook + Asteroid HOLD", () => {
     assert.match(input, /export function mapPlayContact/);
     assert.match(input, /export function mayDoubleTapEnter/);
     assert.doesNotMatch(input, /Date\.now\s*\(/);
-    assert.doesNotMatch(input, /navmesh|voxel|WASD locomotion/i);
+    assert.doesNotMatch(input, /navmesh|voxel/i);
+    assert.doesNotMatch(input, /KeyW.*KeyA.*KeyS.*KeyD/);
 
     assert.match(haptics, /same cue sheet/);
     assert.match(haptics, /must NOT encode A vs B/);

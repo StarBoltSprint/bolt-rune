@@ -185,8 +185,9 @@ export function isLocomotionKey(code: string): boolean {
 }
 
 export function chromePauseOnly(target: EventTarget | null | undefined): boolean {
+  if (!target || typeof Element === "undefined") return false;
   const node = target instanceof Element ? target : null;
-  if (!node) return false;
+  if (!node || typeof node.closest !== "function") return false;
   return Boolean(node.closest("[data-seat],[data-ticket],[data-pause-only]"));
 }
 

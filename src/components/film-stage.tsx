@@ -228,8 +228,6 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   const lastTapRef = useRef<TapMemory | null>(null);
   const howlTimerRef = useRef(0);
   const howledRef = useRef(false);
-  const a11yRef = useRef(a11y);
-  a11yRef.current = a11y;
   const reduced = useRef(false);
   const doneSent = useRef(false);
   const onDoneRef = useRef(onDone);
@@ -264,6 +262,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   const [shake, setShake] = useState({ x: 0, y: 0, rot: 0 });
   const [flash, setFlash] = useState(0);
   const [a11y, setA11y] = useState<PlayA11y>(() => defaultPlayA11y());
+  const a11yRef = useRef(a11y);
+  a11yRef.current = a11y;
   const [layout, setLayout] = useState<VideoLayout>({ x: 0, y: 0, w: 0, h: 0 });
   const [nowBeat, setNowBeat] = useState<Beat | null>(film.beats[0] ?? null);
   const [portrait, setPortrait] = useState(
