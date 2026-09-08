@@ -19,6 +19,7 @@ The README holds the refuse table, steal table, and smell tests. This note is th
 | Prefab chunks | `src/game/pcg-chunk.ts` | Hang wins; bridge stitch on rail 2 |
 | Play-loop / cue sheet | `src/game/pcg-play.ts` | `gradeTap` / picture-time / Howl / Recall / Pause |
 | Picture-time audio | `src/game/pcg-audio.ts` | Plate + engine buses; pause/mute; grade one-shots |
+| Play input / haptics / a11y | `src/game/pcg-input.ts` | Video-layout A/B; same cue sheet; no XYZ / WASD |
 | EDPCG density / awakening | `src/game/pcg-density.ts` | `smoothstep(m) * noise(s, pictureTime)` → cook slots |
 | Smoke ship-gate | `src/game/smoke-gate.ts` | PASS/FAIL before Hang / cache / enter; `railsVersion` `bolt-1` |
 | Rich cache + LRU pin | `src/game/pcg-rail.ts` | PASS rows only; Keep edges / hung / Hall′ stills never evict |

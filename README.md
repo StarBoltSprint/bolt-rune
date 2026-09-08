@@ -138,6 +138,18 @@ Store **PASS** only: `{ key, url, stillStart, stillEnd, cues[], smoke: PASS, rai
 
 Compact `g1.` / `j1.` base64url (gzip when zlib is present) or a short host id. Resolve: catalog → local cache → missing = unlit door / forge ticket — **never auto-bill a visitor**. No wake URLs, API keys, or SuperGrok tokens in the share. Asteroid HOLD. No Pack seats.
 
+## Play input + a11y
+
+Hardware reports **side + when**. The film already chose A or B. Hits use **video layout** (`object-fit: contain` / 9:16), never raw screen. Landscape pillarboxes the same picture — A/B stay left/right of the *picture*. Resonance is `pointer-events: none` and never a hit. Seats / ticket pause only.
+
+A = left ~40%, B = right ~40%. Center ~20%: **short dead-center tap = ignore**; long-press center or `H` = Howl (breath). Pause settings may switch Howl to tap-center. Double-tap same side enters **only if armed**. Swipe L/R = that side. One pointer. No pinch-zoom. No WASD / XYZ locomotion. No second camera.
+
+Clock: `pointerdown` vs `video.currentTime` (same as `cue.on`). Keyboard: `←`/`A` = A, `→`/`D` = B, `H` Howl, `R` Recall, `Esc` Pause, `M` mute. Repeat keys do not re-grade. Device-edge gutters + `touch-action: none` so iOS swipe-back cannot steal a miss. Volume buttons stay OS volume. Headphone unplug may mute — do not force Pause. Home / hide = Pause (clock freeze).
+
+Haptics follow the same cue sheet (`src/game/pcg-haptics.ts`). Cue-on tick optional, **off** by default. Hit short; Late softer; Miss double-soft; enter-armed distinct; Howl rumble once; Pause/ticket none. Mute / reduce motion / system haptic off → no vibrate. Intensity does not encode A vs B.
+
+Pause settings: larger coyote 350–400ms (still Late, no free peak); hold-to-Howl vs tap; 50/50 hitbox (Resonance stays dead); captions off; reduce flash. Screen reader: play = film + left/right; Pause menu labeled; live region only on Pause. No auto-Hit. Asteroid HOLD. No Pack seats.
+
 ## Hall seats (SmiR pack)
 
 SmiR's own film-team bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Door, Smoke, Cook, Continuity. Not a side chat, not Connect Wallet, not freebots.lol, not a permanent bottom row. Asteroid HOLD.

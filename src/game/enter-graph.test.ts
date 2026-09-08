@@ -886,7 +886,8 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(stage, /Empty-space \/ dead-window taps: no MISS, no pace drop, no path fracture/);
     assert.match(stage, /Last CueFill this plate — ignore taps until the loop seam restarts the chart/);
     assert.match(stage, /Jumped past this CueFill \(seek \/ stale wrap\) — do not MISS/);
-    assert.match(stage, /if \(!nearSpot\(nx, ny, cuePictureSpot\(beat\), box\)\) return/);
+    assert.match(stage, /mapPlayContact|videoLayoutRect/);
+    assert.doesNotMatch(stage, /nearSpot\(nx, ny, cuePictureSpot/);
     const advance = stage.slice(stage.indexOf("function advance"), stage.indexOf("function hallPlateNow"));
     assert.doesNotMatch(advance, /restartHoldChart\(\)/);
     assert.match(advance, /holdDoorLoops\(holdDoorRef\.current\)/);

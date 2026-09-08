@@ -24,7 +24,22 @@ import {
   type Spot,
 } from "@/game/films";
 import { CANYON_APPROACH, projectHazard } from "@/game/canyon";
-import { sfxHit, unlockAudio, startScore, stopScore, syncScore, syncPictureAudio, fireGradeAudio, howlOnce, toggleMutePictureAudio, prefetchStockAudio, holdPictureAudio, releasePictureAudio } from "@/game/audio";
+import { sfxHit, unlockAudio, startScore, stopScore, syncScore, syncPictureAudio, fireGradeAudio, howlOnce, toggleMutePictureAudio, prefetchStockAudio, holdPictureAudio, releasePictureAudio, isPictureMuted } from "@/game/audio";
+import { fireGradeHaptic, type HapticPrefs } from "@/game/pcg-haptics";
+import {
+  chromePauseOnly,
+  isLocomotionKey,
+  keyPlayAct,
+  laneOfSide,
+  mapPlayContact,
+  resolvePlayPointer,
+  swipeSideOf,
+  videoLayoutRect,
+  type PlaySide,
+  type TapMemory,
+  type VideoLayout,
+} from "@/game/pcg-input";
+import { PLAY_A11Y_LABEL, defaultPlayA11y, playCoyoteS, reduceMotionOn, type PlayA11y } from "@/game/pcg-a11y";
 import { press } from "@/lib/press";
 import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
@@ -35,7 +50,6 @@ import { doorAtPoint, isHallFilm, isLivingHallLoop } from "@/game/stock-room";
 import { afterPlate, beginOnline, pictureTimeFromPlates, type OnlineStrip, type TapObserve } from "@/game/pcg-wfc";
 import { readRunSeed } from "@/game/pcg-rail";
 import {
-  COYOTE_S,
   activeCueIndex,
   advancePictureTime,
   applyGradeMomentum,
@@ -171,36 +185,11 @@ function fresh(beats: Beat[], seed?: number, rewind = 3, ramp = false): G {
   };
 }
 
-function isHitKey(code: string) {
-  return (
-    code === "Space" ||
-    code === "KeyK" ||
-    code === "Enter" ||
-    code === "KeyW" ||
-    code === "KeyS" ||
-    code === "ArrowUp" ||
-    code === "ArrowDown" ||
-    code === "Digit2"
-  );
-}
-
-function swipeLaneOfKey(code: string): Lane | null {
-  if (code === "KeyA" || code === "ArrowLeft" || code === "Digit1") return "l";
-  if (code === "KeyD" || code === "ArrowRight" || code === "Digit3") return "r";
-  return null;
-}
-
 function liveSpot(beat: Beat, t: number): Spot {
   if (!beat.canyon) return spotOf(beat);
   const p = Math.max(0, Math.min(1, 1 - (beat.at - t) / CANYON_APPROACH));
   const pr = projectHazard(beat.canyon, p);
   return { x: pr.x, y: pr.y };
-}
-
-function nearSpot(nx: number, ny: number, spot: Spot, box: DOMRect) {
-  const dx = (nx - spot.x) * box.width;
-  const dy = (ny - spot.y) * box.height;
-  return dx * dx + dy * dy <= 110 * 110;
 }
 
 export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit, onDone, onHallDoor, holdDoor, holdHall }: Props) {
@@ -234,7 +223,13 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   const raf = useRef(0);
   const last = useRef(0);
   const popN = useRef(0);
-  const swipe = useRef<{ x: number; y: number; t: number } | null>(null);
+  const swipe = useRef<{ x: number; y: number; playhead: number; zone?: string } | null>(null);
+  const pointerIdRef = useRef<number | null>(null);
+  const lastTapRef = useRef<TapMemory | null>(null);
+  const howlTimerRef = useRef(0);
+  const howledRef = useRef(false);
+  const a11yRef = useRef(a11y);
+  a11yRef.current = a11y;
   const reduced = useRef(false);
   const doneSent = useRef(false);
   const onDoneRef = useRef(onDone);
@@ -267,8 +262,9 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   });
   const [pops, setPops] = useState<Pop[]>([]);
   const [shake, setShake] = useState({ x: 0, y: 0, rot: 0 });
-  const [look, setLook] = useState({ x: 0, y: 0 });
   const [flash, setFlash] = useState(0);
+  const [a11y, setA11y] = useState<PlayA11y>(() => defaultPlayA11y());
+  const [layout, setLayout] = useState<VideoLayout>({ x: 0, y: 0, w: 0, h: 0 });
   const [nowBeat, setNowBeat] = useState<Beat | null>(film.beats[0] ?? null);
   const [portrait, setPortrait] = useState(
     () =>
@@ -376,6 +372,42 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     return `${film.id}:${holdHall ?? ""}:${holdDoorRef.current || "run"}`;
   }
 
+  function coyoteNow() {
+    return playCoyoteS(a11yRef.current);
+  }
+
+  function hapticPrefs(): HapticPrefs {
+    return {
+      muted: isPictureMuted(),
+      reduceMotion: reduced.current || reduceMotionOn() || a11yRef.current.reduceFlash,
+      cueOn: a11yRef.current.cueOnHaptic,
+    };
+  }
+
+  function measurePlayLayout() {
+    const el = wrapRef.current;
+    const next = videoLayoutRect(el?.clientWidth || window.innerWidth || 9, el?.clientHeight || window.innerHeight || 16);
+    setLayout(next);
+    return next;
+  }
+
+  function playLayout(): VideoLayout {
+    const el = wrapRef.current;
+    if (!el) return layout.w ? layout : videoLayoutRect(9, 16);
+    return videoLayoutRect(el.clientWidth, el.clientHeight);
+  }
+
+  function breathHowl() {
+    howlAct();
+    howlOnce();
+    fireGradeHaptic("howl", hapticPrefs());
+  }
+
+  function recallNow() {
+    const still = recallStill(playNodeId(), playPlateRef.current);
+    if (still) setPoster(still);
+  }
+
   function resetPlaySheet(beats: Beat[], duration: number, clip = "") {
     const cues = cuesFromBeats(beats, duration);
     playCuesRef.current = cues;
@@ -400,15 +432,17 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
 
   function notePlayGrade(t: number, side?: CueSide | null) {
     const cues = playCuesRef.current;
-    const i = activeCueIndex(cues, t, COYOTE_S, playGradedRef.current);
+    const coyote = coyoteNow();
+    const i = activeCueIndex(cues, t, coyote, playGradedRef.current);
     if (i < 0) return null;
     const cue = cues[i]!;
-    const hit = gradeEnterArm(t, cue, walkHitsRef.current, COYOTE_S, nextCueOn(cues, i), side);
+    const hit = gradeEnterArm(t, cue, walkHitsRef.current, coyote, nextCueOn(cues, i), side);
     playGradedRef.current[i] = true;
     playGradesRef.current.push(hit);
     walkHitsRef.current = noteWalkHit(walkHitsRef.current, cue, hit);
     applyResonance(hit);
     fireGradeAudio(hit, t);
+    fireGradeHaptic(hit, hapticPrefs());
     return hit;
   }
 
@@ -432,6 +466,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       /* */
     }
     setHud((h) => ({ ...h, paused: true, resonance: gRef.current.resonance }));
+  }
+
+  function pausePlay() {
+    if (playPausedRef.current) return;
+    togglePlayPause();
   }
 
   function skipToHoldCue(g: G, afterAt = Number.NEGATIVE_INFINITY) {
@@ -519,6 +558,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     const apply = () => {
       const tall = window.innerHeight > window.innerWidth || window.matchMedia("(pointer: coarse)").matches;
       setPortrait(tall);
+      measurePlayLayout();
     };
     apply();
     window.addEventListener("resize", apply);
@@ -769,7 +809,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         const cues = playCuesRef.current;
         for (let i = 0; i < cues.length; i++) {
           if (playGradedRef.current[i]) continue;
-          if (decoderSkipNotMiss(prevMedia, mediaT, cues[i]!, COYOTE_S, nextCueOn(cues, i))) {
+          if (decoderSkipNotMiss(prevMedia, mediaT, cues[i]!, coyoteNow(), nextCueOn(cues, i))) {
             playGradedRef.current[i] = true;
           }
         }
@@ -1135,8 +1175,10 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     sfxHit("miss");
     pop("MISS", "bad", liveSpot(beat, clock()).x * 100, liveSpot(beat, clock()).y * 100);
     g.pace = paceAfterMiss(g.pace);
-    setFlash(1);
-    window.setTimeout(() => setFlash(0), 120);
+    if (!a11yRef.current.reduceFlash) {
+      setFlash(1);
+      window.setTimeout(() => setFlash(0), 120);
+    }
     if (g.streakMiss >= (film.lives ?? 3)) {
       const v = videoRef.current;
       if (holdDoorLoops(holdDoorRef.current) && v && holdLoopSeam(v.ended, v.currentTime, v.duration)) {
@@ -1304,7 +1346,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       /* Empty-space / dead-window taps: no MISS, no pace drop, no path fracture. */
       return;
     }
-    const liveCue = playCuesRef.current[activeCueIndex(playCuesRef.current, t, COYOTE_S, playGradedRef.current)];
+    const liveCue = playCuesRef.current[activeCueIndex(playCuesRef.current, t, coyoteNow(), playGradedRef.current)];
     if (liveCue?.kind === "enter-arm" && !mayEnterArm(walkHitsRef.current, liveCue.side)) {
       miss(g, beat);
       return;
@@ -1317,10 +1359,6 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       }
       return;
     }
-    const spot = liveSpot(beat, t);
-    const box = wrapRef.current?.getBoundingClientRect();
-    const cookedTap = Boolean(film.playlist?.length) && beat.kind === "tap";
-    if (nx != null && ny != null && box && !cookedTap && !nearSpot(nx, ny, spot, box)) return;
 
     if (beat.kind === "swipe") {
       if (!swipe) return;
@@ -1355,7 +1393,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       /* Empty-space / dead-window taps: no MISS, no pace drop, no path fracture. */
       return;
     }
-    const liveCue = playCuesRef.current[activeCueIndex(playCuesRef.current, t, COYOTE_S, playGradedRef.current)];
+    const liveCue = playCuesRef.current[activeCueIndex(playCuesRef.current, t, coyoteNow(), playGradedRef.current)];
     if (liveCue?.kind === "enter-arm" && !mayEnterArm(walkHitsRef.current, liveCue.side)) {
       miss(g, beat);
       return;
@@ -1414,63 +1452,49 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     pop("REWIND", "mid", 50, 40);
   }
 
-  function onKey(e: KeyboardEvent) {
-    if (e.code === "Escape") {
-      onExit();
+  function gradeSide(side: PlaySide) {
+    const lane = laneOfSide(side);
+    const g = gRef.current;
+    const beat = g.beats[g.i];
+    if (beat?.kind === "left" || beat?.kind === "right") {
+      hitArrow(lane);
       return;
     }
-    if (e.code === "KeyP") {
-      e.preventDefault();
+    tryHit(undefined, undefined, lane);
+  }
+
+  function onKey(e: KeyboardEvent) {
+    if (isLocomotionKey(e.code)) return;
+    const act = keyPlayAct(e.code);
+    if (!act) return;
+    if (e.repeat && (act.kind === "side" || act.kind === "howl")) return;
+    e.preventDefault();
+    if (act.kind === "pause") {
       togglePlayPause();
       return;
     }
-    if (e.code === "KeyM") {
-      e.preventDefault();
+    if (act.kind === "mute") {
       toggleMutePictureAudio();
       return;
     }
-    if (e.code === "KeyH") {
-      e.preventDefault();
-      howlAct();
-      howlOnce();
+    if (act.kind === "howl") {
+      breathHowl();
       return;
     }
-    if (e.code === "KeyL") {
-      e.preventDefault();
-      const still = recallStill(playNodeId(), playPlateRef.current);
-      if (still) setPoster(still);
+    if (act.kind === "recall") {
+      recallNow();
       return;
     }
-    if (e.code === "KeyR") {
-      e.preventDefault();
-      rewind();
-      return;
-    }
-    if (e.repeat) return;
+    if (playPausedRef.current) return;
     const g = gRef.current;
     const beat = g.beats[g.i];
-    const swipe = swipeLaneOfKey(e.code);
-    if (beat?.kind === "left" || beat?.kind === "right") {
-      if (!swipe) return;
-      e.preventDefault();
-      hitArrow(swipe);
-      return;
-    }
-    if (beat?.kind === "swipe") {
-      if (!swipe) return;
-      e.preventDefault();
-      tryHit(undefined, undefined, swipe);
-      return;
-    }
-    if (swipe || isHitKey(e.code)) {
-      e.preventDefault();
-      if (beat?.kind === "hold") g.holding = true;
-      tryHit();
-    }
+    if (beat?.kind === "hold") g.holding = true;
+    gradeSide(act.side);
   }
 
   function onKeyUp(e: KeyboardEvent) {
-    if (isHitKey(e.code) || swipeLaneOfKey(e.code)) gRef.current.holding = false;
+    const act = keyPlayAct(e.code);
+    if (act?.kind === "side" || act?.kind === "howl") gRef.current.holding = false;
   }
 
   useEffect(() => {
@@ -1485,6 +1509,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   useEffect(() => {
     const onVis = () => {
       playClockRef.current = hidePlayClock(playClockRef.current, document.hidden);
+      if (document.hidden) pausePlay();
     };
     onVis();
     document.addEventListener("visibilitychange", onVis);
@@ -1492,39 +1517,98 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   }, []);
 
   function pointerDown(e: PE<HTMLDivElement>) {
-    swipe.current = { x: e.clientX, y: e.clientY, t: performance.now() };
+    if (chromePauseOnly(e.target)) {
+      pausePlay();
+      return;
+    }
+    if (pointerIdRef.current != null && pointerIdRef.current !== e.pointerId) return;
+    pointerIdRef.current = e.pointerId;
+    e.preventDefault();
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const box = wrap.getBoundingClientRect();
+    const frame = playLayout();
+    const playhead = clock();
+    const mapped = mapPlayContact({
+      clientX: e.clientX,
+      clientY: e.clientY,
+      viewport: { left: box.left, top: box.top, w: box.width, h: box.height },
+      layout: frame,
+      widen: a11yRef.current.hitboxWiden,
+    });
+    howledRef.current = false;
+    window.clearTimeout(howlTimerRef.current);
+    swipe.current = { x: e.clientX, y: e.clientY, playhead, zone: mapped.zone };
+    if (mapped.zone === "outside") {
+      togglePlayPause();
+      swipe.current = null;
+      return;
+    }
+    if (mapped.zone === "center") {
+      howlTimerRef.current = window.setTimeout(() => {
+        howledRef.current = true;
+        breathHowl();
+      }, 480);
+    }
   }
 
   function pointerUp(e: PE<HTMLDivElement>) {
+    if (pointerIdRef.current != null && pointerIdRef.current !== e.pointerId) return;
+    pointerIdRef.current = null;
+    window.clearTimeout(howlTimerRef.current);
     const g = gRef.current;
     g.holding = false;
     const start = swipe.current;
     swipe.current = null;
-    if (tryHallDoor(e.clientX, e.clientY)) return;
-    const beat = g.beats[g.i];
-    const box = wrapRef.current?.getBoundingClientRect();
-    if (!box || !beat || !start) return;
-    if (beat.kind === "left" || beat.kind === "right") {
-      if (holdDoorRef.current) {
-        const t = clock();
-        if (!cueFillLive(beat, t)) return;
-        const nx = (e.clientX - box.left) / box.width;
-        const ny = (e.clientY - box.top) / box.height;
-        if (!nearSpot(nx, ny, cuePictureSpot(beat), box)) return;
-      }
-      const dx = e.clientX - start.x;
-      const dir: Lane =
-        Math.abs(dx) >= 36 ? (dx < 0 ? "l" : "r") : (e.clientX - box.left) / box.width < 0.5 ? "l" : "r";
-      hitArrow(dir);
+    if (howledRef.current) {
+      howledRef.current = false;
       return;
     }
-    if (beat.kind !== "swipe") return;
-    const dx = e.clientX - start.x;
-    if (Math.abs(dx) < 42) return;
-    const nx = (start.x - box.left) / box.width;
-    const ny = (start.y - box.top) / box.height;
-    const dir: Lane = dx < 0 ? "l" : "r";
-    tryHit(nx, ny, dir);
+    if (tryHallDoor(e.clientX, e.clientY)) return;
+    if (!start || playPausedRef.current) return;
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const box = wrap.getBoundingClientRect();
+    const frame = playLayout();
+    const mapped = mapPlayContact({
+      clientX: e.clientX,
+      clientY: e.clientY,
+      viewport: { left: box.left, top: box.top, w: box.width, h: box.height },
+      layout: frame,
+      widen: a11yRef.current.hitboxWiden,
+    });
+    const flicked = swipeSideOf(e.clientX - start.x);
+    const intent = resolvePlayPointer({
+      zone: mapped.zone,
+      side: mapped.side === "A" || mapped.side === "B" ? mapped.side : null,
+      swipe: flicked,
+      center: "short",
+      howlMode: a11yRef.current.howlMode,
+      armed: mapped.side ? mayEnterArm(walkHitsRef.current, mapped.side) : false,
+      prev: lastTapRef.current,
+      playhead: start.playhead,
+    });
+    if (intent.act === "pause") {
+      togglePlayPause();
+      return;
+    }
+    if (intent.act === "howl") {
+      breathHowl();
+      return;
+    }
+    if (intent.act === "ignore") return;
+    if (intent.act === "enter") {
+      const side = intent.side;
+      if (!mayEnterArm(walkHitsRef.current, side)) return;
+      fireGradeHaptic("enter-armed", hapticPrefs());
+      lastTapRef.current = null;
+      gradeSide(side);
+      return;
+    }
+    if (intent.act === "grade") {
+      lastTapRef.current = { side: intent.side, playhead: start.playhead };
+      gradeSide(intent.side);
+    }
   }
 
   function onMarkDown(e: PE<HTMLButtonElement>, beat: Beat) {
@@ -1536,7 +1620,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     } catch {
       /* some mobile browsers refuse capture */
     }
-    swipe.current = { x: e.clientX, y: e.clientY, t: performance.now() };
+    swipe.current = { x: e.clientX, y: e.clientY, playhead: clock() };
     const g = gRef.current;
     if (beat.kind === "hold") g.holding = true;
     if (beat.kind === "swipe") return;
@@ -1544,12 +1628,14 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   }
 
   const heat = Math.min(1, hud.combo / 10);
-  const lookAmt = portrait ? 4 : 8;
+  const pictureStyle = layout.w
+    ? { left: layout.x, top: layout.y, width: layout.w, height: layout.h }
+    : { inset: 0 as const };
 
   return (
     <div
       ref={wrapRef}
-      className="relative h-dvh w-full overflow-hidden bg-bg text-fg select-none"
+      className="play-surface relative h-dvh w-full overflow-hidden bg-bg text-fg select-none"
       data-sprint={ramp ? "1" : undefined}
       data-ramp={ramp ? "1" : undefined}
       data-play-paused={playPausedRef.current ? "1" : undefined}
@@ -1557,34 +1643,29 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       data-biome-play={holdDoor ? "1" : undefined}
       data-biome-quiet={undefined}
       data-biome-plate={holdDoor ? (usingStill || !live ? "still" : "clip") : undefined}
-      style={{ touchAction: film.pad === "arrows" ? "none" : "manipulation" }}
+      style={{ touchAction: "none" }}
+      aria-label={PLAY_A11Y_LABEL.surface}
       onPointerDown={pointerDown}
       onPointerUp={pointerUp}
       onPointerCancel={() => {
         gRef.current.holding = false;
         swipe.current = null;
-      }}
-      onPointerMove={(e) => {
-        if (coarse.current) return;
-        const box = wrapRef.current?.getBoundingClientRect();
-        if (!box) return;
-        const nx = ((e.clientX - box.left) / box.width - 0.5) * 2;
-        const ny = ((e.clientY - box.top) / box.height - 0.5) * 2;
-        setLook({ x: nx, y: ny });
+        pointerIdRef.current = null;
+        window.clearTimeout(howlTimerRef.current);
       }}
     >
       <div
-        className="pointer-events-none absolute inset-0 will-change-transform"
+        className="play-picture pointer-events-none absolute overflow-hidden will-change-transform"
+        data-play-frame="9:16"
         style={{
-          transform: reduced.current
-            ? undefined
-            : `translate3d(${shake.x + look.x * lookAmt}px, ${shake.y + look.y * lookAmt}px, 0)`,
+          ...pictureStyle,
+          transform: reduced.current ? undefined : `translate3d(${shake.x}px, ${shake.y}px, 0)`,
         }}
       >
         <img
           src={poster || undefined}
           alt=""
-          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          className="pointer-events-none absolute inset-0 h-full w-full object-contain"
         />
         <video
           ref={(el) => {
@@ -1599,7 +1680,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
               el.setAttribute("webkit-playsinline", "true");
             }
           }}
-          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          className="pointer-events-none absolute inset-0 h-full w-full object-contain"
           src={lane === 0 && (isClip(src) || playableClipSrc(src)) ? playableClipSrc(src) || src : undefined}
           poster={poster || undefined}
           playsInline
@@ -1662,7 +1743,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
             if (laneRef.current === 1) videoRef.current = el;
             if (el) el.loop = holdDoorLoops(holdDoorRef.current);
           }}
-          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          className="pointer-events-none absolute inset-0 h-full w-full object-contain"
           playsInline
           muted
           loop={Boolean(holdDoor)}
@@ -1705,7 +1786,6 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
             }
           }}
         />
-      </div>
 
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(7,8,12,0.34)_100%)]" />
       <div
@@ -1800,6 +1880,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           }}
         />
       )}
+      </div>
 
       <header className="pointer-events-none absolute top-0 left-0 right-0 z-50 flex items-start justify-between gap-3 p-4 pt-[max(1rem,env(safe-area-inset-top))]">
         <div className="min-w-0">
@@ -1810,6 +1891,13 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
               {...press(onExit)}
             >
               Leave
+            </button>
+            <button
+              type="button"
+              className="min-h-12 shrink-0 rounded-xl border border-line bg-surface/80 px-3 text-sm text-muted"
+              {...press(togglePlayPause)}
+            >
+              {hud.paused ? "Resume" : "Pause"}
             </button>
             {film.lives !== 1 && (
             <button
@@ -1851,6 +1939,63 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           )}
         </div>
       </header>
+
+      {hud.paused && (
+        <div
+          className="absolute inset-0 z-[60] flex flex-col items-center justify-center gap-4 bg-bg/70 px-6"
+          role="dialog"
+          aria-label={PLAY_A11Y_LABEL.pause}
+          data-pause-menu="1"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <p role="status" aria-live="polite" className="font-mono text-[11px] uppercase tracking-[0.24em] text-ice">
+            Paused. Picture frozen.
+          </p>
+          <div className="flex w-full max-w-sm flex-col gap-2 text-left text-sm">
+            <label className="flex items-center justify-between gap-3">
+              <span>{PLAY_A11Y_LABEL.coyote}</span>
+              <input
+                type="checkbox"
+                checked={a11y.coyoteAssist}
+                onChange={(e) => setA11y((s) => ({ ...s, coyoteAssist: e.target.checked }))}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3">
+              <span>{a11y.howlMode === "tap" ? PLAY_A11Y_LABEL.howlTap : PLAY_A11Y_LABEL.howlHold}</span>
+              <input
+                type="checkbox"
+                checked={a11y.howlMode === "tap"}
+                onChange={(e) => setA11y((s) => ({ ...s, howlMode: e.target.checked ? "tap" : "hold" }))}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3">
+              <span>{PLAY_A11Y_LABEL.widen}</span>
+              <input
+                type="checkbox"
+                checked={a11y.hitboxWiden}
+                onChange={(e) => setA11y((s) => ({ ...s, hitboxWiden: e.target.checked }))}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3">
+              <span>{PLAY_A11Y_LABEL.flash}</span>
+              <input
+                type="checkbox"
+                checked={a11y.reduceFlash}
+                onChange={(e) => setA11y((s) => ({ ...s, reduceFlash: e.target.checked }))}
+              />
+            </label>
+            <p className="text-muted">{PLAY_A11Y_LABEL.captions}</p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-3">
+            <button type="button" className="min-h-12 rounded-xl bg-accent px-5 text-sm font-medium text-bg" {...press(togglePlayPause)}>
+              Resume
+            </button>
+            <button type="button" className="min-h-12 rounded-xl border border-line px-5 text-sm" {...press(recallNow)}>
+              Recall
+            </button>
+          </div>
+        </div>
+      )}
 
       {film.hazards && phase === "run" && (
         <div className="pointer-events-none absolute top-0 left-0 right-0 z-10 h-[3px] bg-line/40">
