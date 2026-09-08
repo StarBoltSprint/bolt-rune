@@ -7,7 +7,9 @@ import { hangArtifactOnDoor } from "./enter-graph.ts";
 import { assemblePrompt, type PromptSlots } from "./pcg-prompt.ts";
 import { clipCachePut, commitHallPrime } from "./pcg-rail.ts";
 import {
+  BLACK_HOLE_LOCK,
   RAILS_VERSION,
+  SMIR_TAILLE_LOCK,
   SPAWN_CAMERA_LAW,
   STILL_PAIR_FIELDS,
   STILL_PAIR_LAW,
@@ -260,6 +262,84 @@ describe("Smoke ship-gate — local lint", () => {
     assert.equal(edges.smoke, "PASS");
   });
 
+  it("black hole illegal — encode tail or engine dropped still FAIL", () => {
+    const tail = lintSmoke(goodWalk({ blackTail: true }));
+    assert.equal(tail.smoke, "FAIL");
+    assert.ok(tail.reasons.includes("void-frame"));
+    assert.ok(tail.reasons.includes("void-tail"));
+    const luma = lintSmoke(goodWalk({ lumaTail: 0.01 }));
+    assert.equal(luma.smoke, "FAIL");
+    assert.ok(luma.reasons.includes("void-tail"));
+    const hold = lintSmoke(goodWalk({ holdStill: false }));
+    assert.equal(hold.smoke, "FAIL");
+    assert.ok(hold.reasons.includes("void-hold"));
+    const empty = lintSmoke(goodWalk({ emptySrc: true }));
+    assert.equal(empty.smoke, "FAIL");
+    assert.ok(empty.reasons.includes("void-src"));
+    const held = lintSmoke(goodWalk({ holdStill: true, blackTail: false }));
+    assert.equal(held.smoke, "PASS");
+    for (const line of BLACK_HOLE_LOCK) {
+      assert.match(line, /black hole|stillEnd|video\.src|decay stock|preload breath|full black/i);
+    }
+  });
+
+  it("SmiR HARD LOCK taille/scale — spawn band, breath jump, walk hero, pair, lens", () => {
+    const cooked = assemblePrompt(goodSlots());
+    const behind = { camera: "behind" as const, posePrimary: "behind" as const };
+    const tiny = lintSmoke(goodWalk({ ...behind, pose: "spawn", kind: "breath", taille: { bboxH: 0.1, spawnH: 0.1 } }));
+    assert.equal(tiny.smoke, "FAIL");
+    assert.ok(tiny.reasons.includes("taille-spawn"));
+    const withers = lintSmoke(goodWalk({ ...behind, taille: { withersH: 0.08 } }));
+    assert.equal(withers.smoke, "FAIL");
+    assert.ok(withers.reasons.includes("taille-withers"));
+    const breathJump = lintSmoke(goodWalk({ ...behind, kind: "breath", pose: "spawn", taille: { samples: [0.27, 0.42] } }));
+    assert.equal(breathJump.smoke, "FAIL");
+    assert.ok(breathJump.reasons.includes("taille-breath"));
+    const hero = lintSmoke(goodWalk({ kind: "walk", taille: { spawnH: 0.27, doorH: 0.7 } }));
+    assert.equal(hero.smoke, "FAIL");
+    assert.ok(hero.reasons.includes("taille-walk"));
+    const pairJump = lintSmoke(goodWalk({ pair: { tailleStillEnd: 0.27, tailleStillStart: 0.48 } }));
+    assert.equal(pairJump.smoke, "FAIL");
+    assert.ok(pairJump.reasons.includes("taille-pair"));
+    const lens = lintSmoke(goodWalk({ taille: { lens: "35mm", lastLens: "85mm" } }));
+    assert.equal(lens.smoke, "FAIL");
+    assert.ok(lens.reasons.includes("taille-lens"));
+    const cathedral = lintSmoke(goodWalk({ camera: "behind", posePrimary: "behind", taille: { band: "tiny-cathedral" } }));
+    assert.equal(cathedral.smoke, "FAIL");
+    assert.ok(cathedral.reasons.includes("taille-band"));
+    const banned = lintSmoke(goodWalk({ prompt: `${cooked.prompt} tiny cathedral dolly zoom` }));
+    assert.equal(banned.smoke, "FAIL");
+    assert.ok(banned.reasons.includes("taille-ban"));
+    const ok = lintSmoke(
+      goodWalk({
+        pose: "spawn",
+        kind: "breath",
+        camera: "behind",
+        posePrimary: "behind",
+        taille: {
+          bboxH: 0.27,
+          withersH: 0.25,
+          spawnH: 0.27,
+          doorH: 0.38,
+          samples: [0.26, 0.27, 0.28],
+          stillEndH: 0.27,
+          stillStartH: 0.28,
+          lens: "35mm",
+          lastLens: "35mm",
+          height: "1.4m",
+          lastHeight: "1.4m",
+          distance: "4m",
+          lastDistance: "4m",
+          band: "lower-third",
+        },
+      }),
+    );
+    assert.equal(ok.smoke, "PASS");
+    for (const line of SMIR_TAILLE_LOCK) {
+      assert.match(line, /taille|Breath|Walk|stillEnd|grow\/shrink/i);
+    }
+  });
+
   it("Howl / Pause / Keep replay skip; stock cached PASS skips", () => {
     assert.equal(shouldSmoke("howl"), false);
     assert.equal(shouldSmoke("pause"), false);
@@ -359,5 +439,16 @@ describe("Smoke ship-gate — engine hook + Door seat untouched", () => {
     assert.match(studio, /lintSmoke|gateCookClip/);
     assert.match(engine, /lintEnterClip/);
     assert.match(engine, /smokeForgeFrost/);
+    assert.match(engine, /holdEndedPicture/);
+    assert.match(engine, /Walk ended — IMMEDIATELY show stillEnd/);
+    assert.doesNotMatch(engine, /e\.currentTarget\.removeAttribute\("src"\)/);
+    const law = readFileSync(join(here, "./transition.ts"), "utf8");
+    assert.match(law, /mayClearVideoSrc/);
+    assert.match(law, /assignLiveSrc/);
+    assert.match(law, /holdEnded/);
+    assert.doesNotMatch(law, /el\.src = ""/);
+    for (const line of [...SMIR_TAILLE_LOCK, ...BLACK_HOLE_LOCK]) {
+      assert.match(readme, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
   });
 });

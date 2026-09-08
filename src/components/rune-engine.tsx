@@ -185,6 +185,7 @@ import {
 } from "@/game/pcg-pose";
 import { applyEnterPassMomentum } from "@/game/pcg-play";
 import {
+  assignLiveSrc,
   createDomTransitionPlayer,
   planTransition,
   runTransition,
@@ -212,11 +213,7 @@ function armFilm(el: HTMLVideoElement, url: string, _loop = false) {
   el.loop = Boolean(_loop);
   const now = (el.getAttribute("src") || el.currentSrc || "").trim();
   if (now === src) return;
-  try {
-    el.src = src;
-  } catch {
-    /* */
-  }
+  assignLiveSrc(el, src);
 }
 
 function durableStill(u?: string | null) {
@@ -1903,6 +1900,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       /* set breath-A src as soon as walk tap — hidden buffer decodes arrival while walk plays */
       armSlot(hid, url, true);
     }
+    const here = hereRef.current;
+    if (here && here !== dest) {
+      const cur = idleFor(here);
+      const curUrl =
+        (doorBreathPlayable(cur) ? cur!.url : "") ||
+        (here === "m1" || here === "A" ? shelf["breath-A"] : here === "m2" || here === "B" ? shelf["breath-B"] : shelf["breath-spawn"]) ||
+        "";
+      if (curUrl) warmUrl(curUrl);
+    }
   }
 
   function doorAt(nx: number, ny: number): string | null {
@@ -2057,12 +2063,37 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     );
   }
 
+  function holdEndedPicture(still?: string | null) {
+    const hold =
+      walkLastFrameSeed(still, lastLive.current, lastPose.current, plateRef.current, coverHold.current) ||
+      lastLive.current ||
+      lastPose.current ||
+      plateRef.current ||
+      "";
+    if (hold && stickCover(hold)) {
+      setCoverFade(false);
+    } else {
+      const fallback = hallKeep.current || plateRef.current || HALL_FALLBACK;
+      setLockCover(fallback);
+      setCoverFade(false);
+      if (fallback) coverHold.current = fallback;
+    }
+    const vis = visFilm();
+    if (vis) {
+      vis.loop = false;
+      try {
+        vis.pause();
+      } catch {
+        /* */
+      }
+    }
+  }
+
   function stopFilm() {
     abortPlateFade();
     loadGen.current += 1;
     filmLoop.current = false;
-    setFilmOn(false);
-    setCoverFade(false);
+    holdEndedPicture();
     const vis = visFilm();
     if (vis) {
       vis.loop = false;
@@ -2228,7 +2259,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     notePaint(el);
     if (el !== visFilm()) return;
     if (!filmLoop.current) {
-      /* Walk ended — enterDoorBreath / holdIdle owns the picture. Never freeze still. */
+      /* Walk ended — IMMEDIATELY show stillEnd. Never black hole / empty src. */
+      holdEndedPicture(lastLive.current || lastPose.current || plateRef.current);
       return;
     }
     /* Breath lap: same clip / same pose. Never recook, arm, raise m, or advance WFC. */
@@ -7652,8 +7684,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           draggable={false}
           onError={(e) => {
             const cur = e.currentTarget.src;
-            if (isStockArt(cur) || cur.endsWith("empty")) return;
-            e.currentTarget.removeAttribute("src");
+            if (isStockArt(cur) || cur.includes("citadel-tour")) return;
+            e.currentTarget.src = HALL_FALLBACK;
           }}
           onLoad={() => {
             const el = canvas.current;
@@ -7716,7 +7748,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             alt=""
             draggable={false}
             onError={(e) => {
-              e.currentTarget.removeAttribute("src");
+              if (e.currentTarget.getAttribute("src") === HALL_FALLBACK) return;
+              e.currentTarget.src = HALL_FALLBACK;
             }}
             className={`pointer-events-none absolute inset-0 z-[26] h-full w-full object-contain object-center ${coverFade && filmOn && (paintA || paintB) ? "opacity-0" : "opacity-100"}`}
           />

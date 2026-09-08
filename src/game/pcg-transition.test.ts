@@ -7,8 +7,13 @@ import {
   DISSOLVE_MAX_MS,
   HOLD_FIRST_MS,
   REDUCED_MOTION_MS,
+  assignLiveSrc,
   clipMissing,
   createDomTransitionPlayer,
+  incomingPainted,
+  keepVideoSrc,
+  mayClearVideoSrc,
+  mayHideStill,
   dissolveDuration,
   dissolveFixesEncode,
   planTransition,
@@ -342,5 +347,17 @@ describe("plate transition machine — engine hook", () => {
     const fake: TransitionPlan = planTransition(breathSpawn, walkA);
     assert.equal(fake.spinner, false);
     assert.equal(fake.fade, false);
+
+    assert.equal(mayClearVideoSrc(), false);
+    const held = stubVideo("/films/a.mp4");
+    assert.equal(assignLiveSrc(held, ""), false);
+    assert.equal(held.src, "/films/a.mp4");
+    assert.equal(keepVideoSrc("/films/a.mp4", ""), "/films/a.mp4");
+    assert.equal(mayHideStill(false), false);
+    assert.equal(incomingPainted(held), true);
+    assert.match(law, /BLACK HOLE ILLEGAL/);
+    assert.match(engine, /holdEndedPicture/);
+    assert.match(stage, /keepVideoSrc|assignLiveSrc/);
+    assert.match(stage, /setUsingStill\(true\)/);
   });
 });

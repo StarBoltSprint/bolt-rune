@@ -34,6 +34,38 @@ export const STILL_PAIR_LAW = [
   "Required fields: stillStart, stillEnd. Fail closed when the authoring path provides them.",
 ] as const;
 
+/** SmiR HARD LOCK taille/scale — ship text. Tests lock these lines. */
+export const SMIR_TAILLE_LOCK = [
+  "SmiR HARD LOCK taille/scale: Bolt lower third of 9:16; withers ~1/4 frame height; same lens/height/distance every hall plate.",
+  "Breath: size frozen — jump >~15% bbox height/frame between consecutive samples = FAIL.",
+  "Walk: may rise toward ~0.35–0.40 at door, never ~0.70; spawn band ~0.22–0.32.",
+  "stillEnd vs next stillStart taille jump = FAIL pair.",
+  "Document bans: grow/shrink/morph/zoom/dolly/orbit/hero close-up/tiny cathedral.",
+] as const;
+
+/** SmiR HARD LOCK — black hole illegal. Tests lock these lines. */
+export const BLACK_HOLE_LOCK = [
+  "SmiR HARD LOCK — black hole illegal: on ended or gap immediately show stillEnd (last decoded frame), prepare next breath/decay, cut or ≤0.28s dissolve.",
+  "NEVER clear <video> to empty. NEVER pause with opacity 0 and no still. NEVER video.src=\"\" to reset.",
+  "If next not ready: decay stock or freeze last frame. No spinner, no void.",
+  "Smoke: play plate that goes full black mid-hall = FAIL (encode black tail OR engine didn't hold still).",
+  "Preload breath of current/dest pose before walk ends so swap isn't empty.",
+] as const;
+
+export const TAILLE_SPAWN_MIN = 0.22;
+export const TAILLE_SPAWN_MAX = 0.32;
+export const TAILLE_WITHERS = 0.25;
+export const TAILLE_WITHERS_SLACK = 0.06;
+export const TAILLE_WALK_DOOR_MAX = 0.4;
+export const TAILLE_WALK_HERO = 0.7;
+export const TAILLE_JUMP = 0.15;
+
+const TAILLE_BAN =
+  /\b(grow|shrink|morph|zoom|dolly|orbit|hero close-up|tiny cathedral)\b/i;
+
+const BLACK_HOLE_BAN =
+  /\b(black hole|black tail|empty src|video\.src=""|video\.src='' )\b/i;
+
 export type SmokeVerdict = "PASS" | "FAIL";
 export type SmokeKind = "walk" | "breath" | "enter" | "biome";
 export type SmokeWhen = "stock" | "cook" | "hang" | "enter" | "keep" | "howl" | "pause";
@@ -109,6 +141,32 @@ export type SmokeSubject = {
   /** Mid-clip near-black full frames (void). */
   voidFrames?: boolean | Array<{ t: number; luma?: number }>;
   blackHole?: boolean;
+  /** Encode black tail (~1s at clip end). */
+  blackTail?: boolean;
+  lumaTail?: number;
+  /** Engine held stillEnd on ended/gap. false = black hole. */
+  holdStill?: boolean;
+  emptySrc?: boolean;
+  /**
+   * SmiR HARD LOCK taille/scale.
+   * bboxH / withersH = height ÷ frame. Spawn band ~0.22–0.32; withers ~1/4.
+   */
+  taille?: {
+    bboxH?: number;
+    withersH?: number;
+    samples?: number[];
+    spawnH?: number;
+    doorH?: number;
+    stillEndH?: number;
+    stillStartH?: number;
+    lens?: string;
+    height?: string;
+    distance?: string;
+    lastLens?: string;
+    lastHeight?: string;
+    lastDistance?: string;
+    band?: "lower-third" | "mid" | "upper" | "full" | "tiny-cathedral";
+  };
   /** Library / pair stills for Hang + play accept. */
   library?: StillPairRow[];
   pair?: StillPairHints;
@@ -130,6 +188,11 @@ export type StillPairHints = {
   breathDestStart?: string;
   walkSpawnStart?: string;
   breathSpawnStart?: string;
+  breathSpawnFrame0?: string;
+  breathAtAFrame0?: string;
+  breathAtBFrame0?: string;
+  tailleStillEnd?: number;
+  tailleStillStart?: number;
 };
 
 export type SmokeBotBrief = {
@@ -549,15 +612,85 @@ function lintStillPairSubject(subject: SmokeSubject): string[] {
     if (!stillKey(pair.walkEnd) || !stillKey(pair.breathDestStart)) reasons.push("still-pair-required");
     else if (!stillApprox(pair.walkEnd, pair.breathDestStart)) reasons.push("still-pair-dest");
   }
-  if (pair.walkSpawnStart || pair.breathSpawnStart) {
-    if (!stillKey(pair.walkSpawnStart) || !stillKey(pair.breathSpawnStart)) reasons.push("still-pair-required");
-    else if (!stillApprox(pair.walkSpawnStart, pair.breathSpawnStart)) reasons.push("still-pair-spawn");
+  if (pair.walkSpawnStart || pair.breathSpawnStart || pair.breathSpawnFrame0) {
+    const spawn0 = pair.breathSpawnStart || pair.breathSpawnFrame0;
+    if (!stillKey(pair.walkSpawnStart) || !stillKey(spawn0)) reasons.push("still-pair-required");
+    else if (!stillApprox(pair.walkSpawnStart, spawn0)) reasons.push("still-pair-spawn");
+  }
+  if (pair.walkEnd && pair.breathAtAFrame0 && !stillApprox(pair.walkEnd, pair.breathAtAFrame0)) {
+    reasons.push("still-pair-dest");
+  }
+  if (pair.walkEnd && pair.breathAtBFrame0 && !stillApprox(pair.walkEnd, pair.breathAtBFrame0)) {
+    reasons.push("still-pair-dest");
   }
   return reasons;
 }
 
+function relJump(a: number, b: number): number {
+  const base = Math.max(Math.abs(a), 1e-6);
+  return Math.abs(b - a) / base;
+}
+
+function lintTaille(subject: SmokeSubject): string[] {
+  const reasons: string[] = [];
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && TAILLE_BAN.test(rest)) reasons.push("taille-ban");
+  const t = subject.taille;
+  const pair = subject.pair;
+  const spawnH = t?.spawnH ?? (isSpawnBreathAct(subject) ? t?.bboxH : undefined);
+  const doorH = t?.doorH;
+  const withers = t?.withersH;
+  const stillEndH = t?.stillEndH ?? pair?.tailleStillEnd;
+  const stillStartH = t?.stillStartH ?? pair?.tailleStillStart;
+  if (t?.band === "tiny-cathedral" || t?.band === "upper" || t?.band === "mid" || t?.band === "full") {
+    reasons.push("taille-band");
+  }
+  if (typeof withers === "number" && Number.isFinite(withers)) {
+    if (Math.abs(withers - TAILLE_WITHERS) > TAILLE_WITHERS_SLACK) reasons.push("taille-withers");
+  }
+  if (typeof spawnH === "number" && Number.isFinite(spawnH)) {
+    if (spawnH < TAILLE_SPAWN_MIN || spawnH > TAILLE_SPAWN_MAX) reasons.push("taille-spawn");
+  }
+  if (typeof doorH === "number" && Number.isFinite(doorH)) {
+    if (doorH >= TAILLE_WALK_HERO - 0.02 || doorH > TAILLE_WALK_DOOR_MAX + 0.02) reasons.push("taille-walk");
+  }
+  if (typeof t?.bboxH === "number" && Number.isFinite(t.bboxH) && t.bboxH >= TAILLE_WALK_HERO - 0.02) {
+    reasons.push("taille-walk");
+  }
+  const samples = Array.isArray(t?.samples) ? t.samples.filter((n) => typeof n === "number" && Number.isFinite(n)) : [];
+  if (samples.length >= 2) {
+    for (let i = 1; i < samples.length; i++) {
+      if (relJump(samples[i - 1]!, samples[i]!) > TAILLE_JUMP) {
+        reasons.push("taille-breath");
+        break;
+      }
+    }
+  }
+  if (typeof stillEndH === "number" && typeof stillStartH === "number" && Number.isFinite(stillEndH) && Number.isFinite(stillStartH)) {
+    if (relJump(stillEndH, stillStartH) > TAILLE_JUMP) reasons.push("taille-pair");
+  }
+  const lens = String(t?.lens || "").trim();
+  const lastLens = String(t?.lastLens || "").trim();
+  const height = String(t?.height || "").trim();
+  const lastHeight = String(t?.lastHeight || "").trim();
+  const distance = String(t?.distance || "").trim();
+  const lastDistance = String(t?.lastDistance || "").trim();
+  if ((lens && lastLens && lens !== lastLens) || (height && lastHeight && height !== lastHeight) || (distance && lastDistance && distance !== lastDistance)) {
+    reasons.push("taille-lens");
+  }
+  return [...new Set(reasons)];
+}
+
 function lintVoidFrames(subject: SmokeSubject): string[] {
+  if (subject.emptySrc === true) return ["void-frame", "void-src"];
+  if (subject.holdStill === false) return ["void-frame", "void-hold"];
+  if (subject.blackTail === true) return ["void-frame", "void-tail"];
+  if (typeof subject.lumaTail === "number" && Number.isFinite(subject.lumaTail) && subject.lumaTail <= VOID_LUMA) {
+    return ["void-frame", "void-tail"];
+  }
   if (subject.blackHole === true || subject.voidFrames === true) return ["void-frame"];
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && BLACK_HOLE_BAN.test(rest)) return ["void-frame"];
   const frames = Array.isArray(subject.voidFrames) ? subject.voidFrames : [];
   const dur = num(subject.duration);
   for (const frame of frames) {
@@ -650,6 +783,7 @@ const BATTERY: Array<(s: SmokeSubject) => string[]> = [
   lintCues,
   lintContinuity,
   lintStillPairSubject,
+  lintTaille,
   lintVoidFrames,
   lintPromptResidue,
 ];

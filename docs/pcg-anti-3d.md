@@ -26,6 +26,7 @@ The README holds the refuse table, steal table, and smell tests. This note is th
 | EDPCG density / awakening | `src/game/pcg-density.ts` | `smoothstep(m) * noise(s, pictureTime)` → cook slots |
 | Smoke ship-gate | `src/game/smoke-gate.ts` | PASS/FAIL before Hang / cache / enter; spawn behind; still-pair; void; `railsVersion` `bolt-1` |
 | Play chrome | `src/game/play-chrome.ts` | Play = no SEATS/FILMS/ROOMS/REFS; video-layout A/B hits only |
+| Smoke taille / black hole | `src/game/smoke-gate.ts` + `transition.ts` | SmiR taille lock; never empty video; hold stillEnd on ended/gap |
 | Rich cache + LRU pin | `src/game/pcg-rail.ts` | PASS rows only; Keep edges / hung / Hall′ stills never evict |
 | Keep share recipe | `src/game/pcg-share.ts` | Graph + pin keys; visitor never auto-billed |
 
@@ -59,6 +60,26 @@ Every plate change goes `planTransition` → `runTransition` → play (`src/game
 - Keep / auth **updated** fields
 
 Those must never drive peak, relic, or phase.
+
+SmiR HARD LOCK taille/scale: Bolt lower third of 9:16; withers ~1/4 frame height; same lens/height/distance every hall plate.
+
+Breath: size frozen — jump >~15% bbox height/frame between consecutive samples = FAIL.
+
+Walk: may rise toward ~0.35–0.40 at door, never ~0.70; spawn band ~0.22–0.32.
+
+stillEnd vs next stillStart taille jump = FAIL pair.
+
+Document bans: grow/shrink/morph/zoom/dolly/orbit/hero close-up/tiny cathedral.
+
+SmiR HARD LOCK — black hole illegal: on ended or gap immediately show stillEnd (last decoded frame), prepare next breath/decay, cut or ≤0.28s dissolve.
+
+NEVER clear <video> to empty. NEVER pause with opacity 0 and no still. NEVER video.src="" to reset.
+
+If next not ready: decay stock or freeze last frame. No spinner, no void.
+
+Smoke: play plate that goes full black mid-hall = FAIL (encode black tail OR engine didn't hold still).
+
+Preload breath of current/dest pose before walk ends so swap isn't empty.
 
 ## Smell tests
 
