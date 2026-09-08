@@ -137,10 +137,12 @@ describe("hall door-chat wiring", () => {
     assert.doesNotMatch(line, /Connect Wallet|XAI_API_KEY|DOOR_WAKE_URL|wallet/i);
     assert.doesNotMatch(engine, /Connect Wallet/);
     assert.doesNotMatch(vault, /Connect Wallet/);
+    assert.match(hop, /loadSeatSecretEnv/);
     assert.match(hop, /resolveSeatWake/);
     assert.match(hop, /wakeUrl/);
     assert.match(hop, /Authorization/);
     assert.doesNotMatch(hop, /Connect Wallet|wallet/i);
     assert.doesNotMatch(hop, /process\.env\.XAI_API_KEY/);
+    assert.doesNotMatch(hop, /VITE_SMOKE_WAKE_URL|VITE_DOOR_WAKE_URL/);
   });
 });
