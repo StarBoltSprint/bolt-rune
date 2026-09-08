@@ -127,6 +127,7 @@ import {
   resolveEnterHotPath,
   reuseClipBeforeRecook,
 } from "@/game/pcg-rail";
+import { isDeadEndPin, pinsForCitadel, rewriteOnEnter } from "@/game/pcg-grammar";
 import { BootScreen } from "@/components/citadel-hub";
 import { HangAskSheet, HangCitadelStrip, HangRoomStrip } from "@/components/hang-ask";
 import { HANG_LEFTOVER_SWALLOW_MS, hangActEnters, hangBindHall, hangDoorAct, readHangPending, swallowOpeningTap, takeHangPending, writeHangPending } from "@/game/hang-ask";
@@ -673,6 +674,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const wantRef = useRef(want);
   const filmCapRef = useRef(filmCap);
   const pathFirst = useRef<"m1" | "m2" | null>(boot?.kind === "path" ? boot.first : null);
+  const momentumHold = useRef(0);
   const extraPath = useRef(false);
   const [needOther, setNeedOther] = useState(false);
   const [needStill, setNeedStill] = useState(false);
@@ -2392,6 +2394,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setFrost("no door");
       return;
     }
+    /* Dead-end pin: breath/idle only when no walk clip — never rewrite Hall′. */
+    if (isDeadEndPin(id) && !clipFor(at, id)?.url && !stockDoorWalk(at, id)) {
+      walkingTo.current = "";
+      holdIdle();
+      return;
+    }
     walkingTo.current = id;
     /* Abort any looping breath now (idle-spawn / idle-m1 / idle-m2 / arrival). Never await shotEnd(idle). */
     filmLoop.current = false;
@@ -2964,7 +2972,14 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     refsHold.current = forgeTrayRefs(slice.refs || []);
     refsMap.current = new Map(refsHold.current.map((r) => [r.id, r.src]));
     setRefs(refsHold.current);
-    pinsRef.current = slice.pins || [];
+    const incomingPins = slice.pins || [];
+    pinsRef.current = pinsForCitadel({
+      s: seedHold.current || readRunSeed(sid.current) || beginRunSeed(sid.current),
+      i: slice.n,
+      momentum: momentumHold.current,
+      existing: incomingPins,
+      hung: incomingPins.length >= 2,
+    });
     setPins(pinsRef.current);
     forgedRef.current = slice.forged || 0;
     setForged(forgedRef.current);
@@ -4693,7 +4708,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     plateRef.current = seedShot;
     setRefs(forgeTrayRefs([...list]));
     persist({ phase: "time", plate: seedShot, refs: forgeTrayRefs(list), start: seedShot });
-    const doors = plan.map((o) => ({ id: o.id, name: o.name, x: o.x, y: o.y }));
+    const doors = pinsForCitadel({
+      s: seedHold.current || beginRunSeed(sid.current),
+      i: hallHold.current,
+      momentum: momentumHold.current,
+      existing: plan.map((o) => ({ id: o.id, name: o.name, x: o.x, y: o.y })),
+    });
     setPins(doors);
     pinsRef.current = doors;
     const g = compileCitadel(seedShot, doors, walkSecsRef.current);
@@ -5027,17 +5047,24 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         holdNow(clip.end || lastLive.current);
         skipEnter.current = true;
       }
-      if (dest && dest !== hallHold.current) {
-        if (commitHallPrime(clip?.url) !== "pass") {
-          holdIdle();
-          return;
-        }
-        persist({ phase: "play", halls: putSlice(hallsHold.current, snapHall()) });
-        await switchHall(dest, true);
-        return;
-      }
+      /* PCG rail 3: Hall′ rewrite only after clip (rail 2). Dead-end / no clip stays idle. */
       if (commitHallPrime(clip?.url) !== "pass") {
         holdIdle();
+        return;
+      }
+      const rewrite = rewriteOnEnter({
+        clip: clip?.url,
+        entered: true,
+        deadEnd: isDeadEndPin(pick),
+      });
+      if (rewrite.commit !== "pass" || rewrite.rewrite !== "rewrite") {
+        holdIdle();
+        return;
+      }
+      momentumHold.current += 0.2;
+      if (dest && dest !== hallHold.current) {
+        persist({ phase: "play", halls: putSlice(hallsHold.current, snapHall()) });
+        await switchHall(dest, true);
         return;
       }
       enterNext(pick);
@@ -5060,6 +5087,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function leaveSprint() {
+    momentumHold.current = Math.max(momentumHold.current, 1);
     sprintHold.current = false;
     setSprint(null);
     setRiftBloom(null);
@@ -5686,8 +5714,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     wantRef.current = s.want;
     setWalkSecs(clampWalk(s.walkSecs));
     walkSecsRef.current = clampWalk(s.walkSecs);
-    setPins(s.pins?.length >= 2 ? s.pins : plannedObjects(2).map((o) => ({ id: o.id, name: o.name, x: o.x, y: o.y })));
-    pinsRef.current = s.pins?.length >= 2 ? s.pins : plannedObjects(2).map((o) => ({ id: o.id, name: o.name, x: o.x, y: o.y }));
+    const loadedPins = pinsForCitadel({
+      s: seedHold.current,
+      i: s.hall || 1,
+      momentum: 0,
+      existing: s.pins || [],
+      hung: (s.pins?.length || 0) >= 2,
+    });
+    setPins(loadedPins);
+    pinsRef.current = loadedPins;
     const startStill = hallStill || hallKeep.current;
     if (startStill) startHold.current = startStill;
     roomsHold.current = s.rooms || 1;
@@ -5986,7 +6021,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     titleHold.current = titleHold.current || "Citadel";
     seedHold.current = beginRunSeed(sid.current);
-    const doors = plannedObjects(2).map((o) => ({ id: o.id, name: o.name, x: o.x, y: o.y }));
+    const doors = pinsForCitadel({
+      s: seedHold.current,
+      i: hallHold.current,
+      momentum: momentumHold.current,
+    });
     setWant(2);
     wantRef.current = 2;
     setFilmCap(6);
