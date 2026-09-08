@@ -94,7 +94,11 @@ describe("grok seat secrets", () => {
     assert.match(vite, /grokSeatSecretsPlugin/);
     assert.match(hop, /loadSeatSecretEnv/);
     assert.match(hop, /resolveSeatWake\(id, env\)/);
+    assert.match(hop, /resolveHopWakeUrl/);
+    assert.match(hop, /wakeDebug/);
+    assert.match(hop, /inspectSeatWakeDebug/);
     assert.match(server, /virtual:seat-secrets/);
+    assert.match(server, /inspectSeatWakeDebug/);
     assert.match(server, /globalThis/);
     assert.match(server, /process\.env\.SMOKE_WAKE_URL/);
     assert.doesNotMatch(server, /VITE_SMOKE_WAKE_URL|VITE_DOOR_WAKE_URL/);

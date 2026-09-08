@@ -95,6 +95,103 @@ export function isHttpWakeUrl(raw: string): boolean {
   }
 }
 
+export type WakeUrlKind = "http" | "empty" | "non-http";
+
+export function wakeUrlKind(raw: string): WakeUrlKind {
+  const t = String(raw || "").trim();
+  if (!t) return "empty";
+  return isHttpWakeUrl(t) ? "http" : "non-http";
+}
+
+export type SeatWakeDebug = {
+  wired: boolean;
+  hasLive: boolean;
+  hasInlined: boolean;
+  hasBaked: boolean;
+  hasDisk: boolean;
+  urlKind: WakeUrlKind;
+};
+
+/** Safe debug flags. Never put a URL in here. */
+export function seatWakeDebugFlags(input: {
+  resolved: string;
+  live: string;
+  inlined: string;
+  baked: string;
+  disk: string;
+}): SeatWakeDebug {
+  return {
+    wired: isHttpWakeUrl(input.resolved),
+    hasLive: Boolean(String(input.live || "").trim()),
+    hasInlined: Boolean(String(input.inlined || "").trim()),
+    hasBaked: Boolean(String(input.baked || "").trim()),
+    hasDisk: Boolean(String(input.disk || "").trim()),
+    urlKind: wakeUrlKind(input.resolved),
+  };
+}
+
+/**
+ * Server hop target. Env http URL wins. Owner paste is used only when the
+ * server has no usable http wake URL (empty or a leftover non-http deep link).
+ */
+export function resolveHopWakeUrl(
+  serverWakeUrl: string,
+  ownerWakeUrl?: string,
+): { wakeUrl: string; wired: boolean; from: "server" | "owner" | "none" } {
+  const server = String(serverWakeUrl || "").trim();
+  if (isHttpWakeUrl(server)) return { wakeUrl: server, wired: true, from: "server" };
+  const owner = String(ownerWakeUrl || "").trim();
+  if (isHttpWakeUrl(owner)) return { wakeUrl: owner, wired: true, from: "owner" };
+  return { wakeUrl: "", wired: false, from: "none" };
+}
+
+export type OwnerWakeStore = {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+};
+
+export function ownerWakeStorageKey(id: HallSeatId): string {
+  return HALL_SEATS[id].wakeEnv;
+}
+
+function ownerWakeStore(explicit?: OwnerWakeStore | null): OwnerWakeStore | null {
+  if (explicit !== undefined) return explicit;
+  try {
+    const ls = (globalThis as { localStorage?: OwnerWakeStore }).localStorage;
+    return ls ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function readOwnerWakeUrl(id: HallSeatId, storage?: OwnerWakeStore | null): string {
+  const store = ownerWakeStore(storage);
+  if (!store) return "";
+  try {
+    const raw = String(store.getItem(ownerWakeStorageKey(id)) || "").trim();
+    return isHttpWakeUrl(raw) ? raw : "";
+  } catch {
+    return "";
+  }
+}
+
+export function writeOwnerWakeUrl(id: HallSeatId, raw: string, storage?: OwnerWakeStore | null): string {
+  const store = ownerWakeStore(storage);
+  if (!store) return "";
+  const url = String(raw || "").trim();
+  try {
+    if (!isHttpWakeUrl(url)) {
+      store.removeItem(ownerWakeStorageKey(id));
+      return "";
+    }
+    store.setItem(ownerWakeStorageKey(id), url);
+    return url;
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Resolve a seat against a secret bag. Default is empty — this module is also
  * imported by the hall picture, so it must not touch `process.env` (Vite would
@@ -118,18 +215,30 @@ export function cleanDoorLine(raw: unknown): string {
     .slice(0, 400);
 }
 
-export function doorChatPayload(input: { seat: HallSeatId; text: unknown; source?: string; botId?: string }) {
+export function doorChatPayload(input: {
+  seat: HallSeatId;
+  text: unknown;
+  source?: string;
+  botId?: string;
+  wakeUrl?: string;
+}) {
   const text = cleanDoorLine(input.text);
   if (!text) return { ok: false as const, error: "empty" };
-  return {
-    ok: true as const,
-    body: {
-      seat: input.seat,
-      text,
-      source: String(input.source || "hall").slice(0, 32),
-      botId: String(input.botId || HALL_SEATS[input.seat].botId),
-    },
+  const body: {
+    seat: HallSeatId;
+    text: string;
+    source: string;
+    botId: string;
+    wakeUrl?: string;
+  } = {
+    seat: input.seat,
+    text,
+    source: String(input.source || "hall").slice(0, 32),
+    botId: String(input.botId || HALL_SEATS[input.seat].botId),
   };
+  const owner = String(input.wakeUrl || "").trim();
+  if (isHttpWakeUrl(owner)) body.wakeUrl = owner;
+  return { ok: true as const, body };
 }
 
 export function readWakeReply(raw: unknown): string {
@@ -152,8 +261,10 @@ export async function hopDoorChat(
   text: string,
   source = "hall",
   fetchImpl: typeof fetch = fetch,
+  wakeUrl?: string,
 ): Promise<DoorChatHopResult> {
-  const packed = doorChatPayload({ seat, text, source });
+  const owner = wakeUrl === undefined ? readOwnerWakeUrl(seat) : String(wakeUrl || "");
+  const packed = doorChatPayload({ seat, text, source, wakeUrl: owner });
   if (!packed.ok) return { ok: false, seat, error: packed.error };
   try {
     const r = await fetchImpl(DOOR_CHAT_HOP, {
