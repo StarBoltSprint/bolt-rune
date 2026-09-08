@@ -28,6 +28,7 @@ The README holds the refuse table, steal table, and smell tests. This note is th
 | Play chrome | `src/game/play-chrome.ts` | Play = no SEATS/FILMS/ROOMS/REFS; video-layout A/B hits only |
 | Smoke taille / black hole | `src/game/smoke-gate.ts` + `transition.ts` | SmiR taille lock; never empty video; hold stillEnd on ended/gap |
 | Smoke door / light / grade | `src/game/smoke-gate.ts` | Architecture in plate; lighting A/B; L teal R gold; lock-off no splice; RIG SURVEY |
+| Still-pair pixel match | `src/game/still-pair-match.ts` | Ingest-only `matchPose`: rig + back-silhouette, not skeletal dog |
 | Rich cache + LRU pin | `src/game/pcg-rail.ts` | PASS rows only; Keep edges / hung / Hall′ stills never evict |
 | Keep share recipe | `src/game/pcg-share.ts` | Graph + pin keys; visitor never auto-billed |
 
@@ -117,6 +118,8 @@ SmiR lock-off: lens nailed behind him facing doors every play frame. One plate o
 Engine must NOT auto-flip/crop profile to fake back — FAIL and decay/old PASS.
 
 SmiR lock-off RIG SURVEY: frame0 constants door-pair width/frame, paws Y, withers Y, mid-pillar X must match across breath/walk siblings.
+
+SmiR still-pair: match rig + back-silhouette, not skeletal dog.
 
 ## Smell tests
 

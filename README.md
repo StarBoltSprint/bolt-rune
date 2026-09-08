@@ -153,7 +153,7 @@ First land after walk starts at `t=0`.
 
 PASS | FAIL + `reasons[]` on a clip or still **before** Hang, cook-cache insert, or last-frame / enter handoff. FAIL never becomes the next universe — same as empty WFC: no Hang, no bad `stillEnd`, decay/hold, no spinner. Reasons paint on paused forge UI only.
 
-Local lint always runs first (even if `SMOKE_WAKE_URL` is down): container (~9:16, duration band, last frame, no zero-byte) → camera / lock-off → body → doors / door architecture → chrome ban → path → cue honesty (`off−on≥0.35s`) → continuity → still-pair → taille lock → lighting → grade → lock-off rig → void frames / black hole → prompt residue (`lintPrompt`). Pixel/CV-hard checks use prompt + cue + aspect proxies; explicit doubt / mismatch FAILs. Optional Smoke bot hop when the wake URL is set — timeout or unparseable `{pass, reasons[]}` is FAIL. `railsVersion: "bolt-1"` on every PASS. Stock ingest once a clip is cached PASS. Keep replay / Howl / Pause skip. Door seat stays talk-only. Asteroid HOLD. No Pack seats expansion.
+Local lint always runs first (even if `SMOKE_WAKE_URL` is down): container (~9:16, duration band, last frame, no zero-byte) → camera / lock-off → body → doors / door architecture → chrome ban → path → cue honesty (`off−on≥0.35s`) → continuity → still-pair (URL keys, then pixel `matchPose` when both still bitmaps exist) → taille lock → lighting → grade → lock-off rig → void frames / black hole → prompt residue (`lintPrompt`). Pixel still-pair is ingest-only (Hang / cook / library accept) — play does not run it per frame. Other pixel/CV-hard checks use prompt + cue + aspect proxies; explicit doubt / mismatch FAILs. Optional Smoke bot hop when the wake URL is set — timeout or unparseable `{pass, reasons[]}` is FAIL. `railsVersion: "bolt-1"` on every PASS. Stock ingest once a clip is cached PASS. Keep replay / Howl / Pause skip. Door seat stays talk-only. Asteroid HOLD. No Pack seats expansion.
 
 **Spawn / play chrome law:** spawn = lock-off BEHIND still only. Face-on hero spawn = FAIL. Profile-as-primary / hall mood loop = Vault ref only — never a legal breath-spawn without Smoke PASS. stillEnd(walk) ≈ stillStart(breath dest) and stillStart(walk-spawn-*) ≈ stillStart(breath-spawn); required fields `stillStart`, `stillEnd` — fail closed when the authoring path provides them. Mid-clip near-black full frames (void) = FAIL. Burned SEATS/FILMS/ROOMS/REFS in a breath|walk|enter|decay encode = FAIL. Play paints no text chrome and no giant door wireframe boxes; those stay Pause / forge. Hits stay video-layout A/B. walk A↔B stays optional. Asteroid HOLD. No Imagine cook wakes.
 
@@ -170,6 +170,8 @@ Local lint always runs first (even if `SMOKE_WAKE_URL` is down): container (~9:1
 **SmiR lock-off** (`SMIR_LOCKOFF_LOCK` in `src/game/smoke-gate.ts`): SmiR lock-off: lens nailed behind him facing doors every play frame. One plate one camera one act — never splice profile+behind in one mp4. Engine must NOT auto-flip/crop profile to fake back — FAIL and decay/old PASS.
 
 **SmiR lock-off RIG SURVEY** (`SMIR_RIG_LOCK` in `src/game/smoke-gate.ts`): SmiR lock-off RIG SURVEY: frame0 constants door-pair width/frame, paws Y, withers Y, mid-pillar X must match across breath/walk siblings.
+
+**SmiR still-pair matcher** (`SMIR_STILL_PAIR_MATCH` in `src/game/still-pair-match.ts`): SmiR still-pair: match rig + back-silhouette, not skeletal dog.
 
 ## PCG audio bus
 

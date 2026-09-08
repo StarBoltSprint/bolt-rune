@@ -4,9 +4,10 @@ import { biomeSprintFilm, cookFilm, quietBiomeFilm } from "./cook";
 import { isHallFilm, isLivingHallLoop } from "./stock-room";
 import { unbindDroppedHalls as applyUnbind } from "./rooms.ts";
 import { lintSmoke, subjectFromFilm } from "./smoke-gate.ts";
+import type { StillPairPixels } from "./still-pair-match.ts";
 
-function lintHangFilm(film: Film) {
-  return lintSmoke(subjectFromFilm(film, "walk", "hang"));
+function lintHangFilm(film: Film, stillPair?: StillPairPixels) {
+  return lintSmoke(subjectFromFilm(film, "walk", "hang", stillPair));
 }
 
 const KEY = "bolt-artifacts-v1";
@@ -429,9 +430,15 @@ function write(list: HungArtifact[]) {
   return packed;
 }
 
-export function hangArtifact(film: Film, forceNew = false, runId?: string, smoke?: { smoke?: string } | null): HungArtifact[] {
+export function hangArtifact(
+  film: Film,
+  forceNew = false,
+  runId?: string,
+  smoke?: { smoke?: string } | null,
+  stillPair?: StillPairPixels,
+): HungArtifact[] {
   try {
-    const gate = smoke ?? lintHangFilm(film);
+    const gate = smoke ?? lintHangFilm(film, stillPair);
     if (gate && gate.smoke !== "PASS") return readArtifacts();
     const list = readArtifacts();
     const incoming = uniqueClips(
