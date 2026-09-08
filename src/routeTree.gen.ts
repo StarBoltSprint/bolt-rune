@@ -17,6 +17,7 @@ import { Route as VaultRouteImport } from './routes/vault'
 import { Route as WalkRouteImport } from './routes/walk'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiClipRouteImport } from './routes/api/clip'
+import { Route as ApiDoorChatRouteImport } from './routes/api/door-chat'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -58,6 +59,11 @@ const ApiClipRoute = ApiClipRouteImport.update({
   path: '/api/clip',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDoorChatRoute = ApiDoorChatRouteImport.update({
+  id: '/api/door-chat',
+  path: '/api/door-chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -68,6 +74,7 @@ export interface FileRoutesByFullPath {
   '/walk': typeof WalkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/clip': typeof ApiClipRoute
+  '/api/door-chat': typeof ApiDoorChatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -78,6 +85,7 @@ export interface FileRoutesByTo {
   '/walk': typeof WalkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/clip': typeof ApiClipRoute
+  '/api/door-chat': typeof ApiDoorChatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -89,14 +97,15 @@ export interface FileRoutesById {
   '/walk': typeof WalkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/clip': typeof ApiClipRoute
+  '/api/door-chat': typeof ApiDoorChatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/artifacts' | '/login' | '/rune' | '/vault' | '/walk' | '/api/auth/$' | '/api/clip'
+    '/' | '/artifacts' | '/login' | '/rune' | '/vault' | '/walk' | '/api/auth/$' | '/api/clip' | '/api/door-chat'
   fileRoutesByTo: FileRoutesByTo
   to:
-    '/' | '/artifacts' | '/login' | '/rune' | '/vault' | '/walk' | '/api/auth/$' | '/api/clip'
+    '/' | '/artifacts' | '/login' | '/rune' | '/vault' | '/walk' | '/api/auth/$' | '/api/clip' | '/api/door-chat'
   id:
     | '__root__'
     | '/'
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | '/walk'
     | '/api/auth/$'
     | '/api/clip'
+    | '/api/door-chat'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -118,6 +128,7 @@ export interface RootRouteChildren {
   WalkRoute: typeof WalkRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiClipRoute: typeof ApiClipRoute
+  ApiDoorChatRoute: typeof ApiDoorChatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -178,6 +189,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiClipRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/door-chat': {
+      id: '/api/door-chat'
+      path: '/api/door-chat'
+      fullPath: '/api/door-chat'
+      preLoaderRoute: typeof ApiDoorChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -190,6 +208,7 @@ const rootRouteChildren: RootRouteChildren = {
   WalkRoute: WalkRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiClipRoute: ApiClipRoute,
+  ApiDoorChatRoute: ApiDoorChatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

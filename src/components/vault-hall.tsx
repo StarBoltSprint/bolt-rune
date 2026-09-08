@@ -13,6 +13,7 @@ import { HangAskSheet, StillCarousel, StillChip } from "@/components/hang-ask";
 import { HANG_HALL_FLOOR, HANG_LEFTOVER_SWALLOW_MS, hangActEnters, hangBindHall, hangDoorAct, hangStillWrap, swallowOpeningTap, writeHangFloor, writeHangPending, type HangDoorAct } from "@/game/hang-ask";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { FilmStage } from "@/components/film-stage";
+import { DoorChatLine } from "@/components/door-chat-line";
 import { sfxForge } from "@/game/audio";
 import { press } from "@/lib/press";
 
@@ -603,20 +604,23 @@ export function VaultHall() {
     const live = hung.find((x) => x.id === play.id) || play;
     const film = filmOf(live, hung);
     return (
+      <div className="relative min-h-dvh" data-hall-seats="play">
         <FilmStage
           id="sprint"
           original={false}
           custom={film}
           holdHall={hangBindHall(live.room?.hall) || undefined}
           holdDoor={live.room?.door === "B" ? "B" : live.room?.door === "A" ? "A" : undefined}
-        onHallDoor={() => {
-          /* hung biome stay — Leave exits */
-        }}
-        onExit={() => setPlay(null)}
-        onDone={() => {
-          /* stay on biome — Leave calls onExit */
-        }}
-      />
+          onHallDoor={() => {
+            /* hung biome stay — Leave exits */
+          }}
+          onExit={() => setPlay(null)}
+          onDone={() => {
+            /* stay on biome — Leave calls onExit */
+          }}
+        />
+        <DoorChatLine where="play" />
+      </div>
     );
   }
 
