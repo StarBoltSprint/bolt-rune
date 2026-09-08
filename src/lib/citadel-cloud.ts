@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { citadelRoomCount } from "@/game/rooms";
+import { keepRunSeed } from "@/game/pcg-seed";
 import type { HallSlice, RiftGate, RuneSession, RuneSessionMeta } from "@/game/rune-session";
 
 type Row = {
@@ -65,6 +66,7 @@ function metaFrom(session: RuneSession): RuneSessionMeta {
     via: session.via,
     title: session.title,
     hallHints: halls,
+    runSeed: keepRunSeed(session.runSeed),
   };
 }
 
@@ -251,6 +253,7 @@ function pack(session: RuneSession): { meta: RuneSessionMeta; body: string; sess
       return { ...(m1 ? { m1 } : {}), ...(m2 ? { m2 } : {}) };
     })(),
     halls: keepHalls(session.halls),
+    runSeed: keepRunSeed(session.runSeed),
   };
   const body = JSON.stringify(light);
   return {

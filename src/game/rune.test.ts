@@ -641,6 +641,16 @@ describe("Imagine still / film payloads", () => {
       assert.match(String(body.prompt), /^REJECT LIST/);
       assert.match(String(body.prompt), /COAT:/);
     }
+    const seeded = runeFilmVariants({
+      prompt: idlePrompt(),
+      imageUrl: "data:still",
+      duration: 6,
+      resolution: "720p",
+      store: { filename: "bolt-test.mp4", public_url: true },
+      seed: 42,
+    });
+    assert.equal(seeded[0]?.seed, 42);
+    assert.equal(seeded.at(-1)?.seed, undefined);
   });
 });
 

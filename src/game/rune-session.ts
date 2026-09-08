@@ -4,6 +4,7 @@ import { unbindDroppedHalls } from "@/game/artifacts.ts";
 import { dropHangPending, writeHangFloor } from "@/game/hang-ask.ts";
 import { dropCitadel, dropGuestCitadel, getCitadel, getGuestCitadel, listCitadels, listGuestCitadels, putCitadel, putGuestCitadel } from "@/lib/citadel-cloud";
 import { preferHalls } from "@/game/play-frame.ts";
+import { keepRunSeed } from "@/game/pcg-seed.ts";
 
 const DB = "bolt-rune-sessions";
 const TABLE = "sessions";
@@ -99,6 +100,11 @@ export type RuneSessionMeta = {
   title?: string;
   /** Hall numbers that exist — empty slices still count. Catalog carries n/still only. */
   hallHints?: Array<{ n?: number; hall?: number; still?: string }>;
+  /**
+   * PCG run seed `s`. Minted once on New citadel / Play.
+   * Hypothesis (non-binding): not `wish`, not last-frame `start`, not guest id.
+   */
+  runSeed?: string;
 };
 
 export type RuneSession = RuneSessionMeta & {
@@ -223,6 +229,7 @@ function metaOf(s: Partial<RuneSession> & RuneSessionMeta): RuneSessionMeta {
     via: s.via,
     title: s.title,
     hallHints: halls,
+    runSeed: keepRunSeed(s.runSeed),
   };
 }
 
@@ -292,6 +299,7 @@ function writeCookie(list: RuneSessionMeta[]) {
       from: s.from,
       title: s.title,
       hallHints: hallHintsOf(s),
+      runSeed: keepRunSeed(s.runSeed),
     }));
     document.cookie = `${COOKIE}=${encodeURIComponent(JSON.stringify(tiny))}; max-age=31536000; path=/; SameSite=Lax`;
   } catch {
@@ -338,6 +346,7 @@ function idsOf(list: RuneSessionMeta[]) {
     via: s.via,
     title: s.title,
     hallHints: hallHintsOf(s),
+    runSeed: keepRunSeed(s.runSeed),
   }));
 }
 
@@ -411,6 +420,7 @@ function readCatalog(): RuneSessionMeta[] {
         rooms: keepRooms(prev?.rooms, roomCap(meta)),
         hall: meta.hall || prev?.hall,
         hallHints: keepHallMeta(prev?.hallHints, hallHintsOf(meta)),
+        runSeed: keepRunSeed(prev?.runSeed, meta.runSeed),
       });
     }
   };
@@ -460,6 +470,7 @@ function writeCatalog(list: RuneSessionMeta[]) {
         via: s.via,
         title: s.title,
         hallHints: cap != null ? clampHints(hints, cap) : hints,
+        runSeed: keepRunSeed(s.runSeed),
       };
     });
   if (!tiny.length) {
@@ -512,6 +523,7 @@ export function listSessions(): RuneSessionMeta[] {
           rooms: keepRooms(prev?.rooms, roomCap(meta)),
           hall: meta.hall || prev?.hall,
           hallHints: keepHallMeta(prev?.hallHints, hallHintsOf(meta)),
+          runSeed: keepRunSeed(prev?.runSeed, meta.runSeed),
         });
       }
     };
@@ -928,6 +940,7 @@ export function saveSessionSync(session: RuneSession): RuneSessionMeta {
     hall: packed.hall || kept.hall,
     title: packed.title || kept.title,
     halls: preferHalls(packed.halls, kept.halls),
+    runSeed: keepRunSeed(kept.runSeed, packed.runSeed),
     updated: Math.max(packed.updated || 0, kept.updated || 0, Date.now()),
   };
   merged.rooms = roomCap(merged);
@@ -1063,6 +1076,7 @@ function mergeMeta(list: RuneSessionMeta[]) {
       rooms,
       hall: newer.hall || older.hall,
       hallHints: cap != null ? clampHints(hints, cap) : hints,
+      runSeed: keepRunSeed(older.runSeed, newer.runSeed),
     });
   }
   const rows = relinkMetas(

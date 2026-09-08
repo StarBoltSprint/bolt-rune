@@ -296,7 +296,7 @@ export const startCookPlate = createServerFn({ method: "POST" })
   });
 
 export const startRuneFilm = createServerFn({ method: "POST" })
-  .validator((input: { still: string; prompt: string; duration: 6 | 10 | 15; refs?: string[]; res?: "720" | "1080" }) => input)
+  .validator((input: { still: string; prompt: string; duration: 6 | 10 | 15; refs?: string[]; res?: "720" | "1080"; seed?: number }) => input)
   .handler(async ({ data }): Promise<StartOk | StartErr> => {
     const headers = auth();
     if (!headers) return { ok: false, error: "echo-off" };
@@ -309,7 +309,14 @@ export const startRuneFilm = createServerFn({ method: "POST" })
     const prompt = clipImaginePrompt(already ? rawPrompt : `${CAM_LOCK} ${rawPrompt}`);
     const resolution = data.res === "1080" ? "1080p" : "720p";
     const store = keepStore(`bolt-${Date.now().toString(36)}.mp4`);
-    const variants = runeFilmVariants({ prompt, imageUrl, duration, resolution, store });
+    const variants = runeFilmVariants({
+      prompt,
+      imageUrl,
+      duration,
+      resolution,
+      store,
+      seed: typeof data.seed === "number" && data.seed > 0 ? data.seed : undefined,
+    });
     try {
       let last = "";
       for (const body of variants) {

@@ -75,6 +75,18 @@ CONTINUITY_BOT_ID=efba9930-f946-4caf-a7a7-b50580047c51
 
 The hop POSTs `{ seat, text, source, botId }` to that URL. The bot reply (`reply` / `text` / `result`) paints in-picture.
 
+## Engine PCG rail 1
+
+Run seed `s` is minted once on New citadel / Play (crypto random) and persisted with Keep / citadel save so relaunch replays the same tree. Not `wish`, not last-frame `start`, not guest id — those fields stay what they were.
+
+Plate seed `s_i = H(s, i, act, biome)`. Enter seed `s_enter = H(s, i, "enter", biomeFrom, biomeTo, door)`. SHA-256 truncated to an Imagine-usable hex string. Same inputs → same seed.
+
+Clip cache keys by `s_i` / `s_enter`. If a cached artifact exists, play/reuse — do not recook.
+
+Cook only on confirmed need (walk cook / future enter commit). Never enqueue Imagine on walk-toward-door.
+
+Not full WFC/grammar yet. Asteroid HOLD. No Connect Wallet. No player API keys.
+
 ## Stack
 
 TanStack Start, React 19, Vite, Tailwind, Postgres / PGLite, Imagine.

@@ -119,6 +119,19 @@ import type { HallSlice } from "@/game/rune-session";
 import { brainLaws, brainLine, bump, digest, gradeFrames, learn, retryLaw, stillLaws, type Drive } from "@/game/rune-brain";
 import { playableClipSrc, sameClipSrc, warmClip } from "@/game/play-clip";
 import {
+  cachedClipOf,
+  clipCacheKey,
+  ensureRunSeed,
+  enterSeed,
+  idleAct,
+  imagineSeedInt,
+  keepRunSeed,
+  livingBiome,
+  mintRunSeed,
+  plateSeed,
+  walkAct,
+} from "@/game/pcg-seed";
+import {
   arrivalBreathUrl,
   arrivalEndStill,
   breathSeamSameClip,
@@ -738,6 +751,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const needRoomRef = useRef(true);
   const refsMap = useRef(new Map<string, string>());
   const sid = useRef(newSessionId());
+  const runSeedHold = useRef("");
   const startHold = useRef("");
   const hallKeep = useRef(
     boot?.kind === "session" ? firstStill([peekLivePlay(boot.id)?.plate, recallHall(boot.id)]) : "",
@@ -966,6 +980,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       wish: worldHold.current.slice(0, 280),
       bank: extra?.bank ?? [...bank.current].map(([key, v]) => ({ key, url: v.url, end: v.end, start: v.start })),
       ...extra,
+      runSeed: keepRunSeed(extra?.runSeed, runSeedHold.current) || holdRunSeed(),
     };
     if (!snap.id) snap.id = newSessionId();
     const parent = extra?.from ?? fromHold.current;
@@ -1031,6 +1046,43 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       markLivePlay(snap.id, snap.here, hallKeep.current || durableStill(snap.plate) || "");
     }
     void saveSession(snap).catch(() => {});
+  }
+
+  function holdRunSeed(existing?: string) {
+    const s = ensureRunSeed(existing || runSeedHold.current);
+    runSeedHold.current = s;
+    return s;
+  }
+
+  function plateBiome(explicit?: string | null) {
+    const rift = riftRef.current;
+    const hung =
+      explicit ||
+      (hereRef.current === "m2" ? rift.m2?.biome : hereRef.current === "m1" ? rift.m1?.biome : "") ||
+      rift.m1?.biome ||
+      rift.m2?.biome ||
+      "";
+    return livingBiome(hung);
+  }
+
+  function pcgPlateKey(act: string, biome?: string | null) {
+    return clipCacheKey(plateSeed(holdRunSeed(), hallHold.current, act, plateBiome(biome)));
+  }
+
+  function pcgEnterKey(biomeFrom?: string | null, biomeTo?: string | null, door?: string | null) {
+    return clipCacheKey(enterSeed(holdRunSeed(), hallHold.current, biomeFrom || "hall", biomeTo || plateBiome(), door));
+  }
+
+  function takePcgClip(key?: string | null) {
+    if (!key) return null;
+    const hit = cachedClipOf(bank.current, key);
+    if (!hit?.url || isHallFilm(hit.url) || isStockHallClip(hit)) return null;
+    return hit;
+  }
+
+  function putPcgClip(key: string | undefined, clip: { url: string; end?: string; start?: string }) {
+    if (!key || !clip.url) return;
+    bank.current.set(key, { url: clip.url, end: clip.end || "", start: clip.start });
   }
 
   function goBack() {
@@ -1679,6 +1731,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function prefetchFrom(from: string, prefer?: string | null) {
+    /* warm existing clip URLs only — do not enqueue Imagine on walk-toward-door */
     const hid = hidFilm();
     const vis = visFilm();
     const next = prefer || otherFrom(from);
@@ -2362,7 +2415,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       lastPose.current,
     );
     let clip = clipFor(at, id);
-    /* Load / Play: sealed bank walks play. Imagine only if the clip is truly missing. */
+    const pcgKey = pcgPlateKey(walkAct(at, id));
+    const cached = takePcgClip(pcgKey);
+    if (cached) clip = cached;
+    /* Load / Play: sealed bank walks play. Imagine only on confirmed walk cook. */
+    /* Never enqueue Imagine on walk-toward-door — cook only when the door walk is missing. */
     if (!sealedWalkPlayable(clip)) {
       const stock = stockDoorWalk(at, id);
       if (stock && !seed) {
@@ -2731,6 +2788,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   /** First hung biome plate while Bolt breathes at the door — FilmStage must not cold-load. */
   function warmHungBiome(door: "m1" | "m2") {
+    /* Warm existing hung clips only. Future enter commit cooks with s_enter — not walk-toward-door. */
     const arts = hungArts.length ? hungArts : readArtifacts();
     const enter = stayBiomePlay(resolveHungEnter(doorLetterOf(door), hallHold.current, sid.current, arts, riftRef.current));
     if (enter.kind !== "biome") return;
@@ -3100,12 +3158,19 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     const home = breathStill(to) || bank.current.get(`idle-${to}`)?.end || "";
     const kit = home && home !== fromStill ? [home] : [];
-    const url = await cookFilm(
-      fromStill,
-      walkPrompt(a, b, from === "spawn", [gazeLaw(to), brainLaws()].filter(Boolean).join(" "), Boolean(home)),
-      kit,
-      `${from}→${to}`,
-    );
+    const pcgKey = pcgPlateKey(walkAct(from, to));
+    const cached = takePcgClip(pcgKey);
+    const url =
+      cached?.url ||
+      (await cookFilm(
+        fromStill,
+        walkPrompt(a, b, from === "spawn", [gazeLaw(to), brainLaws()].filter(Boolean).join(" "), Boolean(home)),
+        kit,
+        `${from}→${to}`,
+        undefined,
+        false,
+        pcgKey,
+      ));
     if (!url || !liveForge.current) {
       liveForge.current = false;
       setBeat("idle");
@@ -3127,6 +3192,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const via = from === "spawn" ? "start" : from;
     bank.current.set(`${from}→${to}`, { url, end: landed, start: fromStill });
     bank.current.set(`${from}←${via}→${to}`, { url, end: landed, start: fromStill });
+    putPcgClip(pcgKey, { url, end: landed, start: fromStill });
     refsMap.current.set(`pose-${to}`, landed);
     liveForge.current = false;
     setPhase("play");
@@ -3626,13 +3692,16 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     });
   }
 
-  async function cookFilm(still: string, prompt: string, kit: string[], label: string, secs?: 6 | 10 | 15, quiet = false): Promise<string | null> {
+  async function cookFilm(still: string, prompt: string, kit: string[], label: string, secs?: 6 | 10 | 15, quiet = false, cacheKey?: string): Promise<string | null> {
+    const cached = takePcgClip(cacheKey);
+    if (cached?.url) return cached.url;
     let started: { ok: true; requestId: string } | { ok: false; error: string } | null = null;
     let url: string | null = null;
     let slotBusy = false;
     let busyFails = 0;
     let lastBlock = "";
     const blocked = () => (quiet ? dead.current : !liveForge.current);
+    const pcgSeed = cacheKey ? imagineSeedInt(cacheKey.replace(/^pcg:/, "")) : 0;
     try {
     for (let tryN = 0; tryN < 12; tryN++) {
       if (blocked()) return null;
@@ -3644,6 +3713,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             duration: secs === 6 ? 6 : secs === 10 ? 10 : clampWalk(walkSecsRef.current),
             refs: boltKit([BOLT_BODY, lookHall.current, refsMap.current.get("hall"), hallKeep.current, ...kit]),
             res: lookResRef.current,
+            ...(pcgSeed ? { seed: pcgSeed } : {}),
           },
         });
       } catch (err) {
@@ -3700,6 +3770,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         setFrost(`Imagine is drawing ${label} · ${p + 1}`);
       }
     }
+    if (url && cacheKey) putPcgClip(cacheKey, { url, end: still, start: still });
     return url;
     } finally {
       if (!url) void freeRuneSlot({ data: {} }).catch(() => {});
@@ -3844,8 +3915,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   async function cookIdleAt(node: string, still: string, fromFilm?: string, via?: string, playArrival = false) {
     const key = via ? `idle-${node}←${via}` : `idle-${node}`;
+    const pcgKey = pcgPlateKey(idleAct(node));
     if (!liveForge.current && !playArrival) return still;
-    const have = bank.current.get(key);
+    const have = bank.current.get(key) || takePcgClip(pcgKey) || undefined;
     if (have && doorBreathPlayable(have, fromFilm)) return have.end || still;
     const owned = !liveForge.current && playArrival;
     if (owned) liveForge.current = true;
@@ -3874,13 +3946,14 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       url = await cookExtend(idleUrl, breathPrompt(extra), `breath ${node}`);
       fromExtend = Boolean(url);
     }
-    if (!url) url = await cookFilm(still, idlePrompt(extra), [], `still ${node}`, 6, playArrival);
-    if (!url) url = await cookFilm(still, idlePrompt(extra), [], `retry still ${node}`, 6, playArrival);
+    if (!url) url = await cookFilm(still, idlePrompt(extra), [], `still ${node}`, 6, playArrival, pcgKey);
+    if (!url) url = await cookFilm(still, idlePrompt(extra), [], `retry still ${node}`, 6, playArrival, pcgKey);
     if (!url || (!liveForge.current && !playArrival)) return still;
     setLoadPct(100);
     if (playArrival) {
       bank.current.set(key, { url, end: still });
       bank.current.set(`idle-${node}`, { url, end: still });
+      putPcgClip(pcgKey, { url, end: still, start: still });
       persist({ phase: "play", plate: still });
       syncWalks();
       const snapped = shotEnd(url, still);
@@ -3901,6 +3974,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const frame = await snapped;
     bank.current.set(key, { url, end: frame });
     bank.current.set(`idle-${node}`, { url, end: frame });
+    putPcgClip(pcgKey, { url, end: frame, start: still });
     persist({ phase: "forge", plate: frame });
     syncWalks();
     setPose(frame);
@@ -3945,6 +4019,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const pick = enterHold.current.pick;
     const enterSrc = pick === "b" ? enterHold.current.b || enterHold.current.a : enterHold.current.a || enterHold.current.b;
     const enterSide: "LEFT" | "RIGHT" = pick === "b" && enterHold.current.b ? "RIGHT" : "LEFT";
+    const enterKey = pcgEnterKey("hall", "hall", enterSide === "RIGHT" ? "B" : "A");
+    const enterCached = takePcgClip(enterKey);
+    if (enterCached?.url && !bank.current.get("enter→spawn")?.url) {
+      bank.current.set("enter→spawn", { url: enterCached.url, end: enterCached.end || hallStill, start: enterCached.start || enterSrc });
+    }
     if (enterSrc && hallStill && !bank.current.get("enter→spawn")?.url) {
       setNowClip({
         kind: "walk",
@@ -3963,8 +4042,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       beatRef.current = "cook";
       setFrost("enter · last frame room 1 → room 2");
       sfxForge("cook");
-      let enterUrl = await cookFilm(enterSrc, enterHallPrompt(enterSide, worldHold.current), [hallStill], "enter", 6);
-      if (!enterUrl) enterUrl = await cookFilm(enterSrc, enterHallPrompt(enterSide, worldHold.current), [hallStill], "enter retry", 6);
+      let enterUrl = await cookFilm(enterSrc, enterHallPrompt(enterSide, worldHold.current), [hallStill], "enter", 6, false, enterKey);
+      if (!enterUrl) enterUrl = await cookFilm(enterSrc, enterHallPrompt(enterSide, worldHold.current), [hallStill], "enter retry", 6, false, enterKey);
       if (!enterUrl) {
         setFrost("enter failed · tap retry");
         setLoadPct(0);
@@ -3981,6 +4060,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       const frame = await snapped;
       bank.current.set("enter→spawn", { url: enterUrl, end: frame });
       bank.current.set(`${viaHold.current || (enterSide === "RIGHT" ? "m2" : "m1")}→spawn`, { url: enterUrl, end: frame });
+      putPcgClip(enterKey, { url: enterUrl, end: frame, start: enterSrc });
       still = frame;
       refsMap.current.set("seed", frame);
       refsMap.current.set("pose-spawn", frame);
@@ -4027,6 +4107,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if (!liveForge.current) return;
       const clip = walks[i]!;
       const bankKey = `${clip.from}←${clip.via}→${clip.to}`;
+      const walkKey = pcgPlateKey(walkAct(clip.from, clip.to));
+      const pcgHit = takePcgClip(walkKey);
+      if (pcgHit?.url && !bank.current.has(bankKey)) {
+        bank.current.set(bankKey, { url: pcgHit.url, end: pcgHit.end || still, start: pcgHit.start });
+        bank.current.set(`${clip.from}→${clip.to}`, { url: pcgHit.url, end: pcgHit.end || still, start: pcgHit.start });
+      }
       if (bank.current.has(bankKey)) {
         const hit = bank.current.get(bankKey)!;
         pose.set(`${clip.to}←${clip.from}`, hit.end);
@@ -4072,10 +4158,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       const style = lookForgeWalkStyle(hallStyleOnly.current ? "bot" : "start", cleanWish(worldHold.current));
       const extra = [style ? `Hall style from the still: ${style}.` : "", gazeLaw(to.id), brainLaws()].filter(Boolean).join(" ");
       let prompt = walkPrompt(from, to, clip.via === "start", extra, Boolean(home));
-      let url = await cookFilm(fromStill, prompt, kit, label);
+      let url = await cookFilm(fromStill, prompt, kit, label, undefined, false, walkKey);
       if (!url) {
         setFrost(`retry · ${label}`);
-        url = await cookFilm(fromStill, prompt, kit, `retry ${label}`);
+        url = await cookFilm(fromStill, prompt, kit, `retry ${label}`, undefined, false, walkKey);
       }
       if (!url) {
         setFrost(`video failed · ${label}`);
@@ -4143,6 +4229,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       pose.set(`${clip.to}←${clip.from}`, landed);
       bank.current.set(`${clip.from}←${clip.via}→${clip.to}`, { url, end: landed, start: fromStill });
       bank.current.set(`${clip.from}→${clip.to}`, { url, end: landed, start: fromStill });
+      putPcgClip(walkKey, { url, end: landed, start: fromStill });
       refsMap.current.set(`pose-${clip.to}`, landed);
       syncWalks();
       setHere(clip.to);
@@ -4646,7 +4733,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         pick: enterDoorRef.current,
       };
     }
-    if (!keepSid && hallHold.current <= 1) sid.current = newSessionId();
+    if (!keepSid && hallHold.current <= 1) {
+      sid.current = newSessionId();
+      runSeedHold.current = mintRunSeed();
+    }
     setPlate("");
     plateRef.current = "";
     setStageSrc(null);
@@ -5555,6 +5645,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     loadGen.current += 1;
     stopFilm();
     sid.current = s.id;
+    holdRunSeed(s.runSeed);
     playing.current = false;
     queued.current = null;
     liveForge.current = false;
@@ -5820,7 +5911,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         if (dead.current) return;
         const key = `${w.from}←${w.via}→${w.to}`;
         const have = bank.current.get(key) || bank.current.get(`${w.from}→${w.to}`);
+        const walkKey = pcgPlateKey(walkAct(w.from, w.to));
+        const cached = takePcgClip(walkKey);
         if (have?.url && !isHallFilm(have.url)) continue;
+        if (cached?.url) {
+          bank.current.set(key, { url: cached.url, end: cached.end || still, start: cached.start || still });
+          bank.current.set(`${w.from}→${w.to}`, { url: cached.url, end: cached.end || still, start: cached.start || still });
+          syncWalks();
+          continue;
+        }
         const from = list.find((n) => n.id === w.from) ?? SPAWN;
         const to = list.find((n) => n.id === w.to) ?? SPAWN;
         const url = await cookFilm(
@@ -5830,19 +5929,29 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           `${w.from}→${w.to}`,
           6,
           true,
+          walkKey,
         );
         if (!url) return;
         bank.current.set(key, { url, end: still });
         bank.current.set(`${w.from}→${w.to}`, { url, end: still });
+        putPcgClip(walkKey, { url, end: still, start: still });
         syncWalks();
       }
       for (const n of ["spawn", "m1", "m2"] as const) {
         if (dead.current) return;
         const have = bank.current.get(`idle-${n}`);
+        const idleKey = pcgPlateKey(idleAct(n));
+        const cachedIdle = takePcgClip(idleKey);
         if (have?.url && !isHallFilm(have.url)) continue;
-        const url = await cookFilm(still, idlePrompt(gazeLaw(n)), [], `still ${n}`, 6, true);
+        if (cachedIdle?.url) {
+          bank.current.set(`idle-${n}`, { url: cachedIdle.url, end: cachedIdle.end || still, start: cachedIdle.start });
+          syncWalks();
+          continue;
+        }
+        const url = await cookFilm(still, idlePrompt(gazeLaw(n)), [], `still ${n}`, 6, true, idleKey);
         if (!url) return;
         bank.current.set(`idle-${n}`, { url, end: still });
+        putPcgClip(idleKey, { url, end: still, start: still });
         syncWalks();
       }
     } finally {
@@ -5864,6 +5973,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setLiveHall(hungLive);
     }
     titleHold.current = titleHold.current || "Citadel";
+    holdRunSeed();
     const doors = plannedObjects(2).map((o) => ({ id: o.id, name: o.name, x: o.x, y: o.y }));
     setWant(2);
     wantRef.current = 2;

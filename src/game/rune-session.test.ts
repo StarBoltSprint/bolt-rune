@@ -18,6 +18,8 @@ describe("Load hydrate keeps cooked bank start", () => {
     assert.match(engine, /slimClip\(b\.start\)/);
     assert.match(engine, /mergeBankClips/);
     assert.match(engine, /sealedWalkPlayable/);
+    assert.match(session, /runSeed\?: string/);
+    assert.match(cloud, /runSeed: keepRunSeed/);
   });
 });
 

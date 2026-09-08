@@ -86,10 +86,12 @@ export function runeFilmVariants(input: {
   duration: number;
   resolution: string;
   store: { filename: string; public_url: true };
+  /** PCG s_i / s_enter — Imagine-usable uint32. First variant only; unseeded fallbacks stay. */
+  seed?: number;
 }): Record<string, unknown>[] {
-  const { imageUrl, duration, resolution, store } = input;
+  const { imageUrl, duration, resolution, store, seed } = input;
   const prompt = clipImaginePrompt(input.prompt);
-  function plate(res?: string) {
+  function plate(res?: string, withSeed = false) {
     const body: Record<string, unknown> = {
       model: IMAGINE_VIDEO,
       prompt,
@@ -99,9 +101,10 @@ export function runeFilmVariants(input: {
       storage_options: store,
     };
     if (res) body.resolution = res;
+    if (withSeed && Number.isFinite(seed) && seed! > 0) body.seed = seed;
     return body;
   }
-  const variants: Record<string, unknown>[] = [plate(resolution)];
+  const variants: Record<string, unknown>[] = [plate(resolution, true)];
   if (resolution === "1080p") variants.push(plate("720p"));
   variants.push(plate(undefined));
   return variants;
