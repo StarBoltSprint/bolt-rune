@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
 import {
+  DOOR_CHAT_HOP,
   HALL_SEAT_IDS,
   HALL_SEATS,
   hopDoorChat,
+  isHttpWakeUrl,
   publicRoster,
+  readOwnerWakeUrl,
+  writeOwnerWakeUrl,
   type BoltSeatHook,
   type HallSeatId,
 } from "@/game/door-chat";
@@ -31,9 +35,12 @@ export function DoorChatLine({
   const [sheet, setSheet] = useState(false);
   const [open, setOpen] = useState<HallSeatId | null>(null);
   const [draft, setDraft] = useState("");
+  const [paste, setPaste] = useState("");
   const [busy, setBusy] = useState(false);
   const [frost, setFrost] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
+  const [serverWired, setServerWired] = useState<Partial<Record<HallSeatId, boolean>> | null>(null);
+  const [held, setHeld] = useState<Record<HallSeatId, boolean>>({ door: false, smoke: false });
 
   useEffect(() => {
     const api: BoltSeatHook = {
@@ -45,6 +52,34 @@ export function DoorChatLine({
       if (window.__boltSeats === api) delete window.__boltSeats;
     };
   }, []);
+
+  useEffect(() => {
+    if (!sheet) return;
+    setHeld({
+      door: Boolean(readOwnerWakeUrl("door")),
+      smoke: Boolean(readOwnerWakeUrl("smoke")),
+    });
+    let dead = false;
+    void fetch(DOOR_CHAT_HOP)
+      .then((r) => r.json())
+      .then((raw) => {
+        if (dead || !raw || typeof raw !== "object") return;
+        const seats = Array.isArray((raw as { seats?: unknown }).seats) ? (raw as { seats: unknown[] }).seats : [];
+        const next: Partial<Record<HallSeatId, boolean>> = {};
+        for (const row of seats) {
+          if (!row || typeof row !== "object") continue;
+          const id = (row as { id?: unknown }).id;
+          if (id === "door" || id === "smoke") next[id] = (row as { wired?: unknown }).wired === true;
+        }
+        setServerWired(next);
+      })
+      .catch(() => {
+        if (!dead) setServerWired({ door: false, smoke: false });
+      });
+    return () => {
+      dead = true;
+    };
+  }, [sheet]);
 
   function closeSheet() {
     setSheet(false);
@@ -65,6 +100,21 @@ export function DoorChatLine({
       return;
     }
     if (got.reply) setLines((cur) => [...cur.slice(-4), { seat, who: "seat", text: got.reply }]);
+  }
+
+  function seatNeedsPaste(id: HallSeatId) {
+    return serverWired?.[id] !== true;
+  }
+
+  const pasteFor: HallSeatId | null =
+    open && seatNeedsPaste(open) ? open : !open && seatNeedsPaste("smoke") ? "smoke" : !open && seatNeedsPaste("door") ? "door" : null;
+
+  function holdPaste(id: HallSeatId, raw: string, clear = true) {
+    const url = writeOwnerWakeUrl(id, raw);
+    setHeld((cur) => ({ ...cur, [id]: Boolean(url) }));
+    if (clear) setPaste("");
+    setFrost(url ? `${HALL_SEATS[id].label} · held` : `${HALL_SEATS[id].label} · https webhook`);
+    return url;
   }
 
   const left = box ? box.x + box.w * 0.08 : undefined;
@@ -167,6 +217,48 @@ export function DoorChatLine({
             <p className="pointer-events-none px-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[#f0d48a]" data-seat-frost="1">
               {frost}
             </p>
+          ) : null}
+          {pasteFor ? (
+            <form
+              className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/20 bg-black/50 px-3 py-1.5"
+              data-seat-paste={pasteFor}
+              data-seat-held={held[pasteFor] ? "1" : "0"}
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerUp={(e) => e.stopPropagation()}
+              onSubmit={(e) => {
+                e.preventDefault();
+                holdPaste(pasteFor, paste);
+              }}
+            >
+              <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.18em] text-[#f0d48a]">
+                {HALL_SEATS[pasteFor].label}
+              </span>
+              <input
+                value={paste}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setPaste(next);
+                  if (isHttpWakeUrl(next.trim())) {
+                    writeOwnerWakeUrl(pasteFor, next);
+                    setHeld((cur) => ({ ...cur, [pasteFor]: true }));
+                  }
+                }}
+                placeholder="https webhook"
+                inputMode="url"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-label={`${HALL_SEATS[pasteFor].label} https webhook`}
+                className="min-w-0 flex-1 bg-transparent font-mono text-[11px] tracking-[0.08em] text-white/85 outline-none placeholder:text-white/30"
+              />
+              <button
+                type="submit"
+                className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#9ef0e4] disabled:text-white/25"
+                style={{ touchAction: "manipulation" }}
+              >
+                {held[pasteFor] ? "held" : "hold"}
+              </button>
+            </form>
           ) : null}
           <div className="flex items-center justify-center gap-2">
             {HALL_SEAT_IDS.map((id) => {

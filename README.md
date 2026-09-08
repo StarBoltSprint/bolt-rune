@@ -37,9 +37,10 @@ Cook stays outside (Imagine cook). Asteroid HOLD.
 2. Same-origin hop is `POST /api/door-chat` with `{ seat: "door" | "smoke", text, source? }`. One hop. No player API keys.
 3. Optional overrides: `DOOR_BOT_ID`, `SMOKE_BOT_ID`, `DOOR_CHAT_WAKE_SECRET` (Bearer on the wake POST).
 4. Wake files are public **markers** (seat + bot id + which env to read). They do not hold URLs.
-5. `GET /api/door-chat` returns the roster + `wired` (boolean). It never returns the wake URL.
+5. `GET /api/door-chat` returns the roster + `wired` (boolean) + `wakeDebug` (booleans + `urlKind` only). It never returns the wake URL.
 6. Director/Cook can wake Smoke from the hall picture, or `window.__boltSeats.wake("smoke", "walk / breath / biome")`.
 7. Hall / hung play paints no `Room N • Door A Play Sprint` header. Picture is the UI. Resonance and in-picture cues stay.
+8. **Valley / grok.me owner paste** — Clés secrètes and `.grok/secrets.json` often never reach the hop (empty bake, or a non-http sidebar deep link). Until Build injects a real `https` webhook, open the **seats** tab, paste the Door/Smoke wake URL once (`https webhook` → `hold`). It stays in this browser’s `localStorage` under `SMOKE_WAKE_URL` / `DOOR_WAKE_URL`. `POST /api/door-chat` accepts optional `wakeUrl` only when the server has no usable http URL and `isHttpWakeUrl(wakeUrl)`. Then tap Smoke and wake. Never `VITE_*`. Never commit the URL. Asteroid HOLD.
 
 On valley / grok.me the hop does **not** trust raw `process.env` from the client-shared `door-chat` module (Vite snapshots / strips it). `loadSeatSecretEnv` reads, in order:
 

@@ -14,9 +14,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BAKED_SEAT_SECRETS } from "virtual:seat-secrets";
 import {
+  HALL_SEAT_IDS,
+  HALL_SEATS,
+  seatWakeDebugFlags,
+  type HallSeatId,
+  type SeatWakeDebug,
+} from "./door-chat";
+import {
   bagFromProcessEnv,
   bagFromSecretFiles,
   mergeSecretBags,
+  pickSecret,
   seatSecretSlice,
 } from "../../scripts/grok-seat-secrets.mjs";
 
@@ -76,4 +84,28 @@ export function loadSeatSecretEnv(): Record<string, string> {
       bagFromProcessEnv(liveProcessEnv()),
     ),
   );
+}
+
+/**
+ * Why a seat is wired or not. Booleans + urlKind only — never the URL.
+ * `urlKind: "non-http"` is the grok sidebar / deep-link leftover case.
+ */
+export function inspectSeatWakeDebug(): Record<HallSeatId, SeatWakeDebug> {
+  const live = bagFromProcessEnv(liveProcessEnv());
+  const inlined = bagFromProcessEnv(inlinedSeatEnv());
+  const baked = BAKED_SEAT_SECRETS && typeof BAKED_SEAT_SECRETS === "object" ? BAKED_SEAT_SECRETS : {};
+  const disk = diskSecretBag();
+  const resolved = loadSeatSecretEnv();
+  const out = {} as Record<HallSeatId, SeatWakeDebug>;
+  for (const id of HALL_SEAT_IDS) {
+    const key = HALL_SEATS[id].wakeEnv;
+    out[id] = seatWakeDebugFlags({
+      resolved: pickSecret(resolved, key),
+      live: pickSecret(live, key),
+      inlined: pickSecret(inlined, key),
+      baked: pickSecret(baked, key),
+      disk: pickSecret(disk, key),
+    });
+  }
+  return out;
 }

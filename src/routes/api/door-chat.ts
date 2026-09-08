@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { loadSeatSecretEnv } from "@/game/door-chat-env.server";
+import { inspectSeatWakeDebug, loadSeatSecretEnv } from "@/game/door-chat-env.server";
 import {
   HALL_SEAT_IDS,
   doorChatPayload,
   isHallSeat,
   publicRoster,
   readWakeReply,
+  resolveHopWakeUrl,
   resolveSeatWake,
   type DoorChatHopResult,
   type HallSeatId,
@@ -32,22 +33,24 @@ function roster() {
         wired: seats.find((s) => s.id === seat.id)?.wired === true,
       }),
     ),
+    wakeDebug: inspectSeatWakeDebug(),
   };
 }
 
-async function hopWake(seat: HallSeatId, text: unknown, source?: string): Promise<DoorChatHopResult> {
+async function hopWake(seat: HallSeatId, text: unknown, source?: string, ownerWake = ""): Promise<DoorChatHopResult> {
   const env = loadSeatSecretEnv();
   const wake = resolveSeatWake(seat, env);
   const packed = doorChatPayload({ seat, text, source, botId: wake.botId });
   if (!packed.ok) return { ok: false, seat, error: packed.error, wired: wake.wired };
-  if (!wake.wired) return { ok: false, seat, error: "wake-unwired", wired: false };
+  const hop = resolveHopWakeUrl(wake.wakeUrl, ownerWake);
+  if (!hop.wired) return { ok: false, seat, error: "wake-unwired", wired: false };
 
   const headers: Record<string, string> = { "content-type": "application/json" };
   const secret = String(env.DOOR_CHAT_WAKE_SECRET || "").trim();
   if (secret) headers.Authorization = `Bearer ${secret}`;
 
   try {
-    const up = await fetch(wake.wakeUrl, {
+    const up = await fetch(hop.wakeUrl, {
       method: "POST",
       headers,
       body: JSON.stringify(packed.body),
@@ -78,7 +81,8 @@ async function postLine(request: Request) {
   }
   const rec = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
   if (!isHallSeat(rec.seat)) return json({ ok: false, error: "bad-seat" }, 400);
-  const got = await hopWake(rec.seat, rec.text, typeof rec.source === "string" ? rec.source : "hall");
+  const ownerWake = typeof rec.wakeUrl === "string" ? rec.wakeUrl : "";
+  const got = await hopWake(rec.seat, rec.text, typeof rec.source === "string" ? rec.source : "hall", ownerWake);
   return json(got, got.ok ? 200 : got.error === "wake-unwired" ? 503 : 502);
 }
 

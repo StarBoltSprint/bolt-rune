@@ -13,11 +13,17 @@ import {
   hopDoorChat,
   isHallSeat,
   isHttpWakeUrl,
+  ownerWakeStorageKey,
   publicRoster,
   publicSeat,
+  readOwnerWakeUrl,
   readWakeReply,
+  resolveHopWakeUrl,
   resolveSeatWake,
+  seatWakeDebugFlags,
   wakeFileOf,
+  wakeUrlKind,
+  writeOwnerWakeUrl,
 } from "./door-chat.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -85,6 +91,82 @@ describe("hall door-chat seats", () => {
     assert.equal(isHttpWakeUrl("not-a-url"), false);
     assert.equal(isHttpWakeUrl("ftp://x"), false);
     assert.equal(isHttpWakeUrl("https://ok.example/w"), true);
+    assert.equal(wakeUrlKind(""), "empty");
+    assert.equal(wakeUrlKind("   "), "empty");
+    assert.equal(wakeUrlKind("grok://bot/smoke"), "non-http");
+    assert.equal(wakeUrlKind("https://ok.example/w"), "http");
+  });
+
+  it("owner paste stores http wake URLs and never a VITE_ key", () => {
+    const mem = new Map<string, string>();
+    const store = {
+      getItem: (k: string) => (mem.has(k) ? mem.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        mem.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        mem.delete(k);
+      },
+    };
+    assert.equal(ownerWakeStorageKey("smoke"), "SMOKE_WAKE_URL");
+    assert.equal(ownerWakeStorageKey("door"), "DOOR_WAKE_URL");
+    assert.equal(writeOwnerWakeUrl("smoke", "grok://sidebar", store), "");
+    assert.equal(readOwnerWakeUrl("smoke", store), "");
+    assert.equal(writeOwnerWakeUrl("smoke", "https://wake.example/smoke", store), "https://wake.example/smoke");
+    assert.equal(readOwnerWakeUrl("smoke", store), "https://wake.example/smoke");
+    assert.equal(mem.get("SMOKE_WAKE_URL"), "https://wake.example/smoke");
+    assert.equal(writeOwnerWakeUrl("smoke", "", store), "");
+    assert.equal(mem.has("SMOKE_WAKE_URL"), false);
+    assert.doesNotMatch(ownerWakeStorageKey("smoke"), /^VITE_/);
+  });
+
+  it("hop uses owner paste only when server has no http wake URL", () => {
+    assert.deepEqual(resolveHopWakeUrl("https://env.example/s", "https://owner.example/s"), {
+      wakeUrl: "https://env.example/s",
+      wired: true,
+      from: "server",
+    });
+    assert.deepEqual(resolveHopWakeUrl("", "https://owner.example/s"), {
+      wakeUrl: "https://owner.example/s",
+      wired: true,
+      from: "owner",
+    });
+    assert.deepEqual(resolveHopWakeUrl("grok://sidebar", "https://owner.example/s"), {
+      wakeUrl: "https://owner.example/s",
+      wired: true,
+      from: "owner",
+    });
+    assert.deepEqual(resolveHopWakeUrl("", "not-a-url"), { wakeUrl: "", wired: false, from: "none" });
+    assert.deepEqual(resolveHopWakeUrl("", ""), { wakeUrl: "", wired: false, from: "none" });
+  });
+
+  it("wakeDebug flags never include a URL", () => {
+    const flags = seatWakeDebugFlags({
+      resolved: "grok://sidebar",
+      live: "",
+      inlined: "",
+      baked: "",
+      disk: "grok://sidebar",
+    });
+    assert.deepEqual(flags, {
+      wired: false,
+      hasLive: false,
+      hasInlined: false,
+      hasBaked: false,
+      hasDisk: true,
+      urlKind: "non-http",
+    });
+    assert.doesNotMatch(JSON.stringify(flags), /https?:\/\/|grok:\/\//);
+    assert.deepEqual(
+      seatWakeDebugFlags({
+        resolved: "https://wake.example/s",
+        live: "https://wake.example/s",
+        inlined: "",
+        baked: "",
+        disk: "",
+      }),
+      { wired: true, hasLive: true, hasInlined: false, hasBaked: false, hasDisk: false, urlKind: "http" },
+    );
   });
 
   it("packs one hop line and reads PASS/FAIL replies", () => {
@@ -96,6 +178,19 @@ describe("hall door-chat seats", () => {
     assert.equal(packed.body.seat, "smoke");
     assert.equal(packed.body.source, "director");
     assert.equal(packed.body.botId, SMOKE_BOT_ID);
+    assert.equal(packed.body.wakeUrl, undefined);
+    const owner = doorChatPayload({
+      seat: "smoke",
+      text: "walk / breath / biome",
+      wakeUrl: "https://owner.example/s",
+    });
+    assert.equal(owner.ok, true);
+    if (!owner.ok) return;
+    assert.equal(owner.body.wakeUrl, "https://owner.example/s");
+    const junk = doorChatPayload({ seat: "smoke", text: "walk", wakeUrl: "grok://sidebar" });
+    assert.equal(junk.ok, true);
+    if (!junk.ok) return;
+    assert.equal(junk.body.wakeUrl, undefined);
     assert.equal(readWakeReply({ reply: "PASS · walk" }), "PASS · walk");
     assert.equal(readWakeReply({ result: "FAIL · breath" }), "FAIL · breath");
     assert.equal(readWakeReply("  ok  "), "ok");
@@ -119,6 +214,25 @@ describe("hall door-chat seats", () => {
     assert.match(body, /"text":"hello hall"/);
     assert.doesNotMatch(body, /XAI_API_KEY|WAKE_URL|wallet/i);
   });
+
+  it("client hop sends owner wakeUrl only when held", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const fake: typeof fetch = async (url, init) => {
+      calls.push({ url: String(url), init: init || {} });
+      return new Response(JSON.stringify({ ok: true, seat: "smoke", wired: true, reply: "PASS" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const got = await hopDoorChat("smoke", "walk / breath / biome", "hall", fake, "https://owner.example/s");
+    assert.equal(got.ok, true);
+    const body = String(calls[0].init.body || "");
+    assert.match(body, /"seat":"smoke"/);
+    assert.match(body, /"wakeUrl":"https:\/\/owner.example\/s"/);
+    const dry = await hopDoorChat("smoke", "walk / breath / biome", "hall", fake, "");
+    assert.doesNotMatch(String(calls[1].init.body || ""), /wakeUrl/);
+    assert.equal(dry.ok, true);
+  });
 });
 
 describe("hall door-chat wiring", () => {
@@ -134,11 +248,16 @@ describe("hall door-chat wiring", () => {
     assert.match(line, /data-seat=\{id\}/);
     assert.match(line, /data-seat-open=/);
     assert.match(line, /hopDoorChat/);
-    assert.doesNotMatch(line, /Connect Wallet|XAI_API_KEY|DOOR_WAKE_URL|wallet/i);
+    assert.doesNotMatch(line, /Connect Wallet|XAI_API_KEY|wallet/i);
+    assert.doesNotMatch(line, /VITE_SMOKE_WAKE_URL|VITE_DOOR_WAKE_URL|process\.env/);
     assert.doesNotMatch(engine, /Connect Wallet/);
     assert.doesNotMatch(vault, /Connect Wallet/);
     assert.match(hop, /loadSeatSecretEnv/);
     assert.match(hop, /resolveSeatWake/);
+    assert.match(hop, /resolveHopWakeUrl/);
+    assert.match(hop, /inspectSeatWakeDebug/);
+    assert.match(hop, /wakeDebug/);
+    assert.match(hop, /rec\.wakeUrl/);
     assert.match(hop, /wakeUrl/);
     assert.match(hop, /Authorization/);
     assert.doesNotMatch(hop, /Connect Wallet|wallet/i);
@@ -160,6 +279,10 @@ describe("hall door-chat wiring", () => {
     assert.doesNotMatch(line, /safe-area-inset-bottom/);
     assert.doesNotMatch(line, /bottom: top != null/);
     assert.match(line, /hopDoorChat/);
+    assert.match(line, /data-seat-paste/);
+    assert.match(line, /https webhook/);
+    assert.match(line, /readOwnerWakeUrl/);
+    assert.match(line, /writeOwnerWakeUrl/);
     assert.match(engine, /<DoorChatLine where="hall" box=\{picBox\}/);
     assert.doesNotMatch(engine, /livingChrome \? `\$\{livingChrome\.keeper\}/);
     assert.doesNotMatch(engine, /Room N • Door A Play Sprint/);
