@@ -1,7 +1,11 @@
 /**
  * PCG rail 1 — run seed, plate / enter hashes, clip cache.
+ * PCG rail 2 — enter-ready glow, hot-path enter (cache / stock), graph commit, paid ticket.
  * Asteroid HOLD. No Imagine on walk-toward-door speculation.
+ * Double-tap never Imagines. Paid forge/ticket only on explicit confirm. No paid speculate on approach.
  */
+
+import { HALL_LOOP } from "./stock-room.ts";
 
 const FNV_OFF = 2166136261;
 const FNV_PRIME = 16777619;
@@ -9,8 +13,22 @@ const FNV_PRIME = 16777619;
 const RUN_KEY = "bolt-pcg-run-v1";
 const CLIP_KEY = "bolt-pcg-clips-v1";
 
-export type ImagineJob = "plate" | "enter" | "forge" | "walk-toward-door" | "speculate";
+export type ImagineJob = "plate" | "enter" | "forge" | "walk-toward-door" | "speculate" | "approach" | "enter-hot";
+export type PaidJob = "plate" | "enter" | "forge";
 export type ClipCacheKind = "plate" | "enter";
+export type GlowArm = "walk" | "enter" | "stay" | null | "";
+export type GlowPulse = "walk" | "enter";
+
+/** Living-hall stock bridge when s_enter is cold. Never an Imagine URL. */
+export const STOCK_ENTER_BRIDGE = HALL_LOOP;
+
+export type ForgeTicket = {
+  job: PaidJob;
+  confirm: true;
+  at: number;
+};
+
+let forgeTickets: Partial<Record<PaidJob, ForgeTicket>> = {};
 
 export type ClipCacheRow = {
   url: string;
@@ -116,6 +134,68 @@ export function enterSeed(s: string, i: number, from: string, to: string, door: 
 /** Rail 1: Imagine only for plate / enter / explicit forge. Walk-toward-door is speculation. */
 export function mayImagine(job: ImagineJob): boolean {
   return job === "plate" || job === "enter" || job === "forge";
+}
+
+/** Walk pulse on approach; enter pulse when the hung door is ready. Stay / empty = no glow. */
+export function enterReadyGlow(arm?: GlowArm | string | null): GlowPulse | "" {
+  if (arm === "walk") return "walk";
+  if (arm === "enter") return "enter";
+  return "";
+}
+
+export function stockEnterBridge(url?: string | null): string {
+  return durableClip(url) || STOCK_ENTER_BRIDGE;
+}
+
+/**
+ * Double-tap hot path: cached s_enter or stock bridge.
+ * NEVER Imagine. Approach / speculate must not call this to spend.
+ */
+export function playEnterHot(key: string, stockBridge?: string | null): string {
+  return reuseClipBeforeRecook(key) || stockEnterBridge(stockBridge);
+}
+
+/** Graph commit only when a real clip exists — cache hit or stock bridge, never an empty edge. */
+export function mayCommitEnterGraph(clip?: string | null): boolean {
+  return Boolean(durableClip(clip));
+}
+
+export function isPaidJob(job: ImagineJob): job is PaidJob {
+  return job === "plate" || job === "enter" || job === "forge";
+}
+
+/** Explicit confirm — the only way a paid Imagine ticket is minted. */
+export function confirmForgeTicket(job: PaidJob): ForgeTicket {
+  const ticket: ForgeTicket = { job, confirm: true, at: Date.now() };
+  forgeTickets[job] = ticket;
+  return ticket;
+}
+
+export function peekForgeTicket(job?: PaidJob): ForgeTicket | null {
+  if (job) return forgeTickets[job] || null;
+  return forgeTickets.enter || forgeTickets.forge || forgeTickets.plate || null;
+}
+
+export function takeForgeTicket(job?: PaidJob): ForgeTicket | null {
+  const ticket = peekForgeTicket(job);
+  if (!ticket?.confirm) return null;
+  delete forgeTickets[ticket.job];
+  return ticket;
+}
+
+export function dropForgeTicket() {
+  forgeTickets = {};
+}
+
+/**
+ * Rail 2: paid Imagine only with an explicit confirm ticket.
+ * Approach / walk-toward-door / speculate / enter-hot never spend.
+ */
+export function mayPaidImagine(job: ImagineJob, ticket?: ForgeTicket | null): boolean {
+  if (job === "walk-toward-door" || job === "speculate" || job === "approach" || job === "enter-hot") return false;
+  if (!isPaidJob(job) || !mayImagine(job)) return false;
+  const hold = ticket === undefined ? forgeTickets[job] : ticket;
+  return hold?.confirm === true && hold.job === job;
 }
 
 function durableClip(url?: string | null): string {

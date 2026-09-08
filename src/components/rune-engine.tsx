@@ -85,6 +85,7 @@ import {
   hungBiomeFirstUrl,
   stayBiomePlay,
   stockTransUrl,
+  hungDoorArm,
   hungDoorTap,
   hungHallLocksDoors,
   walkHangHallHref,
@@ -115,10 +116,16 @@ import {
   beginRunSeed,
   clipCachePut,
   clipCacheSnapshot,
+  confirmForgeTicket,
+  enterReadyGlow,
   enterSeed,
   hydrateClipCache,
+  mayCommitEnterGraph,
   mayImagine,
+  mayPaidImagine,
+  playEnterHot,
   reuseClipBeforeRecook,
+  takeForgeTicket,
 } from "@/game/pcg-rail";
 import { BootScreen } from "@/components/citadel-hub";
 import { HangAskSheet, HangCitadelStrip, HangRoomStrip } from "@/components/hang-ask";
@@ -1691,8 +1698,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function prefetchFrom(from: string, prefer?: string | null) {
-    /* PCG rail 1: warm existing clips only. No Imagine on walk-toward-door speculation. */
-    if (mayImagine("walk-toward-door")) return;
+    /* PCG rail 1+2: warm existing clips only. No Imagine / paid speculate on approach. */
+    if (mayImagine("walk-toward-door") || mayPaidImagine("approach")) return;
     const hid = hidFilm();
     const vis = visFilm();
     const next = prefer || otherFrom(from);
@@ -2376,13 +2383,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       lastPose.current,
     );
     let clip = clipFor(at, id);
-    /* Load / Play: sealed bank walks play. No Imagine on walk-toward-door speculation. */
+    /* Load / Play: sealed bank walks play. No Imagine / paid speculate on approach. */
     if (!sealedWalkPlayable(clip)) {
       const stock = stockDoorWalk(at, id);
       if (stock && (!clip?.url || !walkClipHoldsSeed(clip, seed))) {
         clip = clip || stock;
         bank.current.set(`${at}→${id}`, stock);
-      } else if (mayImagine("walk-toward-door")) {
+      } else if (mayImagine("walk-toward-door") || mayPaidImagine("approach")) {
         setFrost(`cook · ${at} → ${id}`);
         clip = (await forgeWalkNow(at, id)) || clip;
       }
@@ -2740,8 +2747,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     return enter.kind === "biome";
   }
 
-  /** First hung biome plate while Bolt breathes at the door — FilmStage must not cold-load. */
+  /** First hung biome plate while Bolt breathes at the door — FilmStage must not cold-load. Rail 2: no paid speculate on approach. */
   function warmHungBiome(door: "m1" | "m2") {
+    if (mayPaidImagine("approach") || mayImagine("walk-toward-door")) return;
     const arts = hungArts.length ? hungArts : readArtifacts();
     const enter = stayBiomePlay(resolveHungEnter(doorLetterOf(door), hallHold.current, sid.current, arts, riftRef.current));
     if (enter.kind !== "biome") return;
@@ -3976,7 +3984,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       let enterUrl = reuseClipBeforeRecook(enterKey);
       if (enterUrl) {
         clipCachePut(enterKey, enterUrl, "enter");
-      } else if (mayImagine("enter")) {
+      } else if (mayPaidImagine("enter")) {
+        takeForgeTicket("enter");
         setBeat("cook");
         beatRef.current = "cook";
         setFrost("enter · last frame room 1 → room 2");
@@ -3984,8 +3993,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         enterUrl = await cookFilm(enterSrc, enterHallPrompt(enterSide, worldHold.current), [hallStill], "enter", 6);
         if (!enterUrl) enterUrl = await cookFilm(enterSrc, enterHallPrompt(enterSide, worldHold.current), [hallStill], "enter retry", 6);
         if (enterUrl) clipCachePut(enterKey, enterUrl, "enter");
+      } else {
+        enterUrl = playEnterHot(enterKey, stockTransUrl(enterDoor));
       }
-      if (!enterUrl) {
+      if (!mayCommitEnterGraph(enterUrl)) {
         setFrost("enter failed · tap retry");
         setLoadPct(0);
         return;
@@ -4491,12 +4502,14 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const enterFrom = viaHold.current || (side === "RIGHT" ? "m2" : "m1");
     const enterKey = enterSeed(seedHold.current || beginRunSeed(sid.current), hallHold.current, enterFrom, "spawn", enterDoor);
     let url = reuseClipBeforeRecook(enterKey);
-    if (!url && mayImagine("enter")) {
+    if (!url && mayPaidImagine("enter")) {
+      takeForgeTicket("enter");
       url = await cookFilm(start, enterHallPrompt(side, worldHold.current), kit, "enter", 6);
       if (!url) url = await cookFilm(start, enterHallPrompt(side, worldHold.current), kit, "enter retry", 6);
     }
+    if (!url) url = playEnterHot(enterKey, stockTransUrl(enterDoor));
     if (url) clipCachePut(enterKey, url, "enter");
-    if (!url) return null;
+    if (!mayCommitEnterGraph(url)) return null;
     setFilmUrl(url);
     setBeat("playvid");
     beatRef.current = "playvid";
@@ -4889,6 +4902,16 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const dest = destHall(pick);
     const arts = readArtifacts();
     const enter = resolveHungEnter(doorLetterOf(pick), hallHold.current, sid.current, arts, riftRef.current);
+    const enterDoor = doorLetterOf(pick);
+    const enterKey = enterSeed(
+      seedHold.current || beginRunSeed(sid.current),
+      hallHold.current,
+      hereRef.current || pick,
+      enter.kind === "biome" ? enter.biome : "spawn",
+      enterDoor,
+    );
+    /* PCG rail 2: double-tap plays cache s_enter or stock bridge only — NEVER Imagine. */
+    const hot = playEnterHot(enterKey, enter.kind === "biome" ? enter.trans || stockTransUrl(enterDoor, enter.biome) : stockTransUrl(enterDoor));
     entering.current = true;
     playing.current = true;
     playTok.current += 1;
@@ -4909,7 +4932,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         const restored = hydrateRift(sid.current, bindHall >= 2 ? bindHall : hallHold.current, riftRef.current, arts);
         riftRef.current = restored;
         setRift(restored);
-        await playRift(pick, restored[pick] || {
+        const gate = restored[pick] || {
           biome: enter.biome,
           name: enter.name,
           still: enter.still,
@@ -4917,7 +4940,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           playlist: enter.playlist,
           trans: enter.trans,
           art: enter.art,
-        });
+        };
+        if (mayCommitEnterGraph(hot)) {
+          clipCachePut(enterKey, hot, "enter");
+          await playRift(pick, { ...gate, trans: hot });
+        } else {
+          await playRift(pick, gate);
+        }
         return;
       }
       /* Hung hall: never destHall / enter→spawn — stay in breath at this door. */
@@ -4929,19 +4958,24 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       }
       if (!bank.current.get(`exit-${pick}`)?.url && dest) await prefetchExit(pick);
       const clip = bank.current.get(`exit-${pick}`) || (dest ? bank.current.get("enter→spawn") : null);
-      if (clip?.url) {
+      const playUrl = (clip?.url && mayCommitEnterGraph(clip.url) && clip.url) || (mayCommitEnterGraph(hot) ? hot : "");
+      if (playUrl && !clip?.url) {
+        clipCachePut(enterKey, playUrl, "enter");
+        bank.current.set(`exit-${pick}`, { url: playUrl, end: "" });
+      }
+      if (playUrl) {
         wrapping.current = false;
         setLoopOn(false);
         setBeat("playvid");
         beatRef.current = "playvid";
         setFrost("enter");
-        setFilmUrl(clip.url);
+        setFilmUrl(playUrl);
         sfxForge("enter");
         holdNow(plateRef.current);
         await sleep(80);
-        await Promise.race([playFilm(clip.url, 7200, plateRef.current, clip.end, false), sleep(7200)]);
+        await Promise.race([playFilm(playUrl, 7200, plateRef.current, clip?.end, false), sleep(7200)]);
         playing.current = false;
-        holdNow(clip.end || lastLive.current);
+        holdNow(clip?.end || lastLive.current);
         skipEnter.current = true;
       }
       if (dest && dest !== hallHold.current) {
@@ -5836,9 +5870,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     void dropSession(id).then(() => setHub(listSessions()));
   }
 
-  /** Background recook of the 6 room clips. Rail 1: no Imagine on walk-toward-door speculation. */
+  /** Background recook of the 6 room clips. Rail 1+2: no Imagine / paid speculate on approach. */
   async function cookRoomQuiet() {
-    if (!mayImagine("walk-toward-door")) return;
+    if (!mayImagine("walk-toward-door") || mayPaidImagine("approach")) return;
     if (quietCook.current || dead.current) return;
     quietCook.current = true;
     const first = pathFirst.current || "m1";
@@ -6013,6 +6047,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function forge(secs?: WalkSecs) {
     if (pins.length < want) return;
+    /* PCG rail 2: paid forge / enter Imagine only after this explicit confirm. */
+    confirmForgeTicket("enter");
+    confirmForgeTicket("forge");
     const dur = clampWalk(secs ?? walkSecsRef.current);
     setWalkSecs(dur);
     walkSecsRef.current = dur;
@@ -7347,13 +7384,16 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             const top = box ? box.y + hit.y * box.h : "24%";
             const width = box ? hit.w * box.w : "38%";
             const height = box ? hit.h * box.h : "44%";
+            const pulse = enterReadyGlow(hungDoorArm(here, id, hungDoorReady(id)));
             return (
               <button
                 key={id}
                 type="button"
                 aria-label={id}
                 data-door={id}
-                className="pointer-events-auto absolute"
+                data-pulse={pulse || undefined}
+                data-enter-ready={pulse === "enter" ? "1" : undefined}
+                className={`pointer-events-auto absolute${pulse === "enter" ? " door-pulse-enter" : pulse === "walk" ? " door-pulse-walk" : ""}`}
                 style={{
                   left,
                   top,

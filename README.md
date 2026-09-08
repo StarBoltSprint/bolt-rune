@@ -24,6 +24,10 @@ Stock sprint mp4s are not in this tree (too heavy). Stills, UI, and Imagine CDN 
 
 New citadel / Play mint a run seed `s` and Keep persists it with the citadel. Plate clips key as `s_i = H(s, i, act, biome)`. Enter clips key as `s_enter = H(s, i, enter, from, to, door)`. The clip cache reuses those keys before any Imagine recook. Walk-toward-door speculation never calls Imagine. Asteroid HOLD.
 
+## PCG rail 2
+
+Enter-ready glow: approach is a walk pulse; a hung door at Bolt's feet is an enter pulse. Double-tap plays cached `s_enter` or the stock hall bridge — never Imagine on that hot path. The enter graph commits only when a clip exists. Paid forge / plate / enter tickets mint only on explicit confirm (Forge / studio double-tap). Approach never pays. Asteroid HOLD.
+
 ## Hall seats (SmiR pack)
 
 SmiR's own film-team bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Door, Smoke, Cook, Continuity. Not a side chat, not Connect Wallet, not freebots.lol, not a permanent bottom row. Asteroid HOLD.

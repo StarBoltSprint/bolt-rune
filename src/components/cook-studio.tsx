@@ -14,7 +14,7 @@ import { boltBack, locFromHash, pushBolt, readBolt } from "@/lib/bolt-history";
 import { boltFull } from "@/lib/press";
 import { sfxForge, startBed, unlockAudio } from "@/game/audio";
 import { RuneEngine } from "@/components/rune-engine";
-import { beginRunSeed, clipCachePut, mayImagine, plateSeed, reuseClipBeforeRecook } from "@/game/pcg-rail";
+import { beginRunSeed, clipCachePut, confirmForgeTicket, mayPaidImagine, plateSeed, reuseClipBeforeRecook } from "@/game/pcg-rail";
 import { lastPlay } from "@/game/rune-session";
 
 type Plate = { status: "wait" | "cook" | "ready" | "fail"; url?: string };
@@ -612,6 +612,8 @@ export function CookStudio({
       return;
     }
     if (lock.current) return;
+    /* PCG rail 2: paid plate Imagine only after this explicit forge confirm. */
+    confirmForgeTicket("plate");
     lock.current = true;
     clearCookReady();
     sfxForge("cook");
@@ -691,7 +693,7 @@ export function CookStudio({
         });
         return;
       }
-      if (!mayImagine("plate")) {
+      if (!mayPaidImagine("plate")) {
         mark(0, { status: "fail" });
         setFrost("No cached plate · Imagine held");
         return;

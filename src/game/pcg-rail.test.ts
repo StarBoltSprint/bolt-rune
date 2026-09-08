@@ -9,17 +9,27 @@ import {
   clipCacheGet,
   clipCachePut,
   clipCacheSnapshot,
+  confirmForgeTicket,
+  dropForgeTicket,
+  enterReadyGlow,
   enterSeed,
   hydrateClipCache,
   isRunSeed,
+  mayCommitEnterGraph,
   mayImagine,
+  mayPaidImagine,
   mergeClipCache,
   newRunSeed,
   packClipCache,
   pcgHash,
+  peekForgeTicket,
   plateSeed,
+  playEnterHot,
   readRunSeed,
   reuseClipBeforeRecook,
+  STOCK_ENTER_BRIDGE,
+  stockEnterBridge,
+  takeForgeTicket,
 } from "./pcg-rail.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -47,6 +57,7 @@ function mockStorage() {
 describe("PCG rail 1 — run / plate / enter seeds", () => {
   beforeEach(() => {
     mockStorage();
+    dropForgeTicket();
   });
 
   it("H is a stable 16-char hex for the same parts", () => {
@@ -96,6 +107,7 @@ describe("PCG rail 1 — run / plate / enter seeds", () => {
 describe("PCG rail 1 — clip cache reuse before recook", () => {
   beforeEach(() => {
     mockStorage();
+    dropForgeTicket();
   });
 
   it("keyed by s_i / s_enter — reuse hits, missing keys recook", () => {
@@ -131,6 +143,8 @@ describe("PCG rail 1 — no Imagine on walk-toward-door speculation", () => {
     assert.equal(mayImagine("forge"), true);
     assert.equal(mayImagine("walk-toward-door"), false);
     assert.equal(mayImagine("speculate"), false);
+    assert.equal(mayImagine("approach"), false);
+    assert.equal(mayImagine("enter-hot"), false);
   });
 
   it("prefetch / quiet recook / approach walk never call Imagine", () => {
@@ -172,6 +186,153 @@ describe("PCG rail 1 — Keep persist + Asteroid HOLD", () => {
     assert.doesNotMatch(films, /id: "asteroid"[\s\S]{0,400}prepareHoldBeats/);
     const rail = readFileSync(join(here, "./pcg-rail.ts"), "utf8");
     assert.match(rail, /Asteroid HOLD/);
+    assert.doesNotMatch(rail, /prepareHoldBeats/);
+  });
+});
+
+describe("PCG rail 2 — enter-ready glow (walk vs enter pulse)", () => {
+  it("walk arm pulses walk; enter arm pulses enter; stay is dark", () => {
+    assert.equal(enterReadyGlow("walk"), "walk");
+    assert.equal(enterReadyGlow("enter"), "enter");
+    assert.equal(enterReadyGlow("stay"), "");
+    assert.equal(enterReadyGlow(null), "");
+    assert.equal(enterReadyGlow(""), "");
+  });
+
+  it("living hall paints walk vs enter pulse on the door overlay", () => {
+    const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const css = readFileSync(join(here, "../styles.css"), "utf8");
+    assert.match(engine, /enterReadyGlow\(/);
+    assert.match(engine, /hungDoorArm\(/);
+    assert.match(engine, /data-pulse=\{pulse \|\| undefined\}/);
+    assert.match(engine, /data-enter-ready=\{pulse === "enter" \? "1" : undefined\}/);
+    assert.match(css, /@keyframes enter-ready-pulse/);
+    assert.match(css, /@keyframes walk-door-pulse/);
+    assert.match(css, /\.door-pulse-enter/);
+    assert.match(css, /\.door-pulse-walk/);
+  });
+});
+
+describe("PCG rail 2 — double-tap plays cache s_enter or stock bridge", () => {
+  beforeEach(() => {
+    mockStorage();
+    dropForgeTicket();
+  });
+
+  it("hot path prefers cached s_enter, else stock bridge — never Imagine", () => {
+    const s = "shotenter01";
+    const key = enterSeed(s, 2, "m1", "spawn", "A");
+    assert.equal(playEnterHot(key), STOCK_ENTER_BRIDGE);
+    assert.equal(playEnterHot(key, "/films/forge-forest.mp4"), "/films/forge-forest.mp4");
+    clipCachePut(key, "https://imgen.x.ai/vid/s-enter.mp4", "enter");
+    assert.equal(playEnterHot(key, "/ui/citadel.mp4?v=aaa"), "https://imgen.x.ai/vid/s-enter.mp4");
+    assert.equal(stockEnterBridge(""), STOCK_ENTER_BRIDGE);
+    assert.equal(playEnterHot(key, "blob:http://localhost/x"), "https://imgen.x.ai/vid/s-enter.mp4");
+  });
+
+  it("goEnter / same-door double-tap never cooks Imagine on the hot path", () => {
+    const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const goEnter = engine.slice(engine.indexOf("async function goEnter"), engine.indexOf("function enterNext"));
+    const playWalk = engine.slice(engine.indexOf("async function playWalk"), engine.indexOf("async function saveFilms"));
+    assert.match(engine, /playEnterHot\(/);
+    assert.match(goEnter, /playEnterHot\(/);
+    assert.match(goEnter, /enter-hot|NEVER Imagine|playEnterHot/);
+    assert.doesNotMatch(goEnter, /cookFilm\(|startRuneFilm\(|forgeWalkNow\(/);
+    assert.match(playWalk, /mayImagine\("walk-toward-door"\)/);
+    assert.doesNotMatch(playWalk, /mayImagine\("enter"\)/);
+  });
+});
+
+describe("PCG rail 2 — graph commit only when clip exists", () => {
+  beforeEach(() => {
+    mockStorage();
+    dropForgeTicket();
+  });
+
+  it("empty / blob / data URLs cannot commit; cache and stock can", () => {
+    assert.equal(mayCommitEnterGraph(""), false);
+    assert.equal(mayCommitEnterGraph(null), false);
+    assert.equal(mayCommitEnterGraph("blob:http://localhost/x"), false);
+    assert.equal(mayCommitEnterGraph("data:video/mp4;base64,aaa"), false);
+    assert.equal(mayCommitEnterGraph(STOCK_ENTER_BRIDGE), true);
+    assert.equal(mayCommitEnterGraph("/films/forge-canyon.mp4"), true);
+    const key = enterSeed("sgraph01", 1, "m2", "spawn", "B");
+    clipCachePut(key, "https://imgen.x.ai/vid/enter-b.mp4", "enter");
+    assert.equal(mayCommitEnterGraph(playEnterHot(key)), true);
+  });
+
+  it("engine commits enter→spawn only behind mayCommitEnterGraph", () => {
+    const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const cookWalks = engine.slice(engine.indexOf("async function cookWalks"), engine.indexOf("function packStill"));
+    const cookEnter = engine.slice(engine.indexOf("async function cookEnter"), engine.indexOf("async function cookRefs"));
+    const goEnter = engine.slice(engine.indexOf("async function goEnter"), engine.indexOf("function enterNext"));
+    assert.match(cookWalks, /mayCommitEnterGraph\(/);
+    assert.match(cookEnter, /mayCommitEnterGraph\(/);
+    assert.match(goEnter, /mayCommitEnterGraph\(/);
+  });
+});
+
+describe("PCG rail 2 — paid forge / ticket only on explicit confirm", () => {
+  beforeEach(() => {
+    dropForgeTicket();
+  });
+
+  it("no ticket → no paid Imagine; confirm ticket matches the job only", () => {
+    assert.equal(mayPaidImagine("plate"), false);
+    assert.equal(mayPaidImagine("enter"), false);
+    assert.equal(mayPaidImagine("forge"), false);
+    const plate = confirmForgeTicket("plate");
+    assert.equal(peekForgeTicket()?.job, "plate");
+    assert.equal(mayPaidImagine("plate"), true);
+    assert.equal(mayPaidImagine("plate", plate), true);
+    assert.equal(mayPaidImagine("enter"), false);
+    assert.equal(mayPaidImagine("forge", plate), false);
+    assert.equal(takeForgeTicket("enter"), null);
+    assert.equal(takeForgeTicket("plate")?.job, "plate");
+    assert.equal(peekForgeTicket(), null);
+    assert.equal(mayPaidImagine("plate"), false);
+  });
+
+  it("approach / speculate / enter-hot never spend even with a ticket", () => {
+    confirmForgeTicket("enter");
+    assert.equal(mayPaidImagine("approach"), false);
+    assert.equal(mayPaidImagine("speculate"), false);
+    assert.equal(mayPaidImagine("enter-hot"), false);
+    assert.equal(mayPaidImagine("walk-toward-door"), false);
+    assert.equal(mayPaidImagine("enter"), true);
+  });
+
+  it("explicit confirm is forge() / cook-studio double-tap — never approach", () => {
+    const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const studio = readFileSync(join(here, "../components/cook-studio.tsx"), "utf8");
+    const forge = engine.slice(engine.indexOf("function forge(secs"), engine.indexOf("function pickSecs"));
+    const prefetch = engine.slice(engine.indexOf("function prefetchFrom"), engine.indexOf("function notePaint"));
+    const quiet = engine.slice(engine.indexOf("async function cookRoomQuiet"), engine.indexOf("function enterLivingRoom"));
+    const playWalk = engine.slice(engine.indexOf("async function playWalk"), engine.indexOf("async function saveFilms"));
+    const cookWalks = engine.slice(engine.indexOf("async function cookWalks"), engine.indexOf("function packStill"));
+    const cookEnter = engine.slice(engine.indexOf("async function cookEnter"), engine.indexOf("async function cookRefs"));
+    assert.match(forge, /confirmForgeTicket\("enter"\)/);
+    assert.match(forge, /confirmForgeTicket\("forge"\)/);
+    assert.match(studio, /confirmForgeTicket\("plate"\)/);
+    assert.match(studio, /mayPaidImagine\("plate"\)/);
+    assert.doesNotMatch(prefetch, /confirmForgeTicket\(/);
+    assert.doesNotMatch(quiet, /confirmForgeTicket\(/);
+    assert.doesNotMatch(playWalk, /confirmForgeTicket\(/);
+    assert.match(cookWalks, /mayPaidImagine\("enter"\)/);
+    assert.match(cookEnter, /mayPaidImagine\("enter"\)/);
+    assert.match(playWalk, /mayPaidImagine\("approach"\)|mayImagine\("walk-toward-door"\)/);
+  });
+});
+
+describe("PCG rail 2 — Asteroid HOLD", () => {
+  it("Asteroid chart HOLD — rail 2 does not retouch asteroid beats", () => {
+    const asteroid = FILM_BY_ID.asteroid.beats.map((beat) => beat.at);
+    assert.deepEqual(asteroid, [7.0, 12.3, 16.3, 21.6, 25.6, 30.9, 34.9, 40.2, 44.2, 49.5, 53.5]);
+    const films = readFileSync(join(here, "./films.ts"), "utf8");
+    assert.doesNotMatch(films, /id: "asteroid"[\s\S]{0,400}prepareHoldBeats/);
+    const rail = readFileSync(join(here, "./pcg-rail.ts"), "utf8");
+    assert.match(rail, /Asteroid HOLD/);
+    assert.match(rail, /PCG rail 2/);
     assert.doesNotMatch(rail, /prepareHoldBeats/);
   });
 });
