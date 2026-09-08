@@ -95,6 +95,13 @@ describe("Smoke ship-gate — local lint", () => {
     assert.ok(got.reasons.includes("cue-window"));
   });
 
+  it("walk tagged truck / orbit / follow-through-door is Smoke FAIL", () => {
+    const cooked = assemblePrompt(goodSlots());
+    const got = lintSmoke(goodWalk({ prompt: `${cooked.prompt} truck orbit follow-through-door` }));
+    assert.equal(got.smoke, "FAIL");
+    assert.ok(got.reasons.includes("camera-prompt"));
+  });
+
   it("prompt banned stem FAIL", () => {
     const cooked = assemblePrompt(goodSlots({ flavor: "chrome wolf" }));
     const got = lintSmoke(goodWalk({ prompt: cooked.prompt, slots: goodSlots({ flavor: "chrome wolf" }) }));

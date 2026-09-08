@@ -727,7 +727,7 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.equal(holdLoopSeam(false, 0, 0), false);
     const here = dirname(fileURLToPath(import.meta.url));
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
-    assert.match(stage, /loop=\{Boolean\(holdDoor\)\}/);
+    assert.match(stage, /loop=\{Boolean\(holdDoor\) \|\| poseLoop\}/);
     assert.match(stage, /function keepHoldLoop/);
     assert.match(stage, /holdDoorLoops\(holdDoorRef\.current\)/);
     assert.match(stage, /holdLoopSeam\(/);

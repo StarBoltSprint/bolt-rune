@@ -164,6 +164,33 @@ import {
   type LivingPlayFrame,
   type PlayFrameKind,
 } from "@/game/play-frame";
+import {
+  applyPoseIntent,
+  beginPose,
+  landBreath,
+  mayFreezePlate,
+  nodeOfPose,
+  onBreathLap,
+  onEndedPose,
+  poseBreathLoops,
+  poseOfNode,
+  resetForNewHall,
+  tapPose,
+  walkClip,
+  type DoorSide,
+  type PoseClipShelf,
+  type PoseState,
+} from "@/game/pcg-pose";
+import { applyEnterPassMomentum } from "@/game/pcg-play";
+import {
+  createDomTransitionPlayer,
+  planTransition,
+  runTransition,
+  type TransitionIO,
+  type TransitionPlan,
+  type TransitionPlate,
+} from "@/game/transition";
+import { createPreloadPool, syncPreload, type PreloadLib } from "@/game/preload";
 
 const FADE_MS = 1100;
 
@@ -180,7 +207,7 @@ function armFilm(el: HTMLVideoElement, url: string, _loop = false) {
   } catch {
     /* */
   }
-  el.loop = false;
+  el.loop = Boolean(_loop);
   const now = (el.getAttribute("src") || el.currentSrc || "").trim();
   if (now === src) return;
   try {
@@ -713,6 +740,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const playTok = useRef(0);
   const loadGen = useRef(0);
   const filmLoop = useRef(false);
+  const poseRef = useRef<PoseState>(beginPose());
+  const pendingGoPlan = useRef<TransitionPlan | null>(null);
+  const transitionAbort = useRef<AbortController>(new AbortController());
+  const preloadRef = useRef(createPreloadPool());
   const wrapping = useRef(false);
   const idleArmed = useRef(false);
   const skipIn = useRef(false);
@@ -1529,6 +1560,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     });
   }
 
+  function poseSideOf(id: string): DoorSide | null {
+    if (id === "m1" || id === "A") return "A";
+    if (id === "m2" || id === "B") return "B";
+    return null;
+  }
+
+  function poseArmedEnter(id: string): boolean {
+    const side = poseSideOf(id);
+    return Boolean(side && poseRef.current.mode === "breath" && poseRef.current.armed[side] && poseOfNode(id) === poseRef.current.pose);
+  }
+
   function goTo(id: string) {
     if (riftPickRef.current || riftDraftRef.current) return;
     if (entering.current) return;
@@ -1538,6 +1580,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       walkingTo.current === id &&
       (playing.current || walk.current || beatRef.current === "playvid" || beatRef.current === "walk")
     ) {
+      const side = poseSideOf(id);
+      if (side && poseRef.current.mode === "walk") {
+        poseRef.current = applyPoseIntent(poseRef.current, { act: "grade", side }, {
+          mediaT: visFilm()?.currentTime,
+          shelf: poseShelf(),
+        }).state;
+      }
       return;
     }
     if ((id === "m1" || id === "m2")) {
@@ -1562,16 +1611,20 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       const now = typeof performance !== "undefined" ? performance.now() : Date.now();
       /* Leftover Hang A / Door A after confirm must stay on hall N — not jump to FilmStage. */
       if (now < hangGuard.current) return;
-      /* First tap walks. Second tap SAME door while breathing enters. Other door walks. */
+      /* First tap walks. Same door while breathing + armed (walk Hit) enters. */
       if (hungDoorTap(hereRef.current, id) === "enter") {
-        void goEnter(id);
+        if (poseArmedEnter(id)) {
+          void goEnter(id);
+          return;
+        }
+        holdIdle();
         return;
       }
     }
     if ((id === "m1" || id === "m2") && hungDoorTap(hereRef.current, id) === "enter" && !hungDoorReady(id)) {
       const stitch = chunkEnterNow(id);
       const hot = resolveEnterHotPath(pcgEnterLook(id));
-      if (stitch.act === "enter" || hot.act === "enter") {
+      if (poseArmedEnter(id) && (stitch.act === "enter" || hot.act === "enter")) {
         void goEnter(id);
         return;
       }
@@ -1606,14 +1659,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       playing.current = false;
       wrapping.current = false;
       if ((id === "m1" || id === "m2") && hereRef.current === id) {
-        /* destHall must not win — same unhung door stays in breath, never spawn snap. */
-        if (hungDoorReady(id)) {
-          void goEnter(id);
-          return;
-        }
-        const stitch = chunkEnterNow(id);
-        const hot = resolveEnterHotPath(pcgEnterLook(id));
-        if (stitch.act === "enter" || hot.act === "enter") {
+        /* destHall must not win — same door uses armed for enter, else stay breath. */
+        const side = poseSideOf(id);
+        const decided = side ? tapPose(poseRef.current, side, { shelf: poseShelf() }) : null;
+        if (decided) poseRef.current = decided.state;
+        if (decided?.act === "enter" && (hungDoorReady(id) || chunkEnterNow(id).act === "enter" || resolveEnterHotPath(pcgEnterLook(id)).act === "enter")) {
           void goEnter(id);
           return;
         }
@@ -1622,8 +1672,39 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         holdIdle();
         return;
       }
+      const side = poseSideOf(id);
+      if (side) {
+        const decided = tapPose(poseRef.current, side, { shelf: poseShelf() });
+        poseRef.current = decided.state;
+        if (decided.act !== "walk") {
+          holdIdle();
+          return;
+        }
+      }
       setEnterAsk(null);
-      void playWalk(id);
+      const from = currentTransitionPlate();
+      const to = chosenWalkPlate(clipFor(hereRef.current, id));
+      prefetchArrivalBreath(id);
+      const sm = poseRef.current;
+      const lib = posePreloadLib();
+      const pre = preloadRef.current;
+      syncPreload(sm, lib, pre);
+      pendingGoPlan.current = planTransition(from, to, { decayUrl: poseShelf().decay });
+      void runTransition(
+        createDomTransitionPlayer({
+          outgoing: visFilm(),
+          incoming: hidFilm(),
+          still: img.current,
+          pre,
+          plateId: sm.clip,
+        }),
+        planTransition(from, to, { decayUrl: poseShelf().decay }),
+        to.clip || "",
+        { signal: transitionAbort.current.signal, pre, plateId: sm.clip },
+      ).then(() => {
+        prefetchArrivalBreath(id);
+        void playWalk(id);
+      });
       return;
     }
     if (
@@ -1639,20 +1720,39 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     wrapping.current = false;
     if ((id === "m1" || id === "m2") && hereRef.current === id && beatRef.current === "idle") {
-      if (hungDoorReady(id)) {
-        void goEnter(id);
-        return;
-      }
-      const stitch = chunkEnterNow(id);
-      const hot = resolveEnterHotPath(pcgEnterLook(id));
-      if (stitch.act === "enter" || hot.act === "enter") {
+      const side = poseSideOf(id);
+      const decided = side ? tapPose(poseRef.current, side, { shelf: poseShelf() }) : null;
+      if (decided) poseRef.current = decided.state;
+      if (decided?.act === "enter" && (hungDoorReady(id) || chunkEnterNow(id).act === "enter" || resolveEnterHotPath(pcgEnterLook(id)).act === "enter")) {
         void goEnter(id);
         return;
       }
     }
     setEnterAsk(null);
     setFrost(`tap · ${id}`);
-    void playWalk(id);
+    const from = currentTransitionPlate();
+    const to = chosenWalkPlate(clipFor(hereRef.current, id));
+    prefetchArrivalBreath(id);
+    const sm = poseRef.current;
+    const lib = posePreloadLib();
+    const pre = preloadRef.current;
+    syncPreload(sm, lib, pre);
+    pendingGoPlan.current = planTransition(from, to, { decayUrl: poseShelf().decay });
+    void runTransition(
+      createDomTransitionPlayer({
+        outgoing: visFilm(),
+        incoming: hidFilm(),
+        still: img.current,
+        pre,
+        plateId: sm.clip,
+      }),
+      planTransition(from, to, { decayUrl: poseShelf().decay }),
+      to.clip || "",
+      { signal: transitionAbort.current.signal, pre, plateId: sm.clip },
+    ).then(() => {
+      prefetchArrivalBreath(id);
+      void playWalk(id);
+    });
   }
 
   function drainQueue() {
@@ -1672,6 +1772,51 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     return [...ids];
   }
 
+  function poseShelf(): PoseClipShelf {
+    const via = cameFrom.current === "m2" ? "m2" : cameFrom.current === "m1" ? "m1" : "spawn";
+    const enterA = lookupEnterClip({
+      s: seedHold.current || readRunSeed(sid.current),
+      i: hallHold.current,
+      from: via,
+      to: "spawn",
+      door: "A",
+    }).url;
+    const enterB = lookupEnterClip({
+      s: seedHold.current || readRunSeed(sid.current),
+      i: hallHold.current,
+      from: via,
+      to: "spawn",
+      door: "B",
+    }).url;
+    return {
+      "breath-spawn": bank.current.get("idle-spawn")?.url,
+      "breath-A": bank.current.get("idle-m1")?.url,
+      "breath-B": bank.current.get("idle-m2")?.url,
+      "walk-spawn-A": bank.current.get("spawn→m1")?.url,
+      "walk-spawn-B": bank.current.get("spawn→m2")?.url,
+      "walk-A-B": bank.current.get("m1→m2")?.url,
+      "walk-B-A": bank.current.get("m2→m1")?.url,
+      "enter-A": enterA,
+      "enter-B": enterB,
+      decay: bank.current.get("decay")?.url,
+    };
+  }
+
+  function posePreloadLib(): PreloadLib {
+    const shelf = poseShelf();
+    return {
+      url: (id) => String(shelf[id] || "").trim(),
+      onDisk: (id) => Boolean(String(shelf[id] || "").trim()),
+    };
+  }
+
+  function startHall() {
+    const sm = poseRef.current;
+    const lib = posePreloadLib();
+    const pre = preloadRef.current;
+    syncPreload(sm, lib, pre);
+  }
+
   function clipFor(from: string, to: string) {
     const via = cameFrom.current;
     const pick = (c: { url: string; end: string; start?: string } | undefined) => (c?.url ? c : null);
@@ -1681,6 +1826,80 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       pick([...bank.current.entries()].find(([k, v]) => v.url && k.startsWith(`${from}←`) && k.endsWith(`→${to}`))?.[1]) ??
       null
     );
+  }
+
+  /** Tap only chooses the clip. Pose stays until walk ended. */
+  function currentTransitionPlate(): TransitionPlate {
+    return {
+      clip: visSrc(),
+      stillStart: lastLive.current || lastPose.current || plateRef.current,
+      stillEnd: lastLive.current || lastPose.current || plateRef.current,
+      pose: poseRef.current.pose,
+      biome: hallKeep.current || plateRef.current,
+      act: poseRef.current.mode,
+    };
+  }
+
+  function chosenWalkPlate(clip?: { url: string; start?: string; end: string } | null): TransitionPlate {
+    return {
+      clip: clip?.url,
+      stillStart: clip?.start || lastLive.current,
+      stillEnd: clip?.end,
+      pose: poseRef.current.pose,
+      biome: hallKeep.current || plateRef.current,
+      act: "walk",
+    };
+  }
+
+  function resetPosePlateTime() {
+    poseRef.current = { ...poseRef.current, plateTimeMs: 0 };
+  }
+
+  function abortPlateFade() {
+    transitionAbort.current.abort();
+    transitionAbort.current = new AbortController();
+    preloadRef.current.pauseAll();
+  }
+
+  async function fadeLastToFirst(fromStill: string, toStill: string, ms: number) {
+    if (ms <= 0) return;
+    const player = createDomTransitionPlayer({
+      outgoing: visFilm(),
+      incoming: hidFilm(),
+      still: img.current,
+    });
+    if (fromStill && !player.stillOnScreen(fromStill)) stickCover(fromStill);
+    await player.fade(ms, transitionAbort.current.signal);
+    if (toStill) stickCover(toStill);
+  }
+
+  function plateTransitionIO(play: () => void | Promise<void>): TransitionIO {
+    return {
+      fade: fadeLastToFirst,
+      swapUrl: (url, loop) => {
+        setFilmUrl(url);
+        setLoopOn(loop);
+      },
+      resetPlateTime: resetPosePlateTime,
+      play,
+    };
+  }
+
+  function prefetchArrivalBreath(dest: string) {
+    const idle = idleFor(dest, hereRef.current);
+    const shelf = poseShelf();
+    const url =
+      (doorBreathPlayable(idle) ? idle!.url : "") ||
+      (dest === "m1" || dest === "A" ? shelf["breath-A"] : dest === "m2" || dest === "B" ? shelf["breath-B"] : shelf["breath-spawn"]) ||
+      "";
+    if (!url) return;
+    warmUrl(url);
+    const hid = hidFilm();
+    const vis = visFilm();
+    if (hid && slotSrc(hid) !== url && slotSrc(vis) !== url) {
+      /* set breath-A src as soon as walk tap — hidden buffer decodes arrival while walk plays */
+      armSlot(hid, url, true);
+    }
   }
 
   function doorAt(nx: number, ny: number): string | null {
@@ -1833,6 +2052,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function stopFilm() {
+    abortPlateFade();
     loadGen.current += 1;
     filmLoop.current = false;
     setFilmOn(false);
@@ -1863,6 +2083,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function freezeVis(keep = false) {
+    if (poseBreathLoops(poseRef.current) || !mayFreezePlate(poseRef.current)) return;
     const el = visFilm();
     if (!el) return;
     try {
@@ -2004,6 +2225,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       /* Walk ended — enterDoorBreath / holdIdle owns the picture. Never freeze still. */
       return;
     }
+    /* Breath lap: same clip / same pose. Never recook, arm, raise m, or advance WFC. */
+    poseRef.current = onBreathLap(poseRef.current);
+    el.loop = true;
     const hid = hidFilm();
     const url = visSrc();
     /* Seam swap only when hid is this same breath — never a walk or other idle-*. */
@@ -2134,7 +2358,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       skipIn.current = skip;
       setFilmUrl(url);
       setLoopOn(loop);
-      hid.loop = false;
+      hid.loop = Boolean(loop);
       if (loop && !sameClipSrc(visSrc(), url)) seekBreath(hid);
       void hid.play().catch(() => {});
       if (hid !== vis) showIncoming();
@@ -2274,6 +2498,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
 
   function holdIdle() {
     if (sprintHold.current) return;
+    if (!poseBreathLoops(poseRef.current)) poseRef.current = landBreath(poseOfNode(hereRef.current), poseRef.current);
+    startHall();
     const walkHere = clipFor(cameFrom.current, hereRef.current)?.url || "";
     /* Already on this marker's arrival breath — stay. No re-pick, no seek, no buffer swap. */
     if (
@@ -2325,7 +2551,22 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       filmLoop.current = true;
       setLoopOn(true);
       setPlayFrameKind("breath");
-      kickPlay(breathUrl, true, true);
+      const first = !visSrc();
+      const breathPlan = planTransition(
+        currentTransitionPlate(),
+        {
+          clip: breathUrl,
+          stillStart: lastLive.current || plateRef.current,
+          stillEnd: lastLive.current || plateRef.current,
+          pose: poseOfNode(hereRef.current),
+          biome: hallKeep.current || plateRef.current,
+          act: "breath",
+        },
+        { first, decayUrl: poseShelf().decay },
+      );
+      void runTransition(breathPlan, plateTransitionIO(() => {
+        kickPlay(breathUrl, true, true);
+      }));
       if ((hereRef.current === "m1" || hereRef.current === "m2") && hungDoorReady(hereRef.current)) {
         warmHungBiome(hereRef.current);
       }
@@ -2349,7 +2590,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     });
     const clip = bank.current.get("enter→spawn") || (hit.url ? { url: hit.url, end: "" } : null);
     if (!clip?.url) {
-      holdIdle();
+      const decayPlan = planTransition(
+        currentTransitionPlate(),
+        { clip: "", pose: poseRef.current.pose, act: "enter" },
+        { decayUrl: poseShelf().decay },
+      );
+      void runTransition(decayPlan, plateTransitionIO(() => holdIdle()));
       return;
     }
     wrapping.current = false;
@@ -2358,9 +2604,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setBeat("playvid");
     beatRef.current = "playvid";
     setFrost("enter");
-    setFilmUrl(clip.url);
-    await sleep(60);
-    await Promise.race([playFilm(clip.url, 7200, startHold.current || plateRef.current || clip.end, clip.end, false), sleep(7200)]);
+    const enterPlan = planTransition(
+      currentTransitionPlate(),
+      { clip: clip.url, stillStart: startHold.current || plateRef.current, stillEnd: clip.end, pose: poseRef.current.pose, act: "enter" },
+    );
+    await runTransition(enterPlan, plateTransitionIO(async () => {
+      await Promise.race([playFilm(clip.url, 7200, startHold.current || plateRef.current || clip.end, clip.end, false), sleep(7200)]);
+    }));
     playing.current = false;
     setHere("spawn");
     hereRef.current = "spawn";
@@ -2376,17 +2626,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const list = withSpawn(pinsRef.current);
     const at = hereRef.current;
     if (id === at) {
-      if ((id === "m1" || id === "m2") && beatRef.current === "idle" && hungDoorReady(id)) {
+      const side = poseSideOf(id);
+      const decided = side ? tapPose(poseRef.current, side, { shelf: poseShelf() }) : null;
+      if (decided) poseRef.current = decided.state;
+      if (decided?.act === "enter" && (hungDoorReady(id) || chunkEnterNow(id).act === "enter" || resolveEnterHotPath(pcgEnterLook(id)).act === "enter")) {
         void goEnter(id);
         return;
-      }
-      if ((id === "m1" || id === "m2") && beatRef.current === "idle") {
-        const stitch = chunkEnterNow(id);
-        const hot = resolveEnterHotPath(pcgEnterLook(id));
-        if (stitch.act === "enter" || hot.act === "enter") {
-          void goEnter(id);
-          return;
-        }
       }
       setLit(id);
       window.setTimeout(() => setLit(null), 280);
@@ -2450,8 +2695,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setFrost("no film that way");
       setLit(id);
       window.setTimeout(() => setLit(null), 700);
-      holdIdle();
+      poseRef.current = landBreath(poseOfNode(at), poseRef.current);
+      pendingGoPlan.current = null;
+      const decayPlan = planTransition(currentTransitionPlate(), { clip: "", pose: poseOfNode(at), act: "walk" }, { decayUrl: poseShelf().decay });
+      void runTransition(decayPlan, plateTransitionIO(() => holdIdle()));
       return;
+    }
+    const walkSide = poseSideOf(id);
+    if (walkSide && poseRef.current.mode !== "walk") {
+      const walkId = walkClip(poseOfNode(at), walkSide);
+      const shelf = { ...poseShelf(), ...(walkId ? { [walkId]: clip.url } : {}) };
+      poseRef.current = tapPose(poseRef.current, walkSide, { shelf }).state;
     }
     const stock = isHallFilm(clip.url);
     const stand = stock ? stockStand(id) : { x: pin.x, y: pin.y };
@@ -2465,34 +2719,53 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setLit(id);
     setBeat("playvid");
     beatRef.current = "playvid";
-    setFilmUrl(clip.url);
     setFrost(phaseRef.current === "play" ? "" : `walk · ${at} → ${id}`);
     markLivePlay(sid.current, at, plateRef.current || lastLive.current || clip.end || "");
     sfxForge("page");
     const nextIdle = idleFor(id, at);
     const breathUrl = doorBreathPlayable(nextIdle, clip.url) ? nextIdle!.url : null;
+    prefetchArrivalBreath(id);
     const wait = (clampWalk(walkSecsRef.current) + 4) * 1000;
-    if (stock) {
-      stockSprite.current = true;
-      walkFace.current = facingOf(to.x - bolt.current.x, to.y - bolt.current.y);
-      await playStockWalk(at, id, to);
+    const handed = pendingGoPlan.current;
+    pendingGoPlan.current = null;
+    const walkPlan = planTransition(currentTransitionPlate(), chosenWalkPlate(clip), { decayUrl: poseShelf().decay });
+    const playClip = async () => {
+      setFilmUrl(clip.url);
+      if (stock) {
+        stockSprite.current = true;
+        walkFace.current = facingOf(to.x - bolt.current.x, to.y - bolt.current.y);
+        await playStockWalk(at, id, to);
+      } else {
+        stockSprite.current = false;
+        const vis = visFilm();
+        const sameLoop = !!(vis && slotSrc(vis) === clip.url && filmHasPaint(vis));
+        await Promise.race([
+          sameLoop
+            ? replayWalk(clip.url, wait)
+            : playFilm(clip.url, wait, seed || lastLive.current || plateRef.current, clip.end, true, breathUrl),
+          sleep(wait),
+        ]);
+      }
+    };
+    if (handed && handed.url === clip.url && handed.kind !== "decay") {
+      await playClip();
     } else {
-      stockSprite.current = false;
-      const vis = visFilm();
-      const sameLoop = !!(vis && slotSrc(vis) === clip.url && filmHasPaint(vis));
-      await Promise.race([
-        sameLoop
-          ? replayWalk(clip.url, wait)
-          : playFilm(clip.url, wait, seed || lastLive.current || plateRef.current, clip.end, true, breathUrl),
-        sleep(wait),
-      ]);
+      await runTransition(walkPlan, plateTransitionIO(playClip));
     }
     if (token !== playTok.current) {
       if (walkingTo.current === id) walkingTo.current = "";
       return;
     }
-    setHere(id);
-    hereRef.current = id;
+    poseRef.current = onEndedPose(poseRef.current);
+    {
+      const sm = poseRef.current;
+      const lib = posePreloadLib();
+      const pre = preloadRef.current;
+      syncPreload(sm, lib, pre);
+    }
+    const landedNode = nodeOfPose(poseRef.current.pose);
+    setHere(landedNode);
+    hereRef.current = landedNode;
     cameFrom.current = at;
     bolt.current = { x: to.x, y: to.y };
     walkFace.current = standFace(id);
@@ -2578,7 +2851,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       arrivalBreathUrl(bank.current, node, via, walkUrl) ||
       (doorBreathPlayable(idle, walkUrl) ? idle!.url : "");
     if (!url) {
-      holdIdle();
+      const decayPlan = planTransition(
+        currentTransitionPlate(),
+        { clip: "", stillStart: landed, stillEnd: landed, pose: poseOfNode(node), act: "breath" },
+        { decayUrl: poseShelf().decay },
+      );
+      void runTransition(decayPlan, plateTransitionIO(() => holdIdle()));
       return true;
     }
     stockSprite.current = false;
@@ -2587,15 +2865,36 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setPlayFrameKind("breath");
     setPose(null);
     const hid = hidFilm();
+    const joinPlan = planTransition(
+      { clip: walkUrl, stillEnd: landed, pose: poseRef.current.pose, act: "walk", biome: hallKeep.current },
+      { clip: url, stillStart: landed, stillEnd: landed, pose: poseOfNode(node), act: "breath", biome: hallKeep.current },
+    );
+    if (joinPlan.joinWarn === "encode-mismatch") {
+      /* last frame of walk-A ≠ frame 0 of breath-A — dissolve cannot fix a bad encode */
+    }
     if (hid && slotSrc(hid) === url && filmHasPaint(hid)) {
-      cueBreath(hid, url);
-      if (hid !== visFilm()) showIncoming();
-      setFilmOn(true);
-      setCoverFade(true);
-      prefetchFrom(node);
+      void runTransition(joinPlan, {
+        fade: fadeLastToFirst,
+        swapUrl: () => {
+          cueBreath(hid, url);
+          if (hid !== visFilm()) showIncoming();
+        },
+        resetPlateTime: resetPosePlateTime,
+        play: () => {
+          const vis = visFilm();
+          if (vis) vis.loop = true;
+          setFilmOn(true);
+          setCoverFade(true);
+          prefetchFrom(node);
+        },
+      });
       return true;
     }
-    kickPlay(url, true, true);
+    void runTransition(joinPlan, plateTransitionIO(() => {
+      kickPlay(url, true, true);
+      const vis = visFilm();
+      if (vis) vis.loop = true;
+    }));
     return true;
   }
 
@@ -2912,6 +3211,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setPhase("play");
     phaseRef.current = "play";
     armed.current = true;
+    startHall();
     if (idle && !sprintHold.current) holdIdle();
   }
 
@@ -3703,8 +4003,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         settled = true;
         const mineStill = loadGen.current === mine && playTok.current === gen;
         if (mineStill) {
-          if (breath) filmLoop.current = true;
-          /* Walk/breath end never sticks on a still — arrival loops idle-* immediately. */
+          if (breath || poseBreathLoops(poseRef.current)) filmLoop.current = true;
+          /* Walk/breath end never sticks on a still — arrival loops idle-* immediately. Never freeze breath. */
           el.removeEventListener("ended", fail);
           el.removeEventListener("error", fail);
           visFilm()?.removeEventListener("timeupdate", stamp);
@@ -5079,7 +5379,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         const smoke = lintEnterClip(bankClip.url, bankClip.end || plateRef.current);
         if (smoke.smoke !== "PASS") {
           failStay(smokeForgeFrost(smoke.reasons) || "enter failed · tap retry");
-          holdIdle();
+          const decayPlan = planTransition(
+            currentTransitionPlate(),
+            { clip: bankClip.url, pose: poseRef.current.pose, act: "enter" },
+            { smoke, decayUrl: poseShelf().decay },
+          );
+          void runTransition(decayPlan, plateTransitionIO(() => holdIdle()));
           return;
         }
         clipCachePut(enterKey, bankClip.url, "enter", smoke);
@@ -5102,11 +5407,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         setBeat("playvid");
         beatRef.current = "playvid";
         setFrost("enter");
-        setFilmUrl(clip.url);
         sfxForge("enter");
         holdNow(plateRef.current);
-        await sleep(80);
-        await Promise.race([playFilm(clip.url, 7200, plateRef.current, clip.end, false), sleep(7200)]);
+        const enterPlan = planTransition(
+          currentTransitionPlate(),
+          { clip: clip.url, stillStart: plateRef.current, stillEnd: clip.end, pose: poseRef.current.pose, act: "enter" },
+        );
+        await runTransition(enterPlan, plateTransitionIO(async () => {
+          await Promise.race([playFilm(clip.url, 7200, plateRef.current, clip.end, false), sleep(7200)]);
+        }));
         playing.current = false;
         holdNow(clip.end || lastLive.current);
         skipEnter.current = true;
@@ -5117,9 +5426,17 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         : { smoke: "FAIL" as const, reasons: ["enter-stillEnd"] };
       if (enterSmoke.smoke !== "PASS" || commitHallPrime(clip?.url, enterSmoke) !== "pass") {
         if (enterSmoke.smoke !== "PASS") failStay(smokeForgeFrost(enterSmoke.reasons));
-        holdIdle();
+        poseRef.current = onEndedPose({ ...poseRef.current, mode: "enter" }, { enterPass: false });
+        const decayPlan = planTransition(
+          currentTransitionPlate(),
+          { clip: clip?.url, pose: poseRef.current.pose, act: "enter" },
+          { smoke: enterSmoke, decayUrl: poseShelf().decay },
+        );
+        void runTransition(decayPlan, plateTransitionIO(() => holdIdle()));
         return;
       }
+      poseRef.current = resetForNewHall(poseRef.current);
+      momentumHold.current = applyEnterPassMomentum(momentumHold.current);
       const rewrite = rewriteOnEnter({
         clip: clip?.url,
         entered: true,
@@ -5130,7 +5447,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         holdIdle();
         return;
       }
-      momentumHold.current += 0.2;
+      /* Hall′ quiet — SCORE_LAW enter PASS sets m low; do not raise. */
       if (dest && dest !== hallHold.current) {
         persist({ phase: "play", halls: putSlice(hallsHold.current, snapHall()) });
         await switchHall(dest, true);
@@ -6332,6 +6649,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if (line) void cookPlate(line);
     };
     rec.current = recEngine;
+    abortPlateFade();
     setHowl(true);
     setFrost("listening…");
     try {
@@ -7364,6 +7682,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           style={{
             opacity: filmOn && paintA && filmUrl && (beat === "playvid" || beat === "walk" || (phase === "play" && beat === "idle")) && !uiBlock ? 1 : 0,
             zIndex: useB ? 28 : 32,
+            willChange: "opacity",
           }}
         />
         <video
@@ -7379,6 +7698,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           style={{
             opacity: filmOn && paintB && filmUrl && (beat === "playvid" || beat === "walk" || (phase === "play" && beat === "idle")) && !uiBlock ? 1 : 0,
             zIndex: useB ? 32 : 28,
+            willChange: "opacity",
           }}
         />
         {(lockCover || hallKeep.current || plate) && !isStockArt(lockCover || hallKeep.current || plate) && !isBoltSilhouette(lockCover || hallKeep.current || plate) ? (

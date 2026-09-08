@@ -53,7 +53,14 @@ import {
   activeCueIndex,
   advancePictureTime,
   applyGradeMomentum,
+  applyHowlMomentum,
+  applyRecallMomentum,
   beginPlayClock,
+  tickIdleDecay,
+  trailStepOnCross,
+  type IdleTrail,
+  mediaWrapDt,
+  SPAWN_M,
   commitNodeStill,
   cuesFromBeats,
   decoderSkipNotMiss,
@@ -85,6 +92,25 @@ import {
   type Plate,
   type PlayClock,
 } from "@/game/pcg-play";
+import {
+  applyPoseIntent,
+  advancePosePicture,
+  beginPose,
+  centerHowlHit,
+  gradePoseTap,
+  HOWL_HOLD_MS,
+  howlPose,
+  onBreathLap,
+  onEndedPose,
+  pausePose,
+  poseBreathLoops,
+  recallPose,
+  resumePose,
+  type DoorSide,
+  type PoseState,
+} from "@/game/pcg-pose";
+import { createDomTransitionPlayer, planTransition, runTransition } from "@/game/transition";
+import { createPreloadPool, syncPreload } from "@/game/preload";
 
 export type RunResult = {
   score: number;
@@ -181,7 +207,7 @@ function fresh(beats: Beat[], seed?: number, rewind = 3, ramp = false): G {
     fakeT: 0,
     seed: s,
     charted: false,
-    resonance: 0.08,
+    resonance: SPAWN_M,
   };
 }
 
@@ -213,7 +239,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   const playGradedRef = useRef<boolean[]>([]);
   const playGradesRef = useRef<HitClass[]>([]);
   const walkHitsRef = useRef({ A: false, B: false });
+  const poseRef = useRef<PoseState>(beginPose());
+  const [poseLoop, setPoseLoop] = useState(true);
   const lastMediaTRef = useRef(0);
+  const recallSkipRef = useRef(false);
+  const idleTrailRef = useRef<IdleTrail | null>(null);
   const drainRef = useRef(0);
   const playPlateRef = useRef<Plate | null>(null);
   const hallFlagsRef = useRef<boolean[]>([]);
@@ -251,7 +281,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     t: 0,
     dur: film.chart,
     total: film.beats.length,
-    resonance: 0.08,
+    resonance: SPAWN_M,
     pace: 1,
     paused: false,
     peak: false,
@@ -301,6 +331,14 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   const loopT = useRef(0);
   const coarse = useRef(false);
   const recoverAt = useRef(0);
+  const fadeAbort = useRef<AbortController>(new AbortController());
+  const preloadRef = useRef(createPreloadPool());
+
+  function abortPlateFade() {
+    fadeAbort.current.abort();
+    fadeAbort.current = new AbortController();
+    preloadRef.current.pauseAll();
+  }
 
   function bindActive(n: 0 | 1) {
     laneRef.current = n;
@@ -397,13 +435,10 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     return videoLayoutRect(el.clientWidth, el.clientHeight);
   }
 
-  function breathHowl() {
-    howlAct();
-    howlOnce();
-    fireGradeHaptic("howl", hapticPrefs());
-  }
-
   function recallNow() {
+    commitPose(recallPose(poseRef.current));
+    gRef.current.resonance = applyRecallMomentum(gRef.current.resonance);
+    recallSkipRef.current = true;
     const still = recallStill(playNodeId(), playPlateRef.current);
     if (still) setPoster(still);
   }
@@ -424,6 +459,40 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     });
   }
 
+  function commitPose(next: PoseState) {
+    const prev = poseRef.current;
+    poseRef.current = next;
+    setPoseLoop(poseBreathLoops(next));
+    if (next.mode === "paused") {
+      preloadRef.current.pauseAll();
+      return;
+    }
+    if (prev.pose !== next.pose || prev.mode !== next.mode || prev.clip !== next.clip) {
+      const sm = next;
+      const lib = { url: () => "", onDisk: () => false };
+      const pre = preloadRef.current;
+      syncPreload(sm, lib, pre);
+    }
+  }
+
+  function keepPoseBreath(el?: HTMLVideoElement | null, restart = false) {
+    if (!poseBreathLoops(poseRef.current)) return;
+    const v = el || videoRef.current;
+    if (!v) return;
+    v.loop = true;
+    if (restart || v.ended || (Number.isFinite(v.duration) && v.duration > 0 && v.currentTime >= v.duration - 0.08)) {
+      try {
+        v.currentTime = 0;
+      } catch {
+        /* */
+      }
+    }
+    void v.play().then(() => {
+      setLive(true);
+      setUsingStill(false);
+    }).catch(() => {});
+  }
+
   function applyResonance(hit: HitClass) {
     const g = gRef.current;
     g.resonance = applyGradeMomentum(g.resonance, hit);
@@ -440,6 +509,9 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     playGradedRef.current[i] = true;
     playGradesRef.current.push(hit);
     walkHitsRef.current = noteWalkHit(walkHitsRef.current, cue, hit);
+    if (poseRef.current.mode === "walk" && (side === "A" || side === "B")) {
+      commitPose(gradePoseTap(poseRef.current, side, t, cues).state);
+    }
     applyResonance(hit);
     fireGradeAudio(hit, t);
     fireGradeHaptic(hit, hapticPrefs());
@@ -447,10 +519,12 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   }
 
   function togglePlayPause() {
+    abortPlateFade();
     const v = videoRef.current;
     if (playPausedRef.current) {
       playPausedRef.current = false;
       playClockRef.current = resumePlayClock(playClockRef.current);
+      commitPose(resumePose(poseRef.current));
       lastMediaTRef.current = v && Number.isFinite(v.currentTime) ? v.currentTime : lastMediaTRef.current;
       releasePictureAudio();
       void v?.play().catch(() => {});
@@ -459,6 +533,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     }
     playPausedRef.current = true;
     playClockRef.current = pausePlayClock(playClockRef.current);
+    commitPose(pausePose(poseRef.current));
     holdPictureAudio();
     try {
       v?.pause();
@@ -594,6 +669,13 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     playGradedRef.current = [];
     playGradesRef.current = [];
     walkHitsRef.current = { A: false, B: false };
+    commitPose(beginPose());
+    {
+      const sm = poseRef.current;
+      const lib = { url: () => "", onDisk: () => false };
+      const pre = preloadRef.current;
+      syncPreload(sm, lib, pre);
+    }
     lastMediaTRef.current = 0;
     playPlateRef.current = null;
     hallFlagsRef.current = list.map((u) => isHallFilm(u) || Boolean(sprintHallDoor(u, 0.22, 0.42)));
@@ -627,6 +709,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       a.muted = true;
       a.defaultMuted = true;
       a.loop = Boolean(holdDoor);
+      if (poseBreathLoops(poseRef.current)) a.loop = true;
       a.playsInline = true;
       a.playbackRate = holdDoor ? 1 : ramp ? 0.42 : 1;
       const holdRoom = (film.still || "").includes("citadel-tour");
@@ -805,6 +888,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       const mediaT = usingStill ? g.fakeT : v && Number.isFinite(v.currentTime) ? v.currentTime : 0;
       const prevMedia = lastMediaTRef.current;
       const jump = mediaT - prevMedia;
+      const wrapped = prevMedia > 0.2 && mediaT + 0.15 < prevMedia;
       if (prevMedia > 0 && jump > 0.12) {
         const cues = playCuesRef.current;
         for (let i = 0; i < cues.length; i++) {
@@ -814,8 +898,34 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           }
         }
       }
-      if (mayAdvancePicture(playClockRef.current) && jump > 0 && jump < 0.8) {
-        playClockRef.current = advancePictureTime(playClockRef.current, jump * 1000);
+      const wrapDt = wrapped ? mediaWrapDt(prevMedia, mediaT, v && Number.isFinite(v.duration) ? v.duration : 0) : 0;
+      const mediaDt = wrapped ? wrapDt : jump > 0 && jump < 0.8 ? jump : 0;
+      if (mayAdvancePicture(playClockRef.current) && mediaDt > 0) {
+        playClockRef.current = advancePictureTime(playClockRef.current, mediaDt * 1000);
+        if (wrapped && poseBreathLoops(poseRef.current) && !hold) {
+          /* Native loop swallows ended — same breath(pose). Never afterPlate / WFC / recook. */
+          commitPose(onBreathLap(poseRef.current));
+        }
+      }
+      const pose = poseRef.current;
+      const beforeM = g.resonance;
+      const idle = tickIdleDecay(beforeM, {
+        paused: playPausedRef.current || playClockRef.current.paused || playClockRef.current.hidden || playClockRef.current.waitingOnCook,
+        mode: pose.clip === "decay" ? "decay" : pose.mode,
+        clip: pose.clip,
+        currentTime: mediaT,
+        lastSample: prevMedia,
+        duration: v && Number.isFinite(v.duration) ? v.duration : undefined,
+        justRecalled: recallSkipRef.current,
+        pictureMs: pose.pictureMs,
+        peak: playMayPeak(playClockRef.current, beforeM),
+      });
+      recallSkipRef.current = false;
+      if (idle.dt > 0) {
+        g.resonance = idle.m;
+        commitPose(advancePosePicture(poseRef.current, idle.dt * 1000));
+        const step = trailStepOnCross(beforeM, idle.m, idleTrailRef.current || "none");
+        if (step.stepped) idleTrailRef.current = step.trail;
       }
       lastMediaTRef.current = mediaT;
       const liveCell = wfcRef.current?.cells[plateRef.current];
@@ -824,7 +934,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         paused: playClockRef.current.paused || playPausedRef.current,
         waitingOnCook: playClockRef.current.waitingOnCook || Boolean(v && !usingStill && v.readyState < 2 && !playPausedRef.current),
         hidden: playClockRef.current.hidden,
-        trail: liveCell?.trail,
+        trail: idleTrailRef.current || liveCell?.trail,
         role: liveCell?.role,
         plate: plateRef.current,
       });
@@ -1030,6 +1140,23 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     const nextUrl = list[nextI];
     const next = laneRef.current === 0 ? bRef.current : aRef.current;
     const to: 0 | 1 = laneRef.current === 0 ? 1 : 0;
+    const fromPlate = playPlateRef.current;
+    const platePlan = planTransition(
+      {
+        clip: list[i],
+        stillStart: fromPlate?.stillStart,
+        stillEnd: fromPlate?.stillEnd,
+        pose: poseRef.current.pose,
+        act: poseRef.current.mode,
+      },
+      {
+        clip: nextUrl,
+        stillStart: fromPlate?.stillEnd || fromPlate?.stillStart,
+        stillEnd: fromPlate?.stillEnd,
+        pose: poseRef.current.pose,
+        act: poseRef.current.mode,
+      },
+    );
     const take = () => {
       const ready = next && (next.readyState >= 2 || next.videoWidth > 8);
       if (!ready) {
@@ -1092,20 +1219,40 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           });
         });
     };
-    armPlate(next, nextUrl);
-    if (next && next.getAttribute("data-url") === nextUrl && (next.readyState >= 3 || (!next.paused && next.currentTime > 0.02))) {
-      take();
-    } else {
-      next?.addEventListener("canplaythrough", take, { once: true });
-      next?.addEventListener("canplay", take, { once: true });
-      window.setTimeout(() => {
-        if (!advancing.current) return;
-        if (next && next.readyState >= 2) take();
-        else window.setTimeout(() => {
-          if (advancing.current) take();
-        }, 4000);
-      }, 1200);
-    }
+    const player = createDomTransitionPlayer({
+      outgoing: cur,
+      incoming: next,
+      pre: preloadRef.current,
+      plateId: poseRef.current.clip,
+      assignSrc: (el, url, loop) => {
+        el.loop = loop || poseBreathLoops(poseRef.current);
+        armPlate(el, url);
+      },
+    });
+    void runTransition(player, platePlan, nextUrl, {
+      signal: fadeAbort.current.signal,
+      pre: preloadRef.current,
+      plateId: poseRef.current.clip,
+      resetPlateTime: () => {
+        playClockRef.current = { ...playClockRef.current, platePlayedMs: 0 };
+        poseRef.current = { ...poseRef.current, plateTimeMs: 0 };
+      },
+      play: () => {
+        if (next && next.getAttribute("data-url") === nextUrl && (next.readyState >= 3 || (!next.paused && next.currentTime > 0.02))) {
+          take();
+        } else {
+          next?.addEventListener("canplaythrough", take, { once: true });
+          next?.addEventListener("canplay", take, { once: true });
+          window.setTimeout(() => {
+            if (!advancing.current) return;
+            if (next && next.readyState >= 2) take();
+            else window.setTimeout(() => {
+              if (advancing.current) take();
+            }, 4000);
+          }, 1200);
+        }
+      },
+    });
     return true;
   }
 
@@ -1279,7 +1426,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     const letter = doorLetterOf(hit);
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
     if (hallDoorTap(now, mountedAt.current, letter, holdDoorRef.current) === "stay") return true;
-    onHallDoorRef.current?.(letter);
+    /* Video-layout A/B (play input) feed the pose SM — do not invent a second hitbox. */
+    const side = letter as DoorSide;
+    const decided = applyPoseIntent(poseRef.current, { act: "grade", side }, { mediaT: clock() });
+    commitPose(decided.state);
+    if (decided.act === "enter") onHallDoorRef.current?.(letter);
     return true;
   }
 
@@ -1478,7 +1629,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       return;
     }
     if (act.kind === "howl") {
-      breathHowl();
+      fireHowl();
       return;
     }
     if (act.kind === "recall") {
@@ -1489,6 +1640,9 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     const g = gRef.current;
     const beat = g.beats[g.i];
     if (beat?.kind === "hold") g.holding = true;
+    const decided = applyPoseIntent(poseRef.current, { act: "grade", side: act.side }, { mediaT: clock() });
+    commitPose(decided.state);
+    if (decided.act === "enter") onHallDoorRef.current?.(act.side);
     gradeSide(act.side);
   }
 
@@ -1515,6 +1669,16 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
+
+  function fireHowl() {
+    howlAct();
+    howlOnce();
+    fireGradeHaptic("howl", hapticPrefs());
+    abortPlateFade();
+    gRef.current.resonance = applyHowlMomentum(gRef.current.resonance);
+    commitPose(howlPose(poseRef.current));
+    keepPoseBreath(videoRef.current, true);
+  }
 
   function pointerDown(e: PE<HTMLDivElement>) {
     if (chromePauseOnly(e.target)) {
@@ -1544,11 +1708,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       swipe.current = null;
       return;
     }
-    if (mapped.zone === "center") {
+    if (mapped.zone === "center" && centerHowlHit(mapped.nx, mapped.ny) && !playPausedRef.current) {
       howlTimerRef.current = window.setTimeout(() => {
         howledRef.current = true;
-        breathHowl();
-      }, 480);
+        fireHowl();
+      }, HOWL_HOLD_MS);
     }
   }
 
@@ -1593,7 +1757,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       return;
     }
     if (intent.act === "howl") {
-      breathHowl();
+      fireHowl();
       return;
     }
     if (intent.act === "ignore") return;
@@ -1602,11 +1766,17 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       if (!mayEnterArm(walkHitsRef.current, side)) return;
       fireGradeHaptic("enter-armed", hapticPrefs());
       lastTapRef.current = null;
+      const decided = applyPoseIntent(poseRef.current, { act: "enter", side }, { mediaT: clock() });
+      commitPose(decided.state);
+      if (decided.act === "enter") onHallDoorRef.current?.(side);
       gradeSide(side);
       return;
     }
     if (intent.act === "grade") {
       lastTapRef.current = { side: intent.side, playhead: start.playhead };
+      const decided = applyPoseIntent(poseRef.current, { act: "grade", side: intent.side }, { mediaT: clock() });
+      commitPose(decided.state);
+      if (decided.act === "enter") onHallDoorRef.current?.(intent.side);
       gradeSide(intent.side);
     }
   }
@@ -1639,6 +1809,9 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       data-sprint={ramp ? "1" : undefined}
       data-ramp={ramp ? "1" : undefined}
       data-play-paused={playPausedRef.current ? "1" : undefined}
+      data-pose={poseRef.current.pose}
+      data-pose-mode={poseRef.current.mode}
+      data-pose-loop={poseLoop ? "1" : "0"}
       data-qte={holdDoor ? "play" : undefined}
       data-biome-play={holdDoor ? "1" : undefined}
       data-biome-quiet={undefined}
@@ -1675,7 +1848,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
               el.muted = true;
               el.defaultMuted = true;
               el.playsInline = true;
-              el.loop = holdDoorLoops(holdDoorRef.current);
+              el.loop = holdDoorLoops(holdDoorRef.current) || poseBreathLoops(poseRef.current);
               el.setAttribute("playsinline", "true");
               el.setAttribute("webkit-playsinline", "true");
             }
@@ -1685,10 +1858,10 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           poster={poster || undefined}
           playsInline
           muted
-          loop={Boolean(holdDoor)}
+          loop={Boolean(holdDoor) || poseLoop}
           autoPlay={!(film.still || "").includes("citadel-tour")}
           preload="auto"
-          style={{ opacity: lane === 0 && live ? 1 : 0, zIndex: lane === 0 ? 2 : 0, transform: "translateZ(0)", backfaceVisibility: "hidden" }}
+          style={{ opacity: lane === 0 && live ? 1 : 0, zIndex: lane === 0 ? 2 : 0, transform: "translateZ(0)", backfaceVisibility: "hidden", willChange: "opacity" }}
           onPlaying={() => {
             setLive(true);
             setUsingStill(false);
@@ -1704,6 +1877,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
             if (laneRef.current !== 0) return;
             if (holdDoorLoops(holdDoorRef.current)) {
               keepHoldLoop(aRef.current);
+              return;
+            }
+            commitPose(onEndedPose(poseRef.current));
+            if (poseBreathLoops(poseRef.current)) {
+              keepPoseBreath(aRef.current);
               return;
             }
             const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
@@ -1741,14 +1919,14 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           ref={(el) => {
             bRef.current = el;
             if (laneRef.current === 1) videoRef.current = el;
-            if (el) el.loop = holdDoorLoops(holdDoorRef.current);
+            if (el) el.loop = holdDoorLoops(holdDoorRef.current) || poseBreathLoops(poseRef.current);
           }}
           className="pointer-events-none absolute inset-0 h-full w-full object-contain"
           playsInline
           muted
-          loop={Boolean(holdDoor)}
+          loop={Boolean(holdDoor) || poseLoop}
           preload="auto"
-          style={{ opacity: lane === 1 && live ? 1 : 0, zIndex: lane === 1 ? 2 : 0, transform: "translateZ(0)", backfaceVisibility: "hidden" }}
+          style={{ opacity: lane === 1 && live ? 1 : 0, zIndex: lane === 1 ? 2 : 0, transform: "translateZ(0)", backfaceVisibility: "hidden", willChange: "opacity" }}
           onPlaying={() => {
             setLive(true);
             setUsingStill(false);
@@ -1759,6 +1937,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
             if (laneRef.current !== 1) return;
             if (holdDoorLoops(holdDoorRef.current)) {
               keepHoldLoop(bRef.current);
+              return;
+            }
+            commitPose(onEndedPose(poseRef.current));
+            if (poseBreathLoops(poseRef.current)) {
+              keepPoseBreath(bRef.current);
               return;
             }
             const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);

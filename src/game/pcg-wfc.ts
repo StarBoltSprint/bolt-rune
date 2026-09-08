@@ -3,7 +3,11 @@
  * Neighbors are TIME, not floor tiles. Each cell is one plate in the ~60s bone.
  * Collapsed roles unlock prompt slots only — never free-text Imagine.
  * Online + tap-as-observe: miss/idle can kill a peak already in the future domain.
+ * Weights NEVER revive a banned tile — sample only inside domain after hard bans.
+ * Seed is NOT in the weight table — only hash(s,i) at observe.
+ * Breath laps do not re-observe. Idle tick writes nothing until the next walk.
  * Picture-time is Σ plate durations — never Date.now.
+ * Bone clock (~60s) is cycle 3 of NESTED_CYCLES_LAW — not a 5th door, not wall-clock.
  * Asteroid HOLD. No Pack seats.
  */
 
@@ -203,7 +207,10 @@ export function targetCurve(role: PlateRole, t: number, missOrIdle: boolean): nu
   if (role === "calm") return t < 12 ? 1.2 : t < 25 ? 0.45 : 0.12;
   if (role === "lean-L" || role === "lean-R") return t < 8 ? 0.18 : t < 40 ? 1 : 0.4;
   if (role === "fork") return t < 15 ? 0.08 : t < 45 ? 0.85 : 0.28;
-  if (role === "peak") return t >= PEAK_SECS - PLATE_SECS_DEFAULT ? 1.35 : 0.02;
+  if (role === "peak") {
+    const base = t >= PEAK_SECS - PLATE_SECS_DEFAULT ? 1.35 : 0.02;
+    return missOrIdle ? base * 0.4 : base;
+  }
   if (role === "decay") return (t > 40 ? 0.7 : 0.16) * (missOrIdle ? 3.2 : 1);
   if (role === "breath") return t < 8 ? 0.1 : 0.38;
   return 0.12;
@@ -223,6 +230,20 @@ export function mmmFitness(role: PlateRole, m: number): number {
 export function roleWeight(role: PlateRole, t: number, m: number, missOrIdle: boolean): number {
   return Math.max(0.001, targetCurve(role, t, missOrIdle) * mmmFitness(role, m));
 }
+
+/** WFC domain weights — ship text. Tests lock these lines. */
+export const WFC_WEIGHT_LAW = [
+  "domain[i] = hard legal roles (adjacency + windows + miss bans)",
+  "weight[i][r] soft; p(r)=weight[r]/sum over domain only",
+  "If peak ∉ domain, weight irrelevant. Weights NEVER revive banned tiles.",
+  "weight(r) = W_phase(r,t) × W_m(r,m) × W_grade(r,last) × W_adj(r,prev)",
+  "Seed NOT in weight table — only at observe via hash(s,i).",
+  "Phase multipliers + m multipliers + grade bump as SmiR tables (quiet bans peak; high m makes peak likelier among legal only; miss bans peak decay×2; idle peak×0.4).",
+  "observe: seeded sample; sum<=0 → return decay fail-forward. Same s/domain/weights → same tile.",
+  "Online: only need cell i+1. Don't observe high-entropy future to plan bone.",
+  "Slots second wave after role collapse (fork/trail domains) — ban first, weight second, hash observe.",
+  "Failure bans: don't weight peak in quiet instead of ban; don't normalize before bans; don't use m as only weight; don't re-observe every idle tick; no Math.random().",
+] as const;
 
 export function roleTrails(role: PlateRole): TrailSlot[] {
   if (role === "peak") return ["full"];
@@ -382,11 +403,21 @@ export function observe(
   const i = pickObserveCell(wave.domains, wave.collapsed, prefer);
   if (i < 0) return { wave, cell: -1, role: null };
   const domain = wave.domains[i]!;
+  if (!domain.length) {
+    const next = cloneRoles(wave);
+    next.collapsed[i] = "decay";
+    next.domains[i] = ["decay"];
+    next.observeN += 1;
+    return { wave: next, cell: i, role: "decay" };
+  }
   const t = cellTime(i, wave.plateSecs);
   const missOrIdle = wave.miss || wave.idle;
   const weights = domain.map((role) => ({ id: role, w: roleWeight(role, t, wave.momentum, missOrIdle) }));
+  const total = weights.reduce((sum, it) => sum + Math.max(0, it.w), 0);
   const u = hash01(s, i, wave.observeN);
-  const role = pickWeighted(weights, u);
+  const role = total <= 0
+    ? (domain.includes("decay") ? "decay" : domain[0]!)
+    : pickWeighted(weights, u);
   const next = cloneRoles(wave);
   next.collapsed[i] = role;
   next.domains[i] = [role];

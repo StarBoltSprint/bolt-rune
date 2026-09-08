@@ -53,8 +53,54 @@ export const ALPHA_HIT = 0.12;
 export const ALPHA_LATE = -0.04;
 /** Miss: m ← λ m. Never snaps to 0. */
 export const MISS_LAMBDA = 0.70;
-/** Idle: m ← λ_idle × m per quiet plate. Not a flat subtract. */
+/**
+ * Idle-decay is NOT a miss. Film asked for nothing.
+ * m ← m · λ^Δt on breath|decay picture-time (media seconds, including loop wrap).
+ * PER SECOND — not per loop lap, not per frame.
+ */
 export const IDLE_LAMBDA = 0.95;
+export const LAMBDA_IDLE_PER_SEC = IDLE_LAMBDA;
+export const IDLE_DECAY_LAW = [
+  "Idle-decay is NOT a miss. Film asked for nothing. m drops slowly on breath picture-time only.",
+  "Only m decays (permission). Not Keep/pose/biome/cache.",
+  "Miss: m ← λ_miss * m once (e.g. 0.70).",
+  "Idle: m ← m * λ_idle^Δt with λ_idle ≈ 0.95 PER SECOND of media picture-time (not per loop lap, not per frame).",
+  "onTimeUpdate: if paused return; if mode not breath|decay return; dt from media currentTime, clamp 0..0.25; handle loop wrap when currentTime < lastSample; m = idleDecay(m, dt).",
+  "No idle during walk/enter (grade owns m). Howl = breath so idle continues. Recall = flat -0.05 already, not extra idle same instant.",
+  "Floor 0.05–0.08. Resonance lerps to m. CA trail step only when m crosses 0.70 down / 0.75 up / 0.35 — not 60×/s. Never Imagine because m moved.",
+  "Rates: breath/Howl λ=0.95/s; decay clip λ=0.98/s; quiet 0–8s λ=0.99/s; peak idle λ=0.93/s. Never miss λ (0.7× once) on idle.",
+  "Idle does NOT flip WFC every tick. Don't recook breath on m tick.",
+  "Resonance eases toward m 150–200ms; no red flash; per-second λ only — not also per-loop ×0.95.",
+] as const;
+/** Decay clip after a miss — don't double-tax. */
+export const LAMBDA_IDLE_DECAY_CLIP = 0.98;
+/** Quiet window 0–8s picture-time. */
+export const LAMBDA_IDLE_QUIET = 0.99;
+/** Peak window while AFK — peak is not free. */
+export const LAMBDA_IDLE_PEAK = 0.93;
+export const M_FLOOR = 0.05;
+export const SPAWN_M = 0.2;
+export const RECALL_DELTA = -0.05;
+export const IDLE_DT_CLAMP_S = 0.25;
+
+/** Score law — ship text. Only living number is m on Resonance. Tests lock these lines. */
+export const SCORE_LAW = [
+  "NO points / combo×N / high-score chrome / mandatory leaderboard.",
+  "Only living number = m ∈ [0,1] on Resonance crystal.",
+  "Hit: m ← m + 0.12(1−m)",
+  "Late: m ← m − 0.04",
+  "Miss: m ← 0.7 m (never 0)",
+  "Idle/Howl: m ← m · 0.95^Δt",
+  "Recall: m ← m − 0.05",
+  "Pause: frozen",
+  "Enter PASS: m low (Hall′ quiet)",
+  "Floor ~0.05",
+  "m buys: trail none→thin→full, clearer forks, peak permission if picture-time≥~45s AND m≥τ, relic pin still needs confirm enter.",
+  "m high + idle 20s → decays (wanted).",
+  "Do NOT score: points per door, room count, perfect 100, on-screen multiplier, raw m global rank.",
+  "Long-term trophy = Keep citadel recipe (seed+graph+PASS clips), not an integer.",
+  "If player must read a number to know they play well, film failed.",
+] as const;
 /** Fill ease toward new m — not a whole-plate lerp. */
 export const RESONANCE_EASE_MS = 180;
 /** Miss / wrong side: extra-thin drain, then settle. */
@@ -228,6 +274,98 @@ export function applyGradeMomentum(m: number, hit: HitClass): number {
   return cur;
 }
 
+/** Recall only. Howl does not take this cut. Floor keeps citadel alive. */
+export function applyRecallMomentum(m: number): number {
+  return Math.max(M_FLOOR, clamp01(m) + RECALL_DELTA);
+}
+
+/** Hall′ quiet. Enter PASS restarts m low — do not carry peak. */
+export function applyEnterPassMomentum(_m?: number): number {
+  return SPAWN_M;
+}
+
+export function idleDecayLambda(opts: { mode?: string; clip?: string; pictureMs?: number; peak?: boolean } = {}): number {
+  if (opts.mode === "decay" || opts.clip === "decay") return LAMBDA_IDLE_DECAY_CLIP;
+  if (opts.peak) return LAMBDA_IDLE_PEAK;
+  if (opts.pictureMs != null && num(opts.pictureMs) < 8000) return LAMBDA_IDLE_QUIET;
+  return LAMBDA_IDLE_PER_SEC;
+}
+
+/** m(t+dt) = max(floor, m · λ^dt). dt = media seconds. Never wall-clock. */
+export function idleDecay(m: number, dtSec: number, lambda = LAMBDA_IDLE_PER_SEC): number {
+  if (dtSec <= 0) return m;
+  return Math.max(M_FLOOR, m * Math.pow(lambda, dtSec));
+}
+
+export type IdleDecayTick = {
+  paused?: boolean;
+  mode?: string | null;
+  currentTime: number;
+  lastSample: number;
+  duration?: number;
+  justRecalled?: boolean;
+  pictureMs?: number;
+  peak?: boolean;
+  clip?: string;
+};
+
+/**
+ * onTimeUpdate contract. Never Imagine. Walk/enter skip (grade owns m).
+ * Howl is breath — idle continues. Recall same instant skips idle.
+ */
+export function tickIdleDecay(m: number, tick: IdleDecayTick): { m: number; lastSample: number; dt: number } {
+  const t = num(tick.currentTime);
+  if (tick.paused || tick.justRecalled || !mayIdleDecay(tick.mode, Boolean(tick.paused))) {
+    return { m, lastSample: t, dt: 0 };
+  }
+  const dt = clampIdleDt(mediaWrapDt(tick.lastSample, t, tick.duration));
+  if (dt <= 0) return { m, lastSample: t, dt: 0 };
+  const lambda = idleDecayLambda({
+    mode: tick.mode ?? undefined,
+    clip: tick.clip,
+    pictureMs: tick.pictureMs,
+    peak: tick.peak,
+  });
+  return { m: idleDecay(m, dt, lambda), lastSample: t, dt };
+}
+
+export const TRAIL_FULL_CROSS = 0.7;
+/** Up-cross after Hits — hysteresis so 0.70 flicker does not restep full. */
+export const TRAIL_FULL_UP = 0.75;
+export const TRAIL_THIN_CROSS = 0.35;
+export type IdleTrail = "none" | "thin" | "full";
+
+/** CA trail steps only on a 0.70-down / 0.75-up / 0.35 cross — not 60×/s. */
+export function trailStepOnCross(prevM: number, nextM: number, trail: IdleTrail): { trail: IdleTrail; stepped: boolean } {
+  if (prevM >= TRAIL_FULL_CROSS && nextM < TRAIL_FULL_CROSS && trail === "full") return { trail: "thin", stepped: true };
+  if (prevM >= TRAIL_THIN_CROSS && nextM < TRAIL_THIN_CROSS && trail !== "none") return { trail: "none", stepped: true };
+  if (prevM < TRAIL_FULL_UP && nextM >= TRAIL_FULL_UP) return { trail: "full", stepped: true };
+  if (prevM < TRAIL_THIN_CROSS && nextM >= TRAIL_THIN_CROSS && trail === "none") return { trail: "thin", stepped: true };
+  return { trail, stepped: false };
+}
+
+/** Loop wrap when currentTime < last sample. Picture-time must still tick. */
+export function mediaWrapDt(prevT: number, nextT: number, duration?: number): number {
+  const a = num(prevT);
+  const b = num(nextT);
+  if (b >= a) return b - a;
+  const d = num(duration);
+  if (d > 0) return Math.max(0, d - a) + Math.max(0, b);
+  return Math.max(0, b);
+}
+
+export function clampIdleDt(dt: number): number {
+  const x = num(dt);
+  if (x <= 0) return 0;
+  return Math.min(IDLE_DT_CLAMP_S, x);
+}
+
+/** Idle-decay clock: breath|decay, not paused. Walk/enter grade owns m. */
+export function mayIdleDecay(mode?: string | null, paused = false): boolean {
+  if (paused) return false;
+  return mode === "breath" || mode === "decay";
+}
+
 /** Resonance fill = Hermite smoothstep(m). Readout of m, not a second chart. */
 export function resonanceFill(m: number): number {
   const x = clamp01(m);
@@ -384,9 +522,14 @@ export function cuesFromBeats(beats: readonly BeatLike[] = [], duration = Infini
   return beats.map((beat) => cueFromBeat(beat, duration));
 }
 
-/** Howl is a breath act. Never spends. Never Imagine. */
+/** Howl is a breath act. Never spends. Never Imagine. Credits 0. */
 export function howlAct(): HowlAct {
   return { act: "breath", cost: HOWL_COST };
+}
+
+/** Howl does not cut m. Recall is the only flat −0.05. Miss λ is not Howl. */
+export function applyHowlMomentum(m: number): number {
+  return m;
 }
 
 const nodeStill = new Map<string, string>();

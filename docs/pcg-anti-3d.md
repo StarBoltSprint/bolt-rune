@@ -18,6 +18,9 @@ The README holds the refuse table, steal table, and smell tests. This note is th
 | 1D time-WFC | `src/game/pcg-wfc.ts` | Roles on time cells; tap-as-observe |
 | Prefab chunks | `src/game/pcg-chunk.ts` | Hang wins; bridge stitch on rail 2 |
 | Play-loop / cue sheet | `src/game/pcg-play.ts` | `gradeTap` / picture-time / Howl / Recall / Pause |
+| Citadel pose SM | `src/game/pcg-pose.ts` | spawn/atA/atB · breath loops · pose on ended · arm on Hit |
+| Plate transition | `src/game/transition.ts` | double-buffer + WAAPI · cut / dissolve≤280ms / hold 80ms / decay no fade |
+| Preload | `src/game/preload.ts` | next probable PASS only · 4 slots · take→dissolve · never Imagine |
 | Picture-time audio | `src/game/pcg-audio.ts` | Plate + engine buses; pause/mute; grade one-shots |
 | Play input / haptics / a11y | `src/game/pcg-input.ts` | Video-layout A/B; same cue sheet; no XYZ / WASD |
 | EDPCG density / awakening | `src/game/pcg-density.ts` | `smoothstep(m) * noise(s, pictureTime)` → cook slots |
@@ -37,6 +40,14 @@ relic      = same gate as peak
 ```
 
 `pictureTimeMs(playedPlates)` sums milliseconds. It does not call `Date.now` or `setTimeout`. Pause the film — add no plate — picture-time does not move.
+
+Score is Resonance `m` only (`SCORE_LAW`) — no points, combo chrome, or leaderboard. Enter PASS sets m low (Hall′ quiet). Keep is `{ seed, nodes, edges }` (`KEEP_LAW`); plates resolve PASS→play / ticket→cook-decay / else decay (`CLIP_LIBRARY_LAW`). Idle rates 0.95/0.98/0.99/0.93; trail hysteresis 0.70 down / 0.75 up. EDPCG writes next-plate domain only (`EDPCG_LAW`). WFC weights never revive banned tiles (`WFC_WEIGHT_LAW`).
+
+Four nested clocks (`NESTED_CYCLES_LAW`) — do not mix: micro plate (6–15s) does not change the room alone; room poses loop breath without a mandatory peak; bone ~60s picture-time (WFC+m+CA) may permit peak on the same A/B; citadel graph enter is the only Hall′ hop and always respawns breath-spawn. One tap crosses one level.
+
+Breath plates **always loop** until walk / Howl / Pause / enter. Never play-once-then-freeze last frame. `walk-spawn-A` ended plays looping `breath-A` (`video.loop=true`); a breath lap replays the same pose and must not recook, arm, raise `m`, advance WFC, or use wall-clock. Idle-decay is NOT a miss: `m · 0.95^Δt` per media second on breath|decay (`tickIdleDecay`), not per lap or frame. Howl is intentional breath (`howlPose`): clock runs, armed off, same pose / `walkFrom` if mid-walk — not Pause, not miss, not Recall −0.05. Hall entry is always spawn + looping `breath-spawn` (`beginPose` / `resetForNewHall`); Continue is breath on the saved pose, never a mid-cut walk. Doors are plan sides + arm state (`DOOR_LAW`), never meshes or a third hitbox. Pose lives in `pcg-pose.ts` and advances only on plate ended.
+
+Every plate change goes `planTransition` → `runTransition` → play (`src/game/transition.ts`). `goTo` never assigns `video.src`. Double buffer: prepare incoming before fade, `commitIncoming` is an opacity + pointer flip. One WAAPI opacity anim — no 8-step `setTimeout`. Same still or breath→breath same pose is a cut; dissolve ≤ 280ms (`prefers-reduced-motion` → 80ms); decay holds with no fade; missing clip or Smoke FAIL decays with no spinner. Howl / Pause abort the fade. Prefetch arrival breath on walk tap. A popping join means last frame of walk-A ≠ frame 0 of breath-A — dissolve cannot fix a bad encode.
 
 `Date.now` that remains elsewhere is not this clock:
 
