@@ -57,12 +57,17 @@ import {
   pausePlayClock,
   pictureTimeNow,
   plateTapFromGrades,
+  playMayPeak,
+  playPhase,
   recallStill,
+  resonanceFill,
+  resonanceTone,
   resumePlayClock,
   sideFromLane,
   type Cue,
   type CueSide,
   type HitClass,
+  type PicturePhase,
   type Plate,
   type PlayClock,
 } from "@/game/pcg-play";
@@ -220,6 +225,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   const playGradesRef = useRef<HitClass[]>([]);
   const walkHitsRef = useRef({ A: false, B: false });
   const lastMediaTRef = useRef(0);
+  const drainRef = useRef(0);
   const playPlateRef = useRef<Plate | null>(null);
   const hallFlagsRef = useRef<boolean[]>([]);
   const advancing = useRef(false);
@@ -254,6 +260,10 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     total: film.beats.length,
     resonance: 0.08,
     pace: 1,
+    paused: false,
+    peak: false,
+    phase: "calm" as PicturePhase,
+    drain: 0,
   });
   const [pops, setPops] = useState<Pop[]>([]);
   const [shake, setShake] = useState({ x: 0, y: 0, rot: 0 });
@@ -381,6 +391,12 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     });
   }
 
+  function applyResonance(hit: HitClass) {
+    const g = gRef.current;
+    g.resonance = applyGradeMomentum(g.resonance, hit);
+    if (hit === "miss") drainRef.current += 1;
+  }
+
   function notePlayGrade(t: number, side?: CueSide | null) {
     const cues = playCuesRef.current;
     const i = activeCueIndex(cues, t, COYOTE_S, playGradedRef.current);
@@ -390,6 +406,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     playGradedRef.current[i] = true;
     playGradesRef.current.push(hit);
     walkHitsRef.current = noteWalkHit(walkHitsRef.current, cue, hit);
+    applyResonance(hit);
     return hit;
   }
 
@@ -400,6 +417,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       playClockRef.current = resumePlayClock(playClockRef.current);
       lastMediaTRef.current = v && Number.isFinite(v.currentTime) ? v.currentTime : lastMediaTRef.current;
       void v?.play().catch(() => {});
+      setHud((h) => ({ ...h, paused: false }));
       return;
     }
     playPausedRef.current = true;
@@ -409,6 +427,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     } catch {
       /* */
     }
+    setHud((h) => ({ ...h, paused: true, resonance: gRef.current.resonance }));
   }
 
   function skipToHoldCue(g: G, afterAt = Number.NEGATIVE_INFINITY) {
@@ -757,10 +776,6 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       lastMediaTRef.current = mediaT;
 
       g.trauma = Math.max(0, g.trauma - dt * 2.4);
-      if (phaseRef.current === "run") {
-        if (g.combo > 0) g.resonance = Math.min(1, g.resonance + dt * (0.018 + Math.min(10, g.combo) * 0.006));
-        else g.resonance = Math.max(0.05, g.resonance - dt * 0.035);
-      }
       const sh = g.trauma * g.trauma;
       if (!reduced.current && sh > 0.002) {
         setShake({
@@ -874,6 +889,10 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         total: g.beats.length,
         resonance: g.resonance,
         pace: g.pace,
+        paused: playPausedRef.current,
+        peak: playMayPeak(playClockRef.current, g.resonance),
+        phase: playPhase(playClockRef.current, g.resonance),
+        drain: drainRef.current,
       };
       const due = now - lastHudAt.current > (coarse.current ? 120 : 64);
       if (phaseRef.current === "run" && (due || g.i !== lastHudI.current)) {
@@ -928,8 +947,9 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     playClockRef.current = endPlateClock(playClockRef.current, played);
     wfcPlayed.current[i] = played;
     const pictureTime = pictureTimeNow(playClockRef.current) || pictureTimeFromPlates(wfcPlayed.current.slice(0, i + 1));
-    const m = Math.min(1, Math.max(0, gRef.current.resonance));
     const tap: TapObserve = playGradesRef.current.length ? plateTapFromGrades(playGradesRef.current) : plateTapKind();
+    if (tap === "idle") applyResonance("idle");
+    const m = Math.min(1, Math.max(0, gRef.current.resonance));
     wfcRef.current = afterPlate(live, i, tap, m, pictureTime);
     const plate = playPlateRef.current;
     commitNodeStill(playNodeId(), plate?.stillEnd || poster || film.still);
@@ -1097,8 +1117,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.combo = 0;
     g.streakMiss += 1;
     g.trauma = Math.min(1, g.trauma + 0.45);
-    g.resonance = applyGradeMomentum(g.resonance, "miss");
-    notePlayGrade(clock(), null);
+    if (!notePlayGrade(clock(), null)) applyResonance("miss");
     sfxHit("miss");
     pop("MISS", "bad", liveSpot(beat, clock()).x * 100, liveSpot(beat, clock()).y * 100);
     g.pace = paceAfterMiss(g.pace);
@@ -1145,8 +1164,9 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.combo += 1;
     g.maxCombo = Math.max(g.maxCombo, g.combo);
     g.streakMiss = 0;
-    g.resonance = applyGradeMomentum(g.resonance, word === "good" ? "late" : "hit");
-    notePlayGrade(clock(), sideFromLane(beat.kind === "left" ? "l" : beat.kind === "right" ? "r" : beat.lane));
+    if (!notePlayGrade(clock(), sideFromLane(beat.kind === "left" ? "l" : beat.kind === "right" ? "r" : beat.lane))) {
+      applyResonance(word === "good" ? "late" : "hit");
+    }
     if (g.combo % 2 === 0) {
       g.pace = Math.min(PACE_MAX, g.pace + (word === "perfect" ? 0.28 : word === "great" ? 0.2 : 0.14));
     }
@@ -1735,9 +1755,13 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       {phase === "run" && film.pad === "arrows" && !holdDoor && <CutWash beat={nowBeat ?? undefined} t={hud.t} />}
       {phase === "run" && holdDoor && <CueFill beat={nowBeat ?? undefined} t={hud.t} />}
       {phase === "run" && (
-        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-40 px-5 pb-[max(0.55rem,env(safe-area-inset-bottom))]">
-          <Resonance value={hud.resonance} score={hud.score} pace={hud.pace} />
-        </div>
+        <Resonance
+          value={hud.resonance}
+          paused={hud.paused}
+          peak={hud.peak}
+          phase={hud.phase}
+          drain={hud.drain}
+        />
       )}
       {phase === "run" && !(film.hazards && !original) && film.pad !== "arrows" && !holdDoor && (
         <Marks
@@ -1933,26 +1957,38 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   );
 }
 
-function Resonance({ value, score = 0, pace = 1 }: { value: number; score?: number; pace?: number }) {
-  const v = Math.max(0, Math.min(1, value));
+function Resonance({
+  value,
+  paused = false,
+  peak = false,
+  phase = "calm",
+  drain = 0,
+}: {
+  value: number;
+  paused?: boolean;
+  peak?: boolean;
+  phase?: PicturePhase;
+  drain?: number;
+}) {
+  const m = Math.max(0, Math.min(1, value));
+  const fill = resonanceFill(m);
+  const tone = resonanceTone(m, phase, peak);
   return (
-    <div className="pointer-events-none" data-resonance="m">
-      <div className="mb-1.5 flex items-end justify-between font-mono tabular-nums">
-        <p className="text-[10px] uppercase tracking-[0.16em] text-muted">
-          <span className="text-accent">{score}</span>
-        </p>
-        <p className="text-[10px] text-ice">{pace.toFixed(1)}×</p>
-      </div>
-      <div className="h-[5px] overflow-hidden rounded-full bg-line/40">
+    <div
+      className="resonance-chrome pointer-events-none"
+      data-resonance="m"
+      data-tone={tone}
+      data-paused={paused ? "1" : undefined}
+      data-drain={drain > 0 ? String(drain) : undefined}
+      data-peak={peak ? "1" : undefined}
+      aria-hidden
+    >
+      <div className="resonance-capsule">
         <div
-          className="h-full rounded-full"
-          data-m={v}
-          style={{
-            width: `${v * 100}%`,
-            background: "linear-gradient(90deg, #3d6a78 0%, #9ec9d4 58%, #f2fbff 100%)",
-            boxShadow: v > 0.18 ? `0 0 ${8 + v * 20}px rgba(158,201,212,${0.2 + v * 0.5})` : "none",
-            transition: "width 180ms linear",
-          }}
+          key={drain}
+          className="resonance-fill"
+          data-m={m}
+          style={{ ["--resonance-fill" as string]: String(fill) }}
         />
       </div>
     </div>

@@ -102,7 +102,9 @@ A **plate** is `{ clip, duration (from file), cues[], stillStart, stillEnd }`. A
 
 Picture-time advances only while playing — not paused, hidden, or waiting on cook. On plate end: add time actually played. Phase / peak reuse `pictureTimeMs` / `mayPeak` from `pcg-rail`. Grades feed online WFC `applyTapObserve` (miss bans peak; idle bans peak+fork; empty domain → decay stock, never a spinner).
 
-Resonance is the bottom crystal: fill is momentum `m` only, never when-to-tap. Howl = breath act $0. Recall = last committed still of the node (not undo Keep enter). Pause freezes picture-time, CA, WFC, and prefetch.
+Grade alphas (SmiR): hit `m ← sat(m + 0.12 × (1 − m))`; late modest `−0.04`; miss `m ← 0.70 m` (never snaps to 0); idle `m ← 0.95 m` per quiet plate; early ignores `m` and does not feed WFC.
+
+Resonance chrome: bottom safe edge of 9:16, side gutters ~9%, height ~3.6% of frame. Thin crystal capsule. Fill = `smoothstep(m)`, ease ~180ms toward new `m` (not a whole-plate lerp). Quiet dim; lean brighter gold-cyan; peak permission brighter, still thin. Miss / wrong side drains extra-thin ~260ms then settles — no red flash or shake on the bar. Pause freezes fill and color. Readout of `m` only: no numerals, no COMBO, no pause glyph, never a hitbox, never covering Bolt paws / path / door pulses. Howl = breath act $0. Recall = last committed still of the node (not undo Keep enter). Pause freezes picture-time, CA, WFC, and prefetch.
 
 Smoke glow helper fails unreadable sheets (`on≥off`, `off>duration`, window `<0.35s`). Human Smoke stays visual. Asteroid HOLD. No Pack seats.
 

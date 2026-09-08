@@ -7,6 +7,8 @@
 import { mayPeak, picturePhase, pictureTimeMs, type PicturePhase } from "./pcg-rail.ts";
 import { afterPlate, applyTapObserve, type OnlineStrip, type TapObserve } from "./pcg-wfc.ts";
 
+export type { PicturePhase };
+
 export type CueSide = "A" | "B" | "none";
 export type CueKind = "walk" | "enter-arm" | "breath";
 export type HitClass = "early" | "hit" | "late" | "miss" | "idle";
@@ -40,11 +42,22 @@ export const PRE_ON_HIT_S = PRE_ON_HIT_MS / 1000;
 export const MIN_CUE_WINDOW_S = 0.35;
 export const HOWL_COST = 0;
 
-const HIT_M = 0.07;
-const LATE_M = -0.02;
-const EARLY_M = -0.015;
-const IDLE_M = -0.02;
-const MISS_LAMBDA = 0.32;
+/** Hit: m ← sat(m + α_hit × (1 − m)). Asymptotic toward 1. */
+export const ALPHA_HIT = 0.12;
+/** Late: modest flat down. Keep small. */
+export const ALPHA_LATE = -0.04;
+/** Miss: m ← λ m. Never snaps to 0. */
+export const MISS_LAMBDA = 0.70;
+/** Idle: m ← λ_idle × m per quiet plate. Not a flat subtract. */
+export const IDLE_LAMBDA = 0.95;
+/** Fill ease toward new m — not a whole-plate lerp. */
+export const RESONANCE_EASE_MS = 180;
+/** Miss / wrong side: extra-thin drain, then settle. */
+export const RESONANCE_DRAIN_MS = 260;
+/** Side gutters so door glows stay clear (~8–10%). */
+export const RESONANCE_GUTTER = 0.09;
+/** Bar height as a fraction of the 9:16 frame (~3–4%). */
+export const RESONANCE_HEIGHT = 0.036;
 const DECODER_SKIP_S = 0.12;
 
 export type PlayClock = {
@@ -199,12 +212,27 @@ export function gradeTapSide(
 
 export function applyGradeMomentum(m: number, hit: HitClass): number {
   const cur = clamp01(m);
-  if (hit === "hit") return clamp01(cur + HIT_M);
-  if (hit === "late") return clamp01(cur + LATE_M);
-  if (hit === "early") return clamp01(cur + EARLY_M);
-  if (hit === "idle") return clamp01(cur + IDLE_M);
+  if (hit === "hit") return clamp01(cur + ALPHA_HIT * (1 - cur));
+  if (hit === "late") return clamp01(cur + ALPHA_LATE);
+  if (hit === "early") return cur;
+  if (hit === "idle") return clamp01(cur * IDLE_LAMBDA);
   if (hit === "miss") return clamp01(cur * MISS_LAMBDA);
   return cur;
+}
+
+/** Resonance fill = Hermite smoothstep(m). Readout of m, not a second chart. */
+export function resonanceFill(m: number): number {
+  const x = clamp01(m);
+  return x * x * (3 - 2 * x);
+}
+
+export type ResonanceTone = "quiet" | "lean" | "peak";
+
+/** Quiet dim / lean gold-cyan / peak permission brighter — bar stays thin. */
+export function resonanceTone(m: number, phase: PicturePhase = "calm", peak = false): ResonanceTone {
+  if (peak || phase === "peak") return "peak";
+  if (phase === "lean" || clamp01(m) >= 0.45) return "lean";
+  return "quiet";
 }
 
 export function observeFromGrade(hit: HitClass): TapObserve | null {
