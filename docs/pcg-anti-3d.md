@@ -18,6 +18,7 @@ The README holds the refuse table, steal table, and smell tests. This note is th
 | 1D time-WFC | `src/game/pcg-wfc.ts` | Roles on time cells; tap-as-observe |
 | Prefab chunks | `src/game/pcg-chunk.ts` | Hang wins; bridge stitch on rail 2 |
 | Play-loop / cue sheet | `src/game/pcg-play.ts` | `gradeTap` / picture-time / Howl / Recall / Pause |
+| Picture-time audio | `src/game/pcg-audio.ts` | Plate + engine buses; pause/mute; grade one-shots |
 | EDPCG density / awakening | `src/game/pcg-density.ts` | `smoothstep(m) * noise(s, pictureTime)` → cook slots |
 | Smoke ship-gate | `src/game/smoke-gate.ts` | PASS/FAIL before Hang / cache / enter; `railsVersion` `bolt-1` |
 
