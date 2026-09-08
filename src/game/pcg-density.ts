@@ -9,7 +9,7 @@
 import { mayPeak, pcgHash, picturePhase, type PicturePhase } from "./pcg-rail.ts";
 import type { FloorSlot, ForkSlot, GrammarBiomeId, TrailSlot } from "./pcg-prompt.ts";
 
-/** Same λ as play-loop miss (`pcg-play` MISS_LAMBDA). */
+/** Cook-slot miss thin. Play-loop grade miss uses `MISS_LAMBDA` 0.70 in `pcg-play`. */
 export const DENSITY_MISS_LAMBDA = 0.32;
 export const DENSITY_IDLE_LAMBDA = 0.62;
 

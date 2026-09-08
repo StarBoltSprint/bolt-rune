@@ -842,8 +842,9 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(cueFill, /height: 34/);
     assert.match(cueFill, /data-cue-axis="y"/);
     const resonance = stage.slice(stage.indexOf("function Resonance"), stage.indexOf("function CueFill"));
-    assert.match(resonance, /score/);
-    assert.match(resonance, /pace/);
+    assert.match(resonance, /data-resonance="m"/);
+    assert.doesNotMatch(resonance, /score/);
+    assert.doesNotMatch(resonance, /pace/);
     assert.doesNotMatch(resonance, /CueFill/);
   });
 
@@ -1117,7 +1118,7 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.doesNotMatch(stage, /width: 52/);
     assert.doesNotMatch(stage, /height: 10/);
     assert.doesNotMatch(stage, /holdDoor \? <CueFill/);
-    assert.match(stage, /<Resonance value=\{hud\.resonance\} score=\{hud\.score\} pace=\{hud\.pace\} \/>/);
+    assert.match(stage, /<Resonance\s+value=\{hud\.resonance\}/);
     assert.match(stage, /film\.pad === "arrows" && !holdDoor && <CutWash/);
     assert.match(stage, /film\.pad !== "arrows" && !holdDoor/);
     assert.doesNotMatch(stage, /[^!]holdDoor && <CutWash/);

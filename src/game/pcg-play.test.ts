@@ -16,6 +16,8 @@ import {
   activeCueIndex,
   advancePictureTime,
   afterPlayPlate,
+  ALPHA_HIT,
+  ALPHA_LATE,
   applyGradeMomentum,
   applyPlayTap,
   beginPlayClock,
@@ -36,7 +38,9 @@ import {
   gradeTapSide,
   hidePlayClock,
   howlAct,
+  IDLE_LAMBDA,
   makePlate,
+  MISS_LAMBDA,
   mayAdvancePicture,
   mayAdvanceWfc,
   mayEnterArm,
@@ -50,6 +54,8 @@ import {
   playMayPeak,
   playPhase,
   recallStill,
+  resonanceFill,
+  resonanceTone,
   resumePlayClock,
   type Cue,
   type Plate,
@@ -126,18 +132,42 @@ describe("PCG play-loop — gradeTap", () => {
     assert.equal(expireCue(2.4, walkA, COYOTE_S), null);
   });
 
-  it("momentum: hit rises, late/early small down, miss λ-decays, idle slow", () => {
+  it("momentum: SmiR alphas — hit asymptotic, late modest down, miss λ=0.70, idle λ=0.95, early ignore", () => {
     const base = 0.7;
-    assert.ok(applyGradeMomentum(base, "hit") > base);
-    assert.ok(applyGradeMomentum(base, "late") < base);
-    assert.ok(applyGradeMomentum(base, "early") < base);
+    assert.equal(ALPHA_HIT, 0.12);
+    assert.equal(ALPHA_LATE, -0.04);
+    assert.equal(MISS_LAMBDA, 0.7);
+    assert.equal(IDLE_LAMBDA, 0.95);
+    assert.equal(applyGradeMomentum(base, "hit"), base + ALPHA_HIT * (1 - base));
+    assert.equal(applyGradeMomentum(1, "hit"), 1);
+    assert.ok(applyGradeMomentum(0.99, "hit") > 0.99);
+    assert.ok(applyGradeMomentum(0.99, "hit") <= 1);
+    assert.equal(applyGradeMomentum(base, "late"), base + ALPHA_LATE);
+    assert.equal(applyGradeMomentum(base, "early"), base);
+    assert.equal(applyGradeMomentum(0, "early"), 0);
+    assert.equal(applyGradeMomentum(base, "miss"), base * MISS_LAMBDA);
+    assert.equal(applyGradeMomentum(0, "miss"), 0);
+    assert.ok(applyGradeMomentum(0.02, "miss") > 0);
+    assert.equal(applyGradeMomentum(base, "idle"), base * IDLE_LAMBDA);
     assert.ok(applyGradeMomentum(base, "late") > applyGradeMomentum(base, "miss"));
-    assert.ok(applyGradeMomentum(base, "idle") < base);
     assert.ok(applyGradeMomentum(base, "idle") > applyGradeMomentum(base, "miss"));
+    assert.equal(observeFromGrade("early"), null);
     assert.equal(plateTapFromGrades(["early", "hit"]), "hit");
     assert.equal(plateTapFromGrades(["hit", "miss"]), "miss");
     assert.equal(plateTapFromGrades(["late"]), "late");
     assert.equal(plateTapFromGrades(["early", "idle"]), "idle");
+  });
+
+  it("Resonance fill is smoothstep(m); tone is quiet / lean / peak", () => {
+    assert.equal(resonanceFill(0), 0);
+    assert.equal(resonanceFill(1), 1);
+    assert.equal(resonanceFill(0.5), 0.5);
+    assert.ok(resonanceFill(0.25) < 0.25);
+    assert.ok(resonanceFill(0.75) > 0.75);
+    assert.equal(resonanceTone(0.1, "calm", false), "quiet");
+    assert.equal(resonanceTone(0.5, "lean", false), "lean");
+    assert.equal(resonanceTone(0.8, "peak", true), "peak");
+    assert.equal(resonanceTone(0.2, "calm", true), "peak");
   });
 });
 
@@ -250,6 +280,7 @@ describe("PCG play-loop — engine hook + Asteroid HOLD", () => {
   it("helper source and README name the play-loop; FilmStage grades cues; seats untouched", () => {
     const play = readFileSync(join(here, "./pcg-play.ts"), "utf8");
     const stage = readFileSync(join(here, "../components/film-stage.tsx"), "utf8");
+    const css = readFileSync(join(here, "../styles.css"), "utf8");
     const seats = readFileSync(join(here, "../components/door-chat-line.tsx"), "utf8");
     const readme = readFileSync(join(here, "../../README.md"), "utf8");
     const wfc = readFileSync(join(here, "./pcg-wfc.ts"), "utf8");
@@ -258,6 +289,10 @@ describe("PCG play-loop — engine hook + Asteroid HOLD", () => {
     assert.match(play, /export function howlAct/);
     assert.match(play, /export function recallStill/);
     assert.match(play, /export function pausePlayClock/);
+    assert.match(play, /ALPHA_HIT = 0\.12/);
+    assert.match(play, /ALPHA_LATE = -0\.04/);
+    assert.match(play, /MISS_LAMBDA = 0\.70/);
+    assert.match(play, /IDLE_LAMBDA = 0\.95/);
     assert.match(play, /applyTapObserve/);
     assert.match(play, /Asteroid HOLD/);
     assert.doesNotMatch(play, /Date\.now\s*\(|setTimeout\s*\(/);
@@ -268,8 +303,17 @@ describe("PCG play-loop — engine hook + Asteroid HOLD", () => {
     assert.match(stage, /howlAct/);
     assert.match(stage, /recallStill/);
     assert.match(stage, /data-resonance="m"|data-m=/);
+    assert.match(stage, /resonance-chrome/);
+    assert.match(stage, /resonanceFill/);
+    const resonance = stage.slice(stage.indexOf("function Resonance"), stage.indexOf("function CueFill"));
+    assert.doesNotMatch(resonance, /COMBO|combo|score|pace|wifi|ticket|cook/i);
+    assert.match(css, /resonance-drain/);
+    assert.match(css, /data-paused/);
+    assert.match(css, /left: 9%/);
     assert.doesNotMatch(seats, /pcg-play|gradeTap|playPaused/);
     assert.match(readme, /play-loop|cue sheet|cue-sheet/i);
+    assert.match(readme, /α_hit|alpha_hit|ALPHA_HIT|0\.12/i);
+    assert.match(readme, /Resonance/i);
     assert.match(wfc, /applyTapObserve/);
     const asteroid = FILM_BY_ID.asteroid.beats.map((beat) => beat.at);
     assert.deepEqual(asteroid, [7.0, 12.3, 16.3, 21.6, 25.6, 30.9, 34.9, 40.2, 44.2, 49.5, 53.5]);
