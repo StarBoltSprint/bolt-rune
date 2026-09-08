@@ -1060,7 +1060,7 @@ export function VaultHall() {
           keep={refKeep}
           flag={refFlag}
           hung={refHung || Boolean(hungOnRole(hung, "breath-spawn", HANG_REF_GRAPH_HALL) || hungOnRole(hung, "walk-A", HANG_REF_GRAPH_HALL))}
-          advanced={hung.some((a) => isLegacyDoorHang(a) || a.room?.door)}
+          advanced={hung.some((a) => isLegacyDoorHang(a))}
           onSlot={takeRefUrl}
           onFile={takeRefFile}
           onKeep={() => setRefKeep((v) => !v)}
