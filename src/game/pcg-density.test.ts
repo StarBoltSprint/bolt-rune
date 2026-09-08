@@ -5,7 +5,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FILM_BY_ID } from "./films.ts";
 import { BIOME_CATALOG, assembleCookPlate, assemblePrompt, slotsFromEngine } from "./pcg-prompt.ts";
-import { beginOnline, collapseStrip } from "./pcg-wfc.ts";
+import { mayPeak, picturePhase } from "./pcg-rail.ts";
+import { applyTapObserve, beginOnline, collapseStrip } from "./pcg-wfc.ts";
 import {
   DENSITY_MISS_LAMBDA,
   awakenLevel,
@@ -18,6 +19,7 @@ import {
   slotsFromDensity,
   smoothstep,
   worldLineFor,
+  EDPCG_LAW,
 } from "./pcg-density.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -183,6 +185,22 @@ describe("EDPCG density — WFC + prompt plates", () => {
     assert.match(play, /applyTapObserve/);
     assert.doesNotMatch(seats, /pcg-density|cookDensity|fillCookSlots/);
     assert.match(readme, /EDPCG density|world awakening/i);
+    for (const line of EDPCG_LAW) {
+      assert.match(density, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      assert.match(readme, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
+    assert.equal(picturePhase(QUIET_T, 1), "calm");
+    assert.equal(mayPeak(QUIET_T, 1), false);
+    assert.equal(mayPeak(PEAK_T, 0.2), false);
+    assert.equal(mayPeak(PEAK_T, 1), true);
+    const strip = beginOnline({ s: "sedpcgmiss01", n: 6, momentum: 1 });
+    const afterMiss = applyTapObserve(strip, 3, "miss", 1, 40_000);
+    assert.ok(!afterMiss.wave.domains[4]!.includes("peak"));
+    const playSrc = readFileSync(join(here, "./pcg-play.ts"), "utf8");
+    assert.doesNotMatch(
+      playSrc.slice(playSrc.indexOf("export function tickIdleDecay"), playSrc.indexOf("export const TRAIL_FULL_CROSS")),
+      /applyTapObserve|afterPlate/,
+    );
     const asteroid = FILM_BY_ID.asteroid.beats.map((beat) => beat.at);
     assert.deepEqual(asteroid, [7.0, 12.3, 16.3, 21.6, 25.6, 30.9, 34.9, 40.2, 44.2, 49.5, 53.5]);
   });

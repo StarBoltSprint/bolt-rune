@@ -103,7 +103,7 @@ const TRUSTED_STOCK =
   /\/(?:films|ui)\/(?:forge|cook)-[a-z0-9-]+\.(?:mp4|jpe?g)(?:\?|$)/i;
 
 const CAMERA_BAN =
-  /\b(face-on|side-profile|side view|overhead|handheld|orbit|master shot|profile-hero)\b/i;
+  /\b(face-on|side-profile|side view|overhead|handheld|orbit|truck|follow-through|follow through(?: the)? door|master shot|profile-hero)\b/i;
 
 const BODY_BAN =
   /\b(cape|clothes|clothing|saddle|human arms|biped|second character|other character|muzzle hero|text on fur|shirt|coat|dress)\b/i;

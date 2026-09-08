@@ -3,11 +3,32 @@
  * density = smoothstep(m) * noise(runSeed, pictureTime)
  * Success chains wake the picture. Miss → λm, thinner trail.
  * Same biome tag; enter still required for Hall′ biome hop.
+ * EDPCG reads play sensors (m, picture-time, last grade, mode) and writes ONLY the
+ * next plate's allowed set + slots. Idle ticks do not recook breath or steal camera.
  * Asteroid HOLD. No Pack seats. No XYZ. No Date.now.
  */
 
 import { mayPeak, pcgHash, picturePhase, type PicturePhase } from "./pcg-rail.ts";
 import type { FloorSlot, ForkSlot, GrammarBiomeId, TrailSlot } from "./pcg-prompt.ts";
+
+/** EDPCG coupling — ship text. Tests lock these lines. */
+export const EDPCG_LAW = [
+  "EDPCG is not a separate director. It reads same sensors as play (m, picture-time, last grade, mode) and writes ONLY into the next plate's allowed set + slots.",
+  "Never steals camera or skips a miss.",
+  "phase = f(picture-time): quiet|lean|peak-window|after",
+  "allowed = tiles(phase) ∩ tiles(m) ∩ tiles(lastGrade)",
+  "Quiet 0–8s: still no peak even if high m. Peak-window ≥45s: peak may enter domain only if m high. After miss: decay forced first.",
+  "Idle decay during breath can drop peak out of domain even at t=50s — generator does not owe lightning.",
+  "onEnded walk/breath → next role + slot enums (do NOT recook plate that just played)",
+  "start of next walk → prompt slots from m (do NOT change pose graph)",
+  "miss → ban peak 1–2 cells (do NOT skip decay plate)",
+  "Idle tick → nothing until next walk (do NOT swap breath every 0.05 m).",
+  "enter PASS → reset phase + m low (do NOT carry peak into Hall′).",
+  "Breath loops reuse SAME stock clip. EDPCG stamps upcoming walk only.",
+  "On tap walk: domain=wfc.reweight(phase,m,lastGrade); role=observe; slots=ca.step; play stock.",
+  "Decoupled on purpose: doors A/B, Keep graph (only enter PASS), rails/dog, credits (peak slots on existing walk file — no Imagine to chase curve).",
+  "If EDPCG needs a new node to feel good, design failed — density on current hall is the actuator.",
+] as const;
 
 /** Cook-slot miss thin. Play-loop grade miss uses `MISS_LAMBDA` 0.70 in `pcg-play`. */
 export const DENSITY_MISS_LAMBDA = 0.32;

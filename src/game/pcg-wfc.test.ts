@@ -24,11 +24,13 @@ import {
   initWave,
   mayPeakNow,
   observe,
+  roleWeight,
   peakWindowOk,
   pictureTimeFromPlates,
   propagate,
   replayOnline,
   trailLegal,
+  WFC_WEIGHT_LAW,
 } from "./pcg-wfc.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -229,6 +231,13 @@ describe("PCG role-WFC — cook / bone hook + Asteroid HOLD", () => {
     assert.match(readme, /applyTapObserve/);
     assert.match(readme, /advanceOnline/);
     assert.match(readme, /picture-time/);
+    for (const line of WFC_WEIGHT_LAW) {
+      assert.match(wfc, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      assert.match(readme, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
+    assert.doesNotMatch(wfc.replace(/export const WFC_WEIGHT_LAW = \[[\s\S]*?\] as const;/, ""), /Math\.random\s*\(/);
+    assert.doesNotMatch(wfc, /export function roleWeight\([^)]*seed/);
+    assert.ok(roleWeight("peak", 50, 1, true) < roleWeight("peak", 50, 1, false));
   });
 });
 
@@ -237,6 +246,12 @@ describe("PCG online time-WFC — tap-as-observe", () => {
     const strip = beginOnline({ s: "smisspeak01", n: 6, momentum: 1 });
     assert.ok(strip.wave.domains[4]!.includes("peak") || strip.wave.collapsed[4] == null);
     const after = applyTapObserve(strip, 3, "miss", 1, 40_000);
+    assert.ok(!after.wave.domains[4]!.includes("peak"));
+    const shot = observe(after.wave, "smisspeak01", 4);
+    if (shot.cell >= 0 && shot.role) {
+      assert.ok(after.wave.domains[shot.cell]!.includes(shot.role) || shot.role === "decay");
+      if (!after.wave.domains[shot.cell]!.includes("peak")) assert.notEqual(shot.role, "peak");
+    }
     assert.ok(!after.wave.domains[4]!.includes("peak"));
     assert.ok(!after.wave.domains[5]!.includes("peak"));
     const advanced = advanceOnline(after, 3);
