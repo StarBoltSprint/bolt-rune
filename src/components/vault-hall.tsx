@@ -379,6 +379,8 @@ export function VaultHall() {
       window.setTimeout(() => setFrost(""), 2400);
       return;
     }
+    const passed: Array<{ role: HangRefRole; url: string }> = [];
+    const blocked: string[] = [];
     for (const { role, url } of writes) {
       const kind = hangRefKind(role);
       const play = hangMediaSrc(url) || (isImaginePostUrl(url) ? url : "");
@@ -388,21 +390,27 @@ export function VaultHall() {
         clip: play || url,
         still: play || url,
       });
-      if (!mayHang(smoke, refKeep)) {
-        if (isContinuityOnlyFail(smoke)) {
-          setRefKeep(true);
-          setRefFlag(`${role} · Continuity FAIL · KEEP to hang`);
-          setFrost(`${role} · Continuity FAIL · KEEP to hang`);
-          window.setTimeout(() => setFrost(""), 2800);
-          return;
-        }
-        setFrost(smokeForgeFrost(smoke.reasons) || `${role} · smoke FAIL`);
+      if (mayHang(smoke, refKeep)) {
+        passed.push({ role, url });
+        continue;
+      }
+      if (isContinuityOnlyFail(smoke)) {
+        setRefKeep(true);
+        setRefFlag(`${role} · Continuity FAIL · KEEP to hang`);
+        setFrost(`${role} · Continuity FAIL · KEEP to hang`);
         window.setTimeout(() => setFrost(""), 2800);
         return;
       }
+      blocked.push(`${role} · ${smokeForgeFrost(smoke.reasons) || "smoke FAIL"}`);
+    }
+    if (!passed.length) {
+      setRefFlag(blocked[0] || "hang missed — paste a clip");
+      setFrost(blocked[0] || "hang missed — paste a clip");
+      window.setTimeout(() => setFrost(""), 2800);
+      return;
     }
     let arts = hungRef.current.length ? hungRef.current : readArtifacts();
-    for (const { role, url } of writes) {
+    for (const { role, url } of passed) {
       const play = hangMediaSrc(url) || (isImaginePostUrl(url) ? url : url);
       const smoke = lintSmoke({
         kind: hangRefKind(role),
@@ -454,7 +462,8 @@ export function VaultHall() {
     setRefHung(true);
     setHangRef(true);
     sfxForge("page");
-    setFrost("hall hung · Play to walk");
+    if (blocked.length) setRefFlag(blocked[0]);
+    setFrost(blocked.length ? `hall hung · ${blocked[0]}` : "hall hung · Play to walk");
     window.setTimeout(() => setFrost(""), 2400);
   }
 
@@ -1166,7 +1175,7 @@ export function VaultHall() {
           </button>
         </div>
       ) : frost ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-5 pb-[max(1.6rem,env(safe-area-inset-bottom))]">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[95] px-5 pb-[max(1.6rem,env(safe-area-inset-bottom))]">
           <p className="rounded-2xl border border-[#e4c37a]/30 bg-black/75 px-4 py-3 text-center font-mono text-[11px] uppercase tracking-[0.18em] text-[#f0d48a]">
             {frost}
           </p>
