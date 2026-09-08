@@ -8,12 +8,15 @@ import { hangArtifactOnDoor } from "./enter-graph.ts";
 import { hungOnDoor } from "./pcg-chunk.ts";
 import { mayHang } from "./smoke-gate.ts";
 import {
+  bankKeysOfHangRole,
   bankPatchesFromHung,
   bindHangRefRoom,
   clipIdOfHangRole,
   continuityReasons,
   doorOfHangRole,
   hangMediaSrc,
+  hangRefKind,
+  hangRefLabel,
   hangRefRole,
   hangRoleOwnsDoor,
   hungOnRole,
@@ -26,6 +29,7 @@ import {
   parseImaginePostUrl,
   poseOfHangRole,
   HANG_REF_LAW,
+  HANG_REF_ROLES,
 } from "./hang-ref.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -44,19 +48,49 @@ function art(partial: Partial<HungArtifact> & Pick<HungArtifact, "id">): HungArt
 
 describe("Hang ref import — roles + Imagine URLs", () => {
   it("maps roles onto spawn|atA|atB and pose SM clip ids", () => {
+    assert.deepEqual([...HANG_REF_ROLES], [
+      "breath-spawn",
+      "breath-A",
+      "breath-B",
+      "walk-A",
+      "walk-B",
+      "walk-A-B",
+      "walk-B-A",
+    ]);
     assert.equal(hangRefRole("walk-A"), "walk-A");
+    assert.equal(hangRefRole("A→B"), "walk-A-B");
+    assert.equal(hangRefRole("walk-ba"), "walk-B-A");
+    assert.equal(hangRefRole("idle-m1"), "breath-A");
     assert.equal(hangRefRole("nope"), "breath-spawn");
+    assert.equal(hangRefKind("breath-A"), "breath");
+    assert.equal(hangRefKind("walk-A-B"), "walk");
+    assert.equal(hangRefLabel("walk-B-A"), "walk B→A");
     assert.equal(poseOfHangRole("breath-spawn"), "spawn");
     assert.equal(poseOfHangRole("walk-A"), "atA");
     assert.equal(poseOfHangRole("walk-B"), "atB");
+    assert.equal(poseOfHangRole("breath-A"), "atA");
+    assert.equal(poseOfHangRole("breath-B"), "atB");
+    assert.equal(poseOfHangRole("walk-A-B"), "atB");
+    assert.equal(poseOfHangRole("walk-B-A"), "atA");
     assert.equal(clipIdOfHangRole("breath-spawn"), "breath-spawn");
     assert.equal(clipIdOfHangRole("walk-A"), "walk-spawn-A");
     assert.equal(clipIdOfHangRole("walk-B"), "walk-spawn-B");
+    assert.equal(clipIdOfHangRole("breath-A"), "breath-A");
+    assert.equal(clipIdOfHangRole("breath-B"), "breath-B");
+    assert.equal(clipIdOfHangRole("walk-A-B"), "walk-A-B");
+    assert.equal(clipIdOfHangRole("walk-B-A"), "walk-B-A");
     assert.equal(doorOfHangRole("walk-B"), "B");
     assert.equal(doorOfHangRole("breath-spawn"), "A");
     assert.equal(hangRoleOwnsDoor("breath-spawn", "A"), false);
     assert.equal(hangRoleOwnsDoor("walk-A", "A"), true);
+    assert.equal(hangRoleOwnsDoor("breath-A", "A"), true);
+    assert.equal(hangRoleOwnsDoor("breath-B", "B"), true);
+    assert.equal(hangRoleOwnsDoor("walk-A-B", "A"), false);
+    assert.equal(hangRoleOwnsDoor("walk-A-B", "B"), false);
+    assert.equal(hangRoleOwnsDoor("walk-B-A", "A"), false);
     assert.equal(hangRoleOwnsDoor(undefined, "A"), true);
+    assert.ok(bankKeysOfHangRole("walk-A-B").includes("m1→m2"));
+    assert.ok(bankKeysOfHangRole("walk-B-A").includes("m2←m1→m1"));
   });
 
   it("accepts grok.com/imagine/post URLs and local/Imagine mp4s", () => {
@@ -114,27 +148,70 @@ describe("Hang ref — Human Hang wins stock shelf", () => {
         hungAt: 4,
         room: bindHangRefRoom("walk-A", { hall: 2, citadel: "cit-1" }),
       }),
+      art({
+        id: "art-breath-a",
+        playlist: ["/films/breath-a-mine.mp4"],
+        hungAt: 5,
+        room: bindHangRefRoom("breath-A", { hall: 2, citadel: "cit-1" }),
+      }),
+      art({
+        id: "art-breath-b",
+        playlist: ["/films/breath-b-mine.mp4"],
+        hungAt: 6,
+        room: bindHangRefRoom("breath-B", { hall: 2, citadel: "cit-1" }),
+      }),
+      art({
+        id: "art-cross-ab",
+        playlist: ["/films/walk-ab-mine.mp4"],
+        hungAt: 7,
+        room: bindHangRefRoom("walk-A-B", { hall: 2, citadel: "cit-1" }),
+      }),
+      art({
+        id: "art-cross-ba",
+        playlist: ["/films/walk-ba-mine.mp4"],
+        hungAt: 8,
+        room: bindHangRefRoom("walk-B-A", { hall: 2, citadel: "cit-1" }),
+      }),
     ];
     const stock = {
       "breath-spawn": "/ui/citadel.mp4?v=aaa",
+      "breath-A": "/ui/citadel.mp4?v=aaa",
+      "breath-B": "/ui/citadel.mp4?v=aaa",
       "walk-spawn-A": "/ui/citadel.mp4?v=aaa",
       "walk-spawn-B": "/ui/citadel.mp4?v=aaa",
+      "walk-A-B": "/ui/citadel.mp4?v=aaa",
+      "walk-B-A": "/ui/citadel.mp4?v=aaa",
     };
     const shelf = overlayHungShelf(stock, hung, 2, "cit-1");
     assert.equal(shelf["breath-spawn"], "/films/breath-mine.mp4");
     assert.equal(shelf["walk-spawn-A"], "/films/walk-mine.mp4");
     assert.equal(shelf["walk-spawn-B"], "/ui/citadel.mp4?v=aaa");
+    assert.equal(shelf["breath-A"], "/films/breath-a-mine.mp4");
+    assert.equal(shelf["breath-B"], "/films/breath-b-mine.mp4");
+    assert.equal(shelf["walk-A-B"], "/films/walk-ab-mine.mp4");
+    assert.equal(shelf["walk-B-A"], "/films/walk-ba-mine.mp4");
     const miss = overlayHungShelf(stock, hung, 1, "cit-1");
     assert.equal(miss["breath-spawn"], "/ui/citadel.mp4?v=aaa");
     assert.equal(hungOnRole(hung, "walk-A", 2, "cit-1")?.id, "art-walk-a");
-    assert.equal(hungOnDoor(hung, "A", 2)?.id, "art-walk-a");
+    assert.equal(hungOnDoor(hung, "A", 2)?.id, "art-breath-a");
     assert.notEqual(hungOnDoor(hung, "A", 2)?.id, "art-breath");
+    assert.notEqual(hungOnDoor(hung, "A", 2)?.id, "art-cross-ba");
+    assert.notEqual(hungOnDoor(hung, "B", 2)?.id, "art-cross-ab");
+    assert.equal(hungOnDoor(hung, "B", 2)?.id, "art-breath-b");
     const refs = hungRefsForHall(hung, 2, "cit-1");
     assert.equal(refs["breath-spawn"]?.pose, "spawn");
     assert.equal(refs["walk-A"]?.pose, "atA");
+    assert.equal(refs["breath-A"]?.pose, "atA");
+    assert.equal(refs["walk-A-B"]?.pose, "atB");
+    assert.equal(refs["walk-B-A"]?.pose, "atA");
     const patches = bankPatchesFromHung(hung, 2, "cit-1");
     assert.ok(patches.some((p) => p.key === "idle-spawn" && p.url === "/films/breath-mine.mp4"));
     assert.ok(patches.some((p) => p.key === "spawn→m1" && p.url === "/films/walk-mine.mp4"));
+    assert.ok(patches.some((p) => p.key === "idle-m1" && p.url === "/films/breath-a-mine.mp4"));
+    assert.ok(patches.some((p) => p.key === "idle-m2" && p.url === "/films/breath-b-mine.mp4"));
+    assert.ok(patches.some((p) => p.key === "m1→m2" && p.url === "/films/walk-ab-mine.mp4"));
+    assert.ok(patches.some((p) => p.key === "m2→m1" && p.url === "/films/walk-ba-mine.mp4"));
+    assert.ok(patches.some((p) => p.key === "m1←spawn→m2" && p.url === "/films/walk-ab-mine.mp4"));
   });
 });
 
@@ -146,6 +223,12 @@ describe("Hang ref — UI + engine wire + README", () => {
     const readme = readFileSync(join(here, "../../README.md"), "utf8");
     assert.match(ask, /export function HangRefSheet/);
     assert.match(ask, /data-hang-ref/);
+    assert.match(ask, /data-hang-role=\{id\}/);
+    assert.match(ask, /data-hang-role-row="breath"/);
+    assert.match(ask, /data-hang-role-row="walk"/);
+    assert.match(ask, /breath-A/);
+    assert.match(ask, /walk-A-B/);
+    assert.match(ask, /walk-B-A/);
     assert.match(vault, /HangRefSheet/);
     assert.match(vault, /hangPlayerRef/);
     assert.match(vault, /data-hang-ref-open/);

@@ -21,10 +21,13 @@ function firstHungUrl(art: Pick<HungArtifact, "playlist" | "still" | "room">): s
   return "";
 }
 
-/** MVP roles. breath-A / breath-B come later — types already accept them. */
-export const HANG_REF_ROLES = ["breath-spawn", "walk-A", "walk-B"] as const;
-export const HANG_REF_LATER = ["breath-A", "breath-B"] as const;
-export const HANG_REF_ALL = [...HANG_REF_ROLES, ...HANG_REF_LATER] as const;
+/** All seven pose-SM refs a player may Hang (mp4 and/or grok.com post URL). */
+export const HANG_REF_BREATH = ["breath-spawn", "breath-A", "breath-B"] as const;
+export const HANG_REF_WALK = ["walk-A", "walk-B", "walk-A-B", "walk-B-A"] as const;
+export const HANG_REF_ROLES = [...HANG_REF_BREATH, ...HANG_REF_WALK] as const;
+/** All roles ship — kept so older imports do not break. */
+export const HANG_REF_LATER = [] as const;
+export const HANG_REF_ALL = HANG_REF_ROLES;
 
 export type HangRefRole = (typeof HANG_REF_ALL)[number];
 export type HangRefPose = CitadelPose;
@@ -49,18 +52,70 @@ const IMAGINE_POST =
 const IMAGINE_CLIP =
   /(?:imgen\.x\.ai|xai-vidgen|xai-video|grok-imagine|\.mp4(\?|$))/i;
 
+const ROLE_ALIAS: Record<string, HangRefRole> = {
+  "breath-spawn": "breath-spawn",
+  spawn: "breath-spawn",
+  breath: "breath-spawn",
+  "idle-spawn": "breath-spawn",
+  "breath-a": "breath-A",
+  "breath-A": "breath-A",
+  "idle-a": "breath-A",
+  "idle-m1": "breath-A",
+  "breath-b": "breath-B",
+  "breath-B": "breath-B",
+  "idle-b": "breath-B",
+  "idle-m2": "breath-B",
+  "walk-a": "walk-A",
+  "walk-A": "walk-A",
+  "walk-spawn-a": "walk-A",
+  "walk-spawn-A": "walk-A",
+  "walk-b": "walk-B",
+  "walk-B": "walk-B",
+  "walk-spawn-b": "walk-B",
+  "walk-spawn-B": "walk-B",
+  "walk-a-b": "walk-A-B",
+  "walk-A-B": "walk-A-B",
+  "walk-ab": "walk-A-B",
+  "a→b": "walk-A-B",
+  "a->b": "walk-A-B",
+  "walk-b-a": "walk-B-A",
+  "walk-B-A": "walk-B-A",
+  "walk-ba": "walk-B-A",
+  "b→a": "walk-B-A",
+  "b->a": "walk-B-A",
+};
+
 export function isHangRefRole(v?: string | null): v is HangRefRole {
   return HANG_REF_ALL.includes(String(v || "") as HangRefRole);
 }
 
 export function hangRefRole(v?: string | null): HangRefRole {
-  return isHangRefRole(v) ? v : "breath-spawn";
+  const raw = String(v || "").trim();
+  if (isHangRefRole(raw)) return raw;
+  const compact = raw.toLowerCase().replace(/\s+/g, "");
+  return ROLE_ALIAS[raw] || ROLE_ALIAS[compact] || ROLE_ALIAS[compact.replace(/->/g, "→")] || "breath-spawn";
 }
 
+export function hangRefKind(role?: string | null): "breath" | "walk" {
+  return hangRefRole(role).startsWith("breath") ? "breath" : "walk";
+}
+
+export function hangRefLabel(role?: string | null): string {
+  const r = hangRefRole(role);
+  if (r === "breath-spawn") return "breath spawn";
+  if (r === "breath-A") return "breath A";
+  if (r === "breath-B") return "breath B";
+  if (r === "walk-A") return "walk A";
+  if (r === "walk-B") return "walk B";
+  if (r === "walk-A-B") return "walk A→B";
+  return "walk B→A";
+}
+
+/** Home pose for breaths; destination pose for walk edges. */
 export function poseOfHangRole(role?: string | null): HangRefPose {
   const r = hangRefRole(role);
-  if (r === "walk-A" || r === "breath-A") return "atA";
-  if (r === "walk-B" || r === "breath-B") return "atB";
+  if (r === "walk-A" || r === "breath-A" || r === "walk-B-A") return "atA";
+  if (r === "walk-B" || r === "breath-B" || r === "walk-A-B") return "atB";
   return "spawn";
 }
 
@@ -69,6 +124,8 @@ export function clipIdOfHangRole(role?: string | null): PoseClipId {
   const r = hangRefRole(role);
   if (r === "walk-A") return "walk-spawn-A";
   if (r === "walk-B") return "walk-spawn-B";
+  if (r === "walk-A-B") return "walk-A-B";
+  if (r === "walk-B-A") return "walk-B-A";
   if (r === "breath-A") return "breath-A";
   if (r === "breath-B") return "breath-B";
   return "breath-spawn";
@@ -79,19 +136,34 @@ export function bankKeyOfHangRole(role?: string | null): string {
   const r = hangRefRole(role);
   if (r === "walk-A") return "spawn→m1";
   if (r === "walk-B") return "spawn→m2";
+  if (r === "walk-A-B") return "m1→m2";
+  if (r === "walk-B-A") return "m2→m1";
   if (r === "breath-A") return "idle-m1";
   if (r === "breath-B") return "idle-m2";
   return "idle-spawn";
 }
 
-/** Door bind for Hang A/B. Spawn breath is hall-keyed, not a third door. */
+/** Extra bank aliases so clipFor / via keys also take Human Hang. */
+export function bankKeysOfHangRole(role?: string | null): string[] {
+  const r = hangRefRole(role);
+  const key = bankKeyOfHangRole(r);
+  if (r === "walk-A") return [key, "spawn←start→m1"];
+  if (r === "walk-B") return [key, "spawn←start→m2"];
+  if (r === "walk-A-B") return [key, "m1←spawn→m2", "m1←m2→m2"];
+  if (r === "walk-B-A") return [key, "m2←spawn→m1", "m2←m1→m1"];
+  if (r === "breath-A") return [key, "idle-m1←spawn"];
+  if (r === "breath-B") return [key, "idle-m2←spawn"];
+  return [key];
+}
+
+/** Door bind for Hang A/B. Spawn breath and A↔B crosses are hall-keyed, not a third door. */
 export function doorOfHangRole(role?: string | null): "A" | "B" {
   const r = hangRefRole(role);
-  if (r === "walk-B" || r === "breath-B") return "B";
+  if (r === "walk-B" || r === "breath-B" || r === "walk-A-B") return "B";
   return "A";
 }
 
-/** Door-chunk hang — walk/breath-A/B only. breath-spawn must not steal door A. */
+/** Door-chunk hang — walk/breath-A/B only. Spawn breath and A↔B must not steal a door. */
 export function hangRoleOwnsDoor(role: string | null | undefined, door: "A" | "B"): boolean {
   if (!isHangRefRole(role)) return true;
   if (door === "A") return role === "walk-A" || role === "breath-A";
@@ -257,7 +329,9 @@ export function bankPatchesFromHung(
   for (const role of HANG_REF_ALL) {
     const hit = refs[role];
     if (!hit?.url) continue;
-    out.push({ key: bankKeyOfHangRole(role), url: hit.url, role });
+    for (const key of bankKeysOfHangRole(role)) {
+      out.push({ key, url: hit.url, role });
+    }
   }
   return out;
 }
@@ -282,7 +356,7 @@ export function bindHangRefRoom(
 
 export const HANG_REF_LAW = [
   "Hang import: local mp4 or grok.com/imagine/post URL as room refs.",
-  "Roles: breath-spawn, walk-A, walk-B (later breath-A/B). Keyed spawn|atA|atB.",
-  "Human Hang wins stock on the pose SM / plate graph.",
+  "Roles: breath-spawn, breath-A, breath-B, walk-A, walk-B, walk-A-B, walk-B-A. Keyed spawn|atA|atB.",
+  "Breaths loop at poses; walks are edges. Human Hang wins stock on the pose SM / plate graph.",
   "9:16 preferred. Continuity FAIL + KEEP = flag only — SmiR Hang wins.",
 ] as const;

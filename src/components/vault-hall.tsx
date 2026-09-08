@@ -6,6 +6,7 @@ import {
   bindHangRefRoom,
   hangMediaSrc,
   hangRefFlags,
+  hangRefKind,
   hangRefRole,
   isContinuityOnlyFail,
   isHangMediaUrl,
@@ -353,7 +354,7 @@ export function VaultHall() {
       return;
     }
     const role = hangRefRole(refRole);
-    const kind = role.startsWith("breath") ? "breath" : "walk";
+    const kind = hangRefKind(role);
     const smoke = lintSmoke({
       kind,
       when: "hang",

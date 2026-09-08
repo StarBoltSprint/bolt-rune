@@ -14,7 +14,7 @@ import {
   swallowOpeningTap,
   type HangDoorAct,
 } from "@/game/hang-ask";
-import { hangRefRole, type HangRefRole, HANG_REF_ROLES } from "@/game/hang-ref";
+import { hangRefLabel, hangRefRole, poseOfHangRole, type HangRefRole, HANG_REF_BREATH, HANG_REF_WALK } from "@/game/hang-ref";
 import { type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import { press } from "@/lib/press";
 
@@ -638,10 +638,14 @@ export function HangAskSheet({
   );
 }
 
-const ROLE_LABEL: Record<(typeof HANG_REF_ROLES)[number], string> = {
-  "breath-spawn": "breath",
-  "walk-A": "walk A",
-  "walk-B": "walk B",
+const ROLE_CHIP: Record<HangRefRole, string> = {
+  "breath-spawn": "spawn",
+  "breath-A": "A",
+  "breath-B": "B",
+  "walk-A": "A",
+  "walk-B": "B",
+  "walk-A-B": "A→B",
+  "walk-B-A": "B→A",
 };
 
 /** Import player mp4 / Imagine post as a room ref. Citadel → Room → role (≤3 beats). */
@@ -752,18 +756,37 @@ export function HangRefSheet({
                 <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/40">
                   {flag || (media ? "9:16 preferred · Hang wins stock" : "mp4 or grok.com/imagine/post")}
                 </p>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {HANG_REF_ROLES.map((id) => (
-                    <StillChip
-                      key={id}
-                      tone={role === id ? "ice" : "quiet"}
-                      data-hang-role={id}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      {...press(() => onRole(hangRefRole(id)))}
-                    >
-                      {ROLE_LABEL[id]}
-                    </StillChip>
-                  ))}
+                <div className="flex flex-col items-center gap-1.5" data-hang-roles="">
+                  <div className="flex flex-wrap items-center justify-center gap-1.5" data-hang-role-row="breath">
+                    <span className="font-mono text-[8px] uppercase tracking-[0.16em] text-white/35">breath</span>
+                    {HANG_REF_BREATH.map((id) => (
+                      <StillChip
+                        key={id}
+                        tone={role === id ? (poseOfHangRole(id) === "atB" ? "gold" : "ice") : "quiet"}
+                        data-hang-role={id}
+                        className="min-h-9 px-3"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        {...press(() => onRole(hangRefRole(id)))}
+                      >
+                        {ROLE_CHIP[id]}
+                      </StillChip>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-1.5" data-hang-role-row="walk">
+                    <span className="font-mono text-[8px] uppercase tracking-[0.16em] text-white/35">walk</span>
+                    {HANG_REF_WALK.map((id) => (
+                      <StillChip
+                        key={id}
+                        tone={role === id ? (poseOfHangRole(id) === "atB" ? "gold" : "ice") : "quiet"}
+                        data-hang-role={id}
+                        className="min-h-9 px-3"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        {...press(() => onRole(hangRefRole(id)))}
+                      >
+                        {ROLE_CHIP[id]}
+                      </StillChip>
+                    ))}
+                  </div>
                 </div>
                 <div className="flex flex-wrap justify-center gap-2">
                   <StillChip
@@ -798,7 +821,7 @@ export function HangRefSheet({
                   >
                     Hang
                     <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/45">
-                      {ROLE_LABEL[role === "breath-A" || role === "breath-B" ? "breath-spawn" : role]} · room {picked}
+                      {hangRefLabel(role)} · room {picked}
                     </span>
                   </StillChip>
                 </div>
