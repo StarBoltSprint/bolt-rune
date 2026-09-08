@@ -201,7 +201,7 @@ describe("PCG role-WFC — cook / bone hook + Asteroid HOLD", () => {
     assert.match(wfc, /forceDecay/);
     assert.match(wfc, /pcgHash/);
     assert.match(wfc, /Asteroid HOLD/);
-    assert.doesNotMatch(wfc, /Imagine invent|free-text/);
+    assert.doesNotMatch(wfc, /chat\.completions|startCookPlate|citadelPrompt/);
     assert.match(cook, /assembleCookPlate/);
     assert.match(lib, /cooked\.wfc\?\.stock/);
     assert.match(lib, /runSeed: data\.runSeed/);
