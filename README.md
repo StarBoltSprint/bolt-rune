@@ -42,6 +42,14 @@ Every Imagine plate is two layers: **rails** (terminals — camera, Bolt, lens, 
 
 **Online + tap-as-observe** is required so miss/idle can kill a peak already in the future domain — otherwise the EDPCG curve lies. Before Play: window bans, collapse cell 0 to calm|breath, propagate. After plate `i`, `applyTapObserve(strip, i, tap, m, pictureTime)` bans what the act forbids (miss → peak off i+1 and i+2 + decay boost; idle → peak+fork off i+1; clean + m≥τ + picture-time in the peak window → keep peak). Then `advanceOnline` observes the lowest-entropy uncollapsed cell (prefer i+1 if tied) and propagates. Picture-time is the sum of played plate durations — never `Date.now()`. Partial cook: Imagine only for a confirmed (collapsed) plate. Live empty i+1 → force decay; if decay is banned → breath stock; never pause the picture.
 
+## PCG chunk library
+
+A chunk is a **trusted prefab film**. PCG places it on door A/B and does not invent pixels inside. Catalog biomes are the starter shelf (`chunk-{biome}`: still, optional loop, acts breath / walkA / walkB, walkSecs 6|10|15, pins A/B, laws RAILS). Tags: biome, door-handed, pose, energy, identity. Hung forge artifact wins over the seeded pick. Same hall A+B share a biome; biome hop only on enter.
+
+PCG chooses only: which chunk on A/B, `walkSecs` by phase, whether a bridge is needed, and `library.pick(hash(s, room, door), filter)`.
+
+**Bridge stitch** — Imagine only when two chunks must touch and poses mismatch. Start last frame of A, end still of B, act `enter` | `walk-across`, 6–8s, rails locked. Enter is illegal without a bridge clip or a named stock pair. Cook on confirm / Forge / ticket only. Cache key `H(s, fromId, toId, act)` hooks rail 2 (`lookupEnterClip` / `replaceStockEnter`). No bridge → breath on door. Credits: stock walk 0, remix hang 0, first stitch 1 ticket, replay cache 0. Lint chunks with the prompt rails linter. Asteroid HOLD. No Pack seats expansion.
+
 ## Hall seats (SmiR pack)
 
 SmiR's own film-team bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Door, Smoke, Cook, Continuity. Not a side chat, not Connect Wallet, not freebots.lol, not a permanent bottom row. Asteroid HOLD.

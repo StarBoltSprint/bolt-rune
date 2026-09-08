@@ -2,6 +2,7 @@
  * PCG rail 1 — run seed, plate / enter hashes, clip cache.
  * PCG rail 2 — enter-ready glow, hot-path enter never Imagines, Hall′ after clip.
  * PCG rail 3 — graph grammar pins live in pcg-grammar.ts (seed + momentum).
+ * Chunk bridge keys H(s, fromId, toId, act) live in pcg-chunk.ts and hook this cache.
  * Asteroid HOLD. No Imagine on walk-toward-door speculation.
  */
 
@@ -24,6 +25,10 @@ export type EnterLookup = {
   from: string;
   to: string;
   door: string;
+  /** Chunk-to-chunk stitch. Cache key H(s, fromId, toId, act) when both ids set. */
+  fromId?: string;
+  toId?: string;
+  act?: "enter" | "walk-across";
 };
 
 export type EnterClipHit = {
@@ -139,6 +144,11 @@ export function plateSeed(s: string, i: number, act: string, biome: string): str
 /** Enter seed `s_enter = H(s, i, enter, from, to, door)`. */
 export function enterSeed(s: string, i: number, from: string, to: string, door: string): string {
   return pcgHash([s, Math.round(Number(i) || 0), "enter", from, to, door]);
+}
+
+/** Chunk bridge seed `s_bridge = H(s, fromId, toId, act)`. */
+export function bridgeSeed(s: string, fromId: string, toId: string, act = "enter"): string {
+  return pcgHash([s, fromId, toId, act]);
 }
 
 /** Rail 1+2: plate / enter / forge / enter-confirm. Walk-toward-door and enter-hot never Imagine. */
@@ -282,8 +292,15 @@ export function enterCacheKey(opts: EnterLookup): string {
   return enterSeed(String(opts.s || ""), Number(opts.i) || 0, opts.from, opts.to, opts.door);
 }
 
-/** Cache hit by `s_enter`, else stock bridge. Never starts Imagine. */
+/** Cache hit by chunk pair H(s, fromId, toId, act), else `s_enter`, else stock. Never starts Imagine. */
 export function lookupEnterClip(opts: EnterLookup): EnterClipHit {
+  if (opts.fromId && opts.toId) {
+    const bkey = bridgeSeed(String(opts.s || ""), opts.fromId, opts.toId, opts.act || "enter");
+    const bridged = bkey ? reuseClipBeforeRecook(bkey) : "";
+    if (bridged) return { key: bkey, url: bridged, source: "cache" };
+    const pair = stockBridge(opts.fromId, opts.toId);
+    if (pair) return { key: bkey, url: pair, source: "stock" };
+  }
   const key = enterCacheKey(opts);
   const cached = key ? reuseClipBeforeRecook(key) : "";
   if (cached) return { key, url: cached, source: "cache" };
