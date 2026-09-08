@@ -14,6 +14,8 @@ import { boltBack, locFromHash, pushBolt, readBolt } from "@/lib/bolt-history";
 import { boltFull } from "@/lib/press";
 import { sfxForge, startBed, unlockAudio } from "@/game/audio";
 import { RuneEngine } from "@/components/rune-engine";
+import { beginRunSeed, clipCachePut, mayImagine, plateSeed, reuseClipBeforeRecook } from "@/game/pcg-rail";
+import { lastPlay } from "@/game/rune-session";
 
 type Plate = { status: "wait" | "cook" | "ready" | "fail"; url?: string };
 type Gate = "rifts" | "howl" | "world" | "studio" | "cook" | "rune";
@@ -665,6 +667,35 @@ export function CookStudio({
         }
       }
       mark(0, { status: "cook" });
+      const act = ACTS[0];
+      const run = beginRunSeed(lastPlay()?.id || "cook", undefined);
+      const plateKey = plateSeed(run, 0, act.id, cookBiome);
+      const cached = reuseClipBeforeRecook(plateKey);
+      if (cached) {
+        const playable = biomeReadySrc([cached], cookBiome);
+        got.push(playable);
+        mark(0, { status: "ready", url: playable });
+        hangNow(got);
+        watchI.current = 0;
+        setWatch(playable);
+        pace.n = 100;
+        setPct(100);
+        setFrameHint("");
+        setFrost("MP4 ready · touch the path to enter");
+        writeCookReady({
+          biome: cookBiome,
+          urls: got,
+          watch: playable,
+          still: stillUrl || still,
+          frost: "MP4 ready · touch the path to enter",
+        });
+        return;
+      }
+      if (!mayImagine("plate")) {
+        mark(0, { status: "fail" });
+        setFrost("No cached plate · Imagine held");
+        return;
+      }
       bump(Math.max(pace.n, 18), 32, "Imagine is forging");
       let landed = false;
       let failLine = "";
@@ -760,6 +791,7 @@ export function CookStudio({
           }
           if (polled.status === "done" && polled.url) {
             const playable = biomeReadySrc([polled.url, ...got], cookBiome);
+            clipCachePut(plateKey, playable, "plate");
             got.push(playable);
             mark(0, { status: "ready", url: playable });
             hangNow(got);

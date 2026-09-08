@@ -4,6 +4,7 @@ import { unbindDroppedHalls } from "@/game/artifacts.ts";
 import { dropHangPending, writeHangFloor } from "@/game/hang-ask.ts";
 import { dropCitadel, dropGuestCitadel, getCitadel, getGuestCitadel, listCitadels, listGuestCitadels, putCitadel, putGuestCitadel } from "@/lib/citadel-cloud";
 import { preferHalls } from "@/game/play-frame.ts";
+import { hydrateClipCache, isRunSeed, mergeClipCache, packClipCache } from "@/game/pcg-rail.ts";
 
 const DB = "bolt-rune-sessions";
 const TABLE = "sessions";
@@ -117,6 +118,10 @@ export type RuneSession = RuneSessionMeta & {
   next?: { m1?: string; m2?: string };
   rift?: { m1?: RiftGate; m2?: RiftGate };
   halls?: HallSlice[];
+  /** PCG rail 1 run seed `s`. New citadel / Play mint it; Keep persists it. */
+  seed?: string;
+  /** Clip cache keyed by `s_i` / `s_enter` — reuse before recook. */
+  clips?: Record<string, string>;
 };
 
 function openDb(): Promise<IDBDatabase> {
@@ -830,6 +835,8 @@ function lightOf(session: RuneSession): RuneSession {
     bank: packBankClips(session.bank, true),
     rift: keepRift(session.rift),
     halls: keepHalls(session.halls),
+    seed: isRunSeed(session.seed) ? session.seed : undefined,
+    clips: packClipCache(session.clips),
   };
 }
 
@@ -847,6 +854,8 @@ function packOf(session: RuneSession): RuneSession {
     bank: packBankClips(session.bank, true),
     rift: keepRift(session.rift),
     halls: keepHalls(session.halls, true),
+    seed: isRunSeed(session.seed) ? session.seed : undefined,
+    clips: packClipCache(session.clips),
   };
 }
 
@@ -928,6 +937,8 @@ export function saveSessionSync(session: RuneSession): RuneSessionMeta {
     hall: packed.hall || kept.hall,
     title: packed.title || kept.title,
     halls: preferHalls(packed.halls, kept.halls),
+    seed: packed.seed || kept.seed,
+    clips: mergeClipCache(kept.clips, packed.clips),
     updated: Math.max(packed.updated || 0, kept.updated || 0, Date.now()),
   };
   merged.rooms = roomCap(merged);
@@ -1017,6 +1028,7 @@ export async function loadSession(id: string): Promise<RuneSession | null> {
   }
   const best = found.length ? found.reduce((a, b) => pickSession(a, b)) : undefined;
   if (!best?.id || loadCitadelGone(best.id)) return null;
+  if (best.clips) hydrateClipCache(best.clips);
   saveSessionSync(best);
   return best;
 }

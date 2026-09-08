@@ -111,6 +111,15 @@ import {
   type CitadelStart,
   type RiftGate,
 } from "@/game/rune-session";
+import {
+  beginRunSeed,
+  clipCachePut,
+  clipCacheSnapshot,
+  enterSeed,
+  hydrateClipCache,
+  mayImagine,
+  reuseClipBeforeRecook,
+} from "@/game/pcg-rail";
 import { BootScreen } from "@/components/citadel-hub";
 import { HangAskSheet, HangCitadelStrip, HangRoomStrip } from "@/components/hang-ask";
 import { HANG_LEFTOVER_SWALLOW_MS, hangActEnters, hangBindHall, hangDoorAct, readHangPending, swallowOpeningTap, takeHangPending, writeHangPending } from "@/game/hang-ask";
@@ -738,6 +747,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const needRoomRef = useRef(true);
   const refsMap = useRef(new Map<string, string>());
   const sid = useRef(newSessionId());
+  const seedHold = useRef("");
   const startHold = useRef("");
   const hallKeep = useRef(
     boot?.kind === "session" ? firstStill([peekLivePlay(boot.id)?.plate, recallHall(boot.id)]) : "",
@@ -965,6 +975,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       refs: extra?.refs ?? refsHold.current,
       wish: worldHold.current.slice(0, 280),
       bank: extra?.bank ?? [...bank.current].map(([key, v]) => ({ key, url: v.url, end: v.end, start: v.start })),
+      seed: extra?.seed ?? (seedHold.current || undefined),
+      clips: extra?.clips ?? clipCacheSnapshot(),
       ...extra,
     };
     if (!snap.id) snap.id = newSessionId();
@@ -1679,6 +1691,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function prefetchFrom(from: string, prefer?: string | null) {
+    /* PCG rail 1: warm existing clips only. No Imagine on walk-toward-door speculation. */
+    if (mayImagine("walk-toward-door")) return;
     const hid = hidFilm();
     const vis = visFilm();
     const next = prefer || otherFrom(from);
@@ -2362,16 +2376,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       lastPose.current,
     );
     let clip = clipFor(at, id);
-    /* Load / Play: sealed bank walks play. Imagine only if the clip is truly missing. */
+    /* Load / Play: sealed bank walks play. No Imagine on walk-toward-door speculation. */
     if (!sealedWalkPlayable(clip)) {
       const stock = stockDoorWalk(at, id);
-      if (stock && !seed) {
+      if (stock && (!clip?.url || !walkClipHoldsSeed(clip, seed))) {
         clip = clip || stock;
         bank.current.set(`${at}→${id}`, stock);
-      } else if (!clip?.url) {
-        setFrost(`cook · ${at} → ${id}`);
-        clip = (await forgeWalkNow(at, id)) || clip;
-      } else if (!walkClipHoldsSeed(clip, seed)) {
+      } else if (mayImagine("walk-toward-door")) {
         setFrost(`cook · ${at} → ${id}`);
         clip = (await forgeWalkNow(at, id)) || clip;
       }
@@ -3959,12 +3970,21 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setLoadName("enter");
       setLoadPct(6);
       setStageSrc(enterSrc);
-      setBeat("cook");
-      beatRef.current = "cook";
-      setFrost("enter · last frame room 1 → room 2");
-      sfxForge("cook");
-      let enterUrl = await cookFilm(enterSrc, enterHallPrompt(enterSide, worldHold.current), [hallStill], "enter", 6);
-      if (!enterUrl) enterUrl = await cookFilm(enterSrc, enterHallPrompt(enterSide, worldHold.current), [hallStill], "enter retry", 6);
+      const enterDoor = enterSide === "RIGHT" ? "B" : "A";
+      const enterFrom = viaHold.current || (enterSide === "RIGHT" ? "m2" : "m1");
+      const enterKey = enterSeed(seedHold.current || beginRunSeed(sid.current), hallHold.current, enterFrom, "spawn", enterDoor);
+      let enterUrl = reuseClipBeforeRecook(enterKey);
+      if (enterUrl) {
+        clipCachePut(enterKey, enterUrl, "enter");
+      } else if (mayImagine("enter")) {
+        setBeat("cook");
+        beatRef.current = "cook";
+        setFrost("enter · last frame room 1 → room 2");
+        sfxForge("cook");
+        enterUrl = await cookFilm(enterSrc, enterHallPrompt(enterSide, worldHold.current), [hallStill], "enter", 6);
+        if (!enterUrl) enterUrl = await cookFilm(enterSrc, enterHallPrompt(enterSide, worldHold.current), [hallStill], "enter retry", 6);
+        if (enterUrl) clipCachePut(enterKey, enterUrl, "enter");
+      }
       if (!enterUrl) {
         setFrost("enter failed · tap retry");
         setLoadPct(0);
@@ -4467,8 +4487,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setPhase("refs");
     phaseRef.current = "refs";
     const kit = [hall, bolt, start].filter(Boolean);
-    let url = await cookFilm(start, enterHallPrompt(side, worldHold.current), kit, "enter", 6);
-    if (!url) url = await cookFilm(start, enterHallPrompt(side, worldHold.current), kit, "enter retry", 6);
+    const enterDoor = side === "RIGHT" ? "B" : "A";
+    const enterFrom = viaHold.current || (side === "RIGHT" ? "m2" : "m1");
+    const enterKey = enterSeed(seedHold.current || beginRunSeed(sid.current), hallHold.current, enterFrom, "spawn", enterDoor);
+    let url = reuseClipBeforeRecook(enterKey);
+    if (!url && mayImagine("enter")) {
+      url = await cookFilm(start, enterHallPrompt(side, worldHold.current), kit, "enter", 6);
+      if (!url) url = await cookFilm(start, enterHallPrompt(side, worldHold.current), kit, "enter retry", 6);
+    }
+    if (url) clipCachePut(enterKey, url, "enter");
     if (!url) return null;
     setFilmUrl(url);
     setBeat("playvid");
@@ -5555,6 +5582,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     loadGen.current += 1;
     stopFilm();
     sid.current = s.id;
+    seedHold.current = beginRunSeed(s.id, s.seed);
+    if (s.clips) hydrateClipCache(s.clips);
     playing.current = false;
     queued.current = null;
     liveForge.current = false;
@@ -5807,8 +5836,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     void dropSession(id).then(() => setHub(listSessions()));
   }
 
-  /** Background Imagine recook of the 6 room clips. Never steals beat — stock stays tapable. */
+  /** Background recook of the 6 room clips. Rail 1: no Imagine on walk-toward-door speculation. */
   async function cookRoomQuiet() {
+    if (!mayImagine("walk-toward-door")) return;
     if (quietCook.current || dead.current) return;
     quietCook.current = true;
     const first = pathFirst.current || "m1";
@@ -5864,6 +5894,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       setLiveHall(hungLive);
     }
     titleHold.current = titleHold.current || "Citadel";
+    seedHold.current = beginRunSeed(sid.current);
     const doors = plannedObjects(2).map((o) => ({ id: o.id, name: o.name, x: o.x, y: o.y }));
     setWant(2);
     wantRef.current = 2;
@@ -5926,6 +5957,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       hall: hallHold.current,
       rift: restored.m1 || restored.m2 ? restored : undefined,
       refs,
+      seed: seedHold.current,
+      clips: clipCacheSnapshot(),
     });
     markLivePlay(sid.current, SPAWN.id, HALL_STILL);
     holdIdle();
