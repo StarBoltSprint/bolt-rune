@@ -32,6 +32,8 @@ import { playableClipSrc, stockBiomeLoop, warmClip } from "@/game/play-clip";
 import { HazardLayer } from "@/components/hazard-layer";
 import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt, holdDoorLoops, holdLoopSeam, holdPlateStuck, holdPlateUnderrun, hungBiomePlaylist, hungStageChrome, shouldHoldBiome, sprintHallDoor, stagePlateMustLoad } from "@/game/enter-graph";
 import { doorAtPoint, isHallFilm, isLivingHallLoop } from "@/game/stock-room";
+import { afterPlate, beginOnline, pictureTimeFromPlates, type OnlineStrip, type TapObserve } from "@/game/pcg-wfc";
+import { readRunSeed } from "@/game/pcg-rail";
 
 export type RunResult = {
   score: number;
@@ -176,6 +178,9 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   const offsetRef = useRef(0);
   const plateRef = useRef(0);
   const platesRef = useRef<string[]>([]);
+  const wfcRef = useRef<OnlineStrip | null>(null);
+  const wfcPlayed = useRef<number[]>([]);
+  const plateTap = useRef({ miss: 0, hit: 0, late: 0 });
   const hallFlagsRef = useRef<boolean[]>([]);
   const advancing = useRef(false);
   const laneRef = useRef<0 | 1>(0);
@@ -427,6 +432,9 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     const keep = holdDoor ? hungBiomePlaylist(raw) : raw.filter((u) => !isLivingHallLoop(u));
     const list = (keep.length ? keep : holdDoor ? hungBiomePlaylist(raw) : raw).map((u) => playableClipSrc(localizeClip(u)) || localizeClip(u));
     platesRef.current = list.slice();
+    wfcRef.current = beginOnline({ s: readRunSeed() || "s0", n: Math.max(5, list.length || 6), momentum: 0.7 });
+    wfcPlayed.current = [];
+    plateTap.current = { miss: 0, hit: 0, late: 0 };
     hallFlagsRef.current = list.map((u) => isHallFilm(u) || Boolean(sprintHallDoor(u, 0.22, 0.42)));
     const startI = holdDoor ? firstBiomePlate(list) : 0;
     plateRef.current = startI;
@@ -789,6 +797,24 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     return offsetRef.current + (advancing.current ? 0 : ct);
   }
 
+  function plateTapKind(): TapObserve {
+    const t = plateTap.current;
+    if (t.miss > 0) return "miss";
+    if (t.hit > 0) return "hit";
+    if (t.late > 0) return "late";
+    return "idle";
+  }
+
+  function observePlateTap(i: number, durationMs: number) {
+    const live = wfcRef.current;
+    if (!live) return;
+    wfcPlayed.current[i] = Math.max(0, Number(durationMs) || live.wave.plateSecs * 1000);
+    const pictureTime = pictureTimeFromPlates(wfcPlayed.current.slice(0, i + 1));
+    const m = Math.min(1, Math.max(0, gRef.current.resonance));
+    wfcRef.current = afterPlate(live, i, plateTapKind(), m, pictureTime);
+    plateTap.current = { miss: 0, hit: 0, late: 0 };
+  }
+
   function goNextPlate() {
     const list = (platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || [])).map((u) => playableClipSrc(localizeClip(u)) || localizeClip(u));
     const cur = videoRef.current;
@@ -801,6 +827,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     advancing.current = true;
     swapLock.current = performance.now() + 700;
     const add = cur.duration && Number.isFinite(cur.duration) && cur.duration > 1 ? cur.duration : 10;
+    observePlateTap(i, add * 1000);
     const nextI = i + 1;
     skipAcc.current = 0;
     const nextUrl = list[nextI];
@@ -942,6 +969,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     }
     if (g.resolved) return;
     g.resolved = true;
+    plateTap.current.miss += 1;
     g.miss += 1;
     g.combo = 0;
     g.streakMiss += 1;
@@ -977,14 +1005,17 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       word = "perfect";
       pts = 320;
       g.perfect += 1;
+      plateTap.current.hit += 1;
       g.trauma = Math.min(1, g.trauma + 0.22);
     } else if (err <= greatCut) {
       word = "great";
       pts = 210;
       g.great += 1;
+      plateTap.current.hit += 1;
       g.trauma = Math.min(1, g.trauma + 0.12);
     } else {
       g.good += 1;
+      plateTap.current.late += 1;
     }
     g.resolved = true;
     g.combo += 1;

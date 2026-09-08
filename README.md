@@ -36,6 +36,12 @@ Citadel is a graph, not a map. A grammar grows **pins** from run seed `s` + mome
 
 Every Imagine plate is two layers: **rails** (terminals — camera, Bolt, lens, chrome ban, gold-cyan path; never sampled) then **slots** (biome / act / fork / trail / floor / leftover / fromTo / still / destStill / seed) from tiny enums only. `assemblePrompt(slots)` fills the template; the linter checksums rails, blocks morph / banned flavor / missing lock, and fails → stock, no Imagine. Player voice maps Rome→ember, Mars→asteroid, space→asteroid, or one short flavor clause — never camera or body. Graph pins stay in `pcg-grammar.ts` (rail 3). Asteroid HOLD. No Pack seats expansion.
 
+## PCG role-WFC
+
+1D time-strip of plate-roles — not a 2D map, not STWFC T×Y×X. WFC collapses the ~60s bone (5–8 plates). Neighbors are **time**. Roles (`calm | lean-L | lean-R | fork | peak | decay | breath | enter`) unlock prompt slots only; never free-text Imagine. Quiet 0–8s cannot be peak|enter. Peak only if t≥45s and momentum ≥ τ. Trail never jumps none→full. Contradiction → decay + stock, never a spinner. Every sample is `H(s, cell, observe)`. Offline New Citadel preview may still `collapseStrip` from 0 with seed `s`. Asteroid HOLD. No Pack seats.
+
+**Online + tap-as-observe** is required so miss/idle can kill a peak already in the future domain — otherwise the EDPCG curve lies. Before Play: window bans, collapse cell 0 to calm|breath, propagate. After plate `i`, `applyTapObserve(strip, i, tap, m, pictureTime)` bans what the act forbids (miss → peak off i+1 and i+2 + decay boost; idle → peak+fork off i+1; clean + m≥τ + picture-time in the peak window → keep peak). Then `advanceOnline` observes the lowest-entropy uncollapsed cell (prefer i+1 if tied) and propagates. Picture-time is the sum of played plate durations — never `Date.now()`. Partial cook: Imagine only for a confirmed (collapsed) plate. Live empty i+1 → force decay; if decay is banned → breath stock; never pause the picture.
+
 ## Hall seats (SmiR pack)
 
 SmiR's own film-team bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Door, Smoke, Cook, Continuity. Not a side chat, not Connect Wallet, not freebots.lol, not a permanent bottom row. Asteroid HOLD.
