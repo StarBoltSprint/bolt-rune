@@ -24,6 +24,10 @@ Stock sprint mp4s are not in this tree (too heavy). Stills, UI, and Imagine CDN 
 
 New citadel / Play mint a run seed `s` and Keep persists it with the citadel. Plate clips key as `s_i = H(s, i, act, biome)`. Enter clips key as `s_enter = H(s, i, enter, from, to, door)`. The clip cache reuses those keys before any Imagine recook. Walk-toward-door speculation never calls Imagine. Asteroid HOLD.
 
+## PCG rail 2
+
+Door glow in the picture: **walk-ready** (tap to walk) vs **enter-ready** (second, faster pulse) only when `s_enter` is a cache hit or a stock bridge exists for that from→to pair. No enter-ready pulse → double-tap stays idle/breath and never calls Imagine. Double-tap / enter plays the cached clip or stock only. Graph commits Hall′ only after that clip exists (PASS). Paid enter cook is an explicit Forge / ticket confirm — never walk-toward-door. Stock enter mp4s are not shipped; `registerStockBridge` is the library hook (play stock or refuse, never spin). Asteroid HOLD. No Pack seats expansion.
+
 ## Hall seats (SmiR pack)
 
 SmiR's own film-team bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Door, Smoke, Cook, Continuity. Not a side chat, not Connect Wallet, not freebots.lol, not a permanent bottom row. Asteroid HOLD.
