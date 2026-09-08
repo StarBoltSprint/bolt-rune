@@ -174,12 +174,26 @@ describe("Smoke ship-gate — local lint", () => {
 
 describe("Smoke ship-gate — optional bot", () => {
   it("timeout FAIL", async () => {
+    const hung: typeof fetch = (_url, init) =>
+      new Promise((_, reject) => {
+        const signal = init?.signal;
+        const boom = () => {
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          reject(err);
+        };
+        if (signal?.aborted) {
+          boom();
+          return;
+        }
+        signal?.addEventListener("abort", boom);
+      });
     const bot = await hopSmokeBot(
       { seat: "smoke", source: "lint", text: "walk" },
       {
         wakeUrl: "https://smoke.example/wake",
         timeoutMs: 40,
-        fetch: () => new Promise(() => {}),
+        fetch: hung,
       },
     );
     assert.equal(bot.smoke, "FAIL");
@@ -192,7 +206,9 @@ describe("Smoke ship-gate — optional bot", () => {
     const gate = await runSmokeGate(goodWalk({ cues: [{ side: "A", on: 3, off: 3.1, kind: "walk" }] }), {
       wakeUrl: "https://smoke.example/wake",
       timeoutMs: 40,
-      fetch: () => new Promise(() => {}),
+      fetch: () => {
+        throw new Error("bot should not hop after local FAIL");
+      },
     });
     assert.equal(gate.smoke, "FAIL");
     assert.ok(gate.reasons.includes("cue-window"));
@@ -225,7 +241,7 @@ describe("Smoke ship-gate — engine hook + Door seat untouched", () => {
     const studio = readFileSync(join(here, "../components/cook-studio.tsx"), "utf8");
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     assert.match(gate, /export function lintSmoke/);
-    assert.match(gate, /export function runSmokeGate/);
+    assert.match(gate, /export async function runSmokeGate/);
     assert.match(gate, /RAILS_VERSION = "bolt-1"/);
     assert.match(gate, /Asteroid HOLD/);
     assert.match(gate, /Door seat stays talk-only/);

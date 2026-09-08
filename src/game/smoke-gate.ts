@@ -499,13 +499,30 @@ export async function hopSmokeBot(brief: SmokeBotBrief, opts: SmokeHopOpts = {})
   if (!wakeUrl) return { smoke: "PASS", reasons: [] };
   const timeoutMs = Math.max(20, num(opts.timeoutMs) || SMOKE_BOT_TIMEOUT_MS);
   const fetchImpl = opts.fetch || fetch;
+  const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const res = await fetchImpl(wakeUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(brief),
-      signal: AbortSignal.timeout(timeoutMs),
+    const hop = Promise.resolve(
+      fetchImpl(wakeUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(brief),
+        signal: ctrl?.signal,
+      }),
+    );
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        try {
+          ctrl?.abort();
+        } catch {
+          /* */
+        }
+        const err = new Error("timeout");
+        err.name = "TimeoutError";
+        reject(err);
+      }, timeoutMs);
     });
+    const res = await Promise.race([hop, timeout]);
     const text = await res.text();
     let parsed: unknown = text;
     try {
@@ -517,10 +534,10 @@ export async function hopSmokeBot(brief: SmokeBotBrief, opts: SmokeHopOpts = {})
     if (!bot) return failSmoke(["unparseable-bot"]);
     if (!bot.pass) return failSmoke(bot.reasons.length ? bot.reasons : ["bot-fail"]);
     return { smoke: "PASS", reasons: [] };
-  } catch (err) {
-    const name = err && typeof err === "object" && "name" in err ? String((err as { name?: string }).name) : "";
-    if (name === "TimeoutError" || name === "AbortError") return failSmoke(["timeout"]);
+  } catch {
     return failSmoke(["timeout"]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
