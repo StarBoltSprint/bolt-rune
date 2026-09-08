@@ -15,6 +15,7 @@ export const PLAY_CHROME_LAW = [
   "SEATS/FILMS/ROOMS/REFS belong in Pause / forge UI only",
   "Hit regions stay logical (video-layout A/B) — not Imagine-baked rectangles",
   "spawn = behind still; mood/profile = Vault ref only; still-pair required",
+  "Doors are architecture IN the plate, not chrome rectangles on glass",
 ] as const;
 
 export function playPaintsChrome(phase?: string | null, paused = false): boolean {

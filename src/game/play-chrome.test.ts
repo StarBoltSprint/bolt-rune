@@ -78,6 +78,7 @@ describe("Play chrome — off the film", () => {
     assert.match(gate, /chrome-burn/);
     assert.match(gate, /still-pair/);
     assert.match(gate, /void-frame/);
+    assert.match(gate, /SMIR_DOOR_ARCH_LOCK|door-slab|door-overlay/);
     assert.match(gate, /lock-off BEHIND only/);
     assert.match(readme, /spawn = lock-off BEHIND still only/);
     assert.match(readme, /Play paints no text chrome/);

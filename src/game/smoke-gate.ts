@@ -52,6 +52,48 @@ export const BLACK_HOLE_LOCK = [
   "Preload breath of current/dest pose before walk ends so swap isn't empty.",
 ] as const;
 
+/** SmiR HARD LOCK — doors are architecture in the plate, not glass boxes. */
+export const SMIR_DOOR_ARCH_LOCK = [
+  "SmiR door architecture: doors are architecture IN the plate, not rectangles on glass. If tap target is only a UI box, film failed Smoke.",
+  "Legal hall door must have ALL of: hole (jambs+lintel+depth, not flat slab); thickness/reveal; floor contact same plane as paws; gold-cyan path fork paws→sills (cue on fork/threshold not chrome orb); L teal / R gold color IN encode (overlay may trace never replace).",
+  "Spawn: doors upper-mid 9:16; path 5–15% height clear of foliage; foliage side wings only.",
+  "Walk stops short of sill (atA). Enter crosses. Slab/CSS outline door = FAIL.",
+  "Smoke: two door masses touching floor; path pixels; overlay-only glow = FAIL; dog too small to reach in one walk = FAIL.",
+] as const;
+
+/** SmiR HARD LOCK lighting — speaks A/B without chrome. */
+export const SMIR_LIGHT_LOCK = [
+  "SmiR lighting: lighting speaks A/B without chrome. Soft key on floor fork + door sills; Bolt rimmed from behind/above; face in shade (eye glint at camera = FAIL).",
+  "Split: raise teal practical on walk-A cue, gold quieter (and mirror). Peak = both bloom a little; miss = subtract fill not red strobe.",
+  "Practicals only (crystal veins, bronze seams, path inlay). Ban beauty dish, studio spots, lens flare, orbit, sun sweep on breath.",
+  "Exposure: stable grey at paws across breath; no smash between stillEnd and next stillStart. Thin floor haze for door depth; not thick fog.",
+  "Smoke: both door hues mid-frame; fork brighter than foliage; Bolt face never brightest object; breath paw exposure stable.",
+] as const;
+
+/** SmiR HARD LOCK color grade — protect L teal / R gold / Bolt white. */
+export const SMIR_GRADE_LOCK = [
+  "SmiR color grade: protect L door cool teal-cyan, R warm gold-amber, Bolt white (withers nearer white than either door), mid-floor neutral dusk, path thin gold-cyan.",
+  "Same grade family all plates of a hall. No full-frame duotone. No Hollywood skin LUT (apricot fur).",
+  "Secondary sat on doors/path only. Cue = tiny sat/+stop on active door ROI or bake in encode; engine grade static preferred.",
+  "Miss: sat down, split remains — never monochrome grey, never red flash.",
+  "Smoke: sample L jamb, R jamb, withers — hues in bands, ΔE L vs R above floor, breath hues stable frame0 vs last.",
+] as const;
+
+/** SmiR HARD LOCK — one plate one camera one act. */
+export const SMIR_LOCKOFF_LOCK = [
+  "SmiR lock-off: lens nailed behind him facing doors every play frame. One plate one camera one act — never splice profile+behind in one mp4.",
+  "Engine must NOT auto-flip/crop profile to fake back — FAIL and decay/old PASS.",
+] as const;
+
+export const PATH_H_MIN = 0.05;
+export const PATH_H_MAX = 0.15;
+export const GRADE_DE_MIN = 12;
+
+/** Never legal. Tests lock this. */
+export function mayFlipProfileToBack(): false {
+  return false;
+}
+
 export const TAILLE_SPAWN_MIN = 0.22;
 export const TAILLE_SPAWN_MAX = 0.32;
 export const TAILLE_WITHERS = 0.25;
@@ -66,6 +108,18 @@ const TAILLE_BAN =
 
 const BLACK_HOLE_BAN =
   /\b(black hole|black tail|empty src|video\.src=""|video\.src='' )\b/i;
+
+const DOOR_ARCH_BAN =
+  /\b(flat slab|css outline|ui box|wireframe door|painted (?:a\/?b )?door|overlay[- ]only|rectangle on glass)\b/i;
+
+const LIGHT_BAN =
+  /\b(beauty dish|studio spots?|lens flare|sun sweep|muzzle key)\b/i;
+
+const GRADE_BAN =
+  /\b(duotone|hollywood (?:skin )?lut|apricot fur|monochrome grey|red flash|red strobe)\b/i;
+
+const SPLICE_BAN =
+  /\b(splice profile|profile\+behind|flip(?: to)?(?: fake)? back|auto-flip|crop profile)\b/i;
 
 export type SmokeVerdict = "PASS" | "FAIL";
 export type SmokeKind = "walk" | "breath" | "enter" | "biome";
@@ -168,6 +222,53 @@ export type SmokeSubject = {
     lastDistance?: string;
     band?: "lower-third" | "mid" | "upper" | "full" | "tiny-cathedral";
   };
+  /** SmiR door architecture — hole/reveal/floor/path/hues in the encode. */
+  doorArch?: {
+    hole?: boolean;
+    slab?: boolean;
+    reveal?: boolean;
+    floorContact?: boolean;
+    pathFork?: boolean;
+    pathH?: number;
+    foliageClear?: boolean;
+    overlayOnly?: boolean;
+    cssOutline?: boolean;
+    hueL?: "teal" | "gold" | "other";
+    hueR?: "teal" | "gold" | "other";
+    massesOnFloor?: boolean;
+    pathPixels?: boolean;
+    reach?: boolean;
+    band?: "upper-mid" | "low" | "full" | "glass";
+    walkSill?: "short" | "cross" | "through";
+  };
+  /** SmiR lighting heuristics. */
+  light?: {
+    faceBrightest?: boolean;
+    eyeGlint?: boolean;
+    pawStable?: boolean;
+    forkBrighter?: boolean;
+    beauty?: boolean;
+    fog?: "thin" | "thick";
+    missStrobe?: boolean;
+    doorHuesMid?: boolean;
+  };
+  /** SmiR color grade samples. */
+  grade?: {
+    hueL?: "teal" | "gold" | "other";
+    hueR?: "teal" | "gold" | "other";
+    withersWhite?: boolean;
+    dE?: number;
+    duotone?: boolean;
+    lut?: boolean;
+    missMono?: boolean;
+    missRed?: boolean;
+    breathStable?: boolean;
+  };
+  /** Profile+behind spliced in one mp4. */
+  splice?: boolean;
+  cameras?: Array<"behind" | "profile" | "face-on" | "side">;
+  /** Engine auto-flip/crop profile to fake a back. */
+  flipCrop?: boolean;
   /** Library / pair stills for Hang + play accept. */
   library?: StillPairRow[];
   pair?: StillPairHints;
@@ -461,7 +562,18 @@ function lintSpawnCamera(subject: SmokeSubject): string[] {
   return [];
 }
 
+function lintLockoff(subject: SmokeSubject): string[] {
+  if (subject.flipCrop === true || mayFlipProfileToBack()) return ["camera-flip"];
+  const cams = Array.isArray(subject.cameras) ? subject.cameras : [];
+  if (subject.splice === true || (cams.includes("profile") && cams.includes("behind"))) return ["camera-splice"];
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && SPLICE_BAN.test(rest)) return ["camera-splice"];
+  return [];
+}
+
 function lintCamera(subject: SmokeSubject): string[] {
+  const lock = lintLockoff(subject);
+  if (lock.length) return lock;
   if (isSpawnBreathAct(subject)) return lintSpawnCamera(subject);
   const reasons: string[] = [];
   if (subject.camera === "face-on" || subject.camera === "side" || subject.camera === "side-profile") {
@@ -508,6 +620,68 @@ function lintDoors(subject: SmokeSubject): string[] {
   }
   if (subject.doors && (!subject.doors.a || !subject.doors.b)) return ["doors-ab"];
   return [];
+}
+
+/** Doors are architecture in the plate. Overlay-only / slab / CSS outline = FAIL. */
+export function lintDoorArch(subject: SmokeSubject): string[] {
+  if (subject.kind === "biome") return [];
+  const reasons: string[] = [];
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && DOOR_ARCH_BAN.test(rest)) reasons.push("door-slab");
+  const d = subject.doorArch;
+  if (!d) return [...new Set(reasons)];
+  if (d.slab === true || d.hole === false || d.cssOutline === true) reasons.push("door-slab");
+  if (d.reveal === false) reasons.push("door-reveal");
+  if (d.floorContact === false || d.massesOnFloor === false) reasons.push("door-floor");
+  if (d.pathFork === false || d.pathPixels === false) reasons.push("door-path");
+  if (typeof d.pathH === "number" && Number.isFinite(d.pathH) && (d.pathH < PATH_H_MIN || d.pathH > PATH_H_MAX)) {
+    reasons.push("door-path");
+  }
+  if (d.foliageClear === false) reasons.push("door-path");
+  if (d.hueL && d.hueL !== "teal") reasons.push("door-hue");
+  if (d.hueR && d.hueR !== "gold") reasons.push("door-hue");
+  if (d.overlayOnly === true) reasons.push("door-overlay");
+  if (d.reach === false) reasons.push("door-reach");
+  if (d.band && d.band !== "upper-mid" && (isSpawnBreathAct(subject) || subject.pose === "spawn")) {
+    reasons.push("door-spawn-band");
+  }
+  if (playActOf(subject) === "walk" && (d.walkSill === "cross" || d.walkSill === "through")) {
+    reasons.push("door-sill");
+  }
+  return [...new Set(reasons)];
+}
+
+export function lintLight(subject: SmokeSubject): string[] {
+  const reasons: string[] = [];
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && LIGHT_BAN.test(rest)) reasons.push("light-beauty");
+  const L = subject.light;
+  if (!L) return [...new Set(reasons)];
+  if (L.faceBrightest === true || L.eyeGlint === true) reasons.push("light-face");
+  if (L.pawStable === false) reasons.push("light-paw");
+  if (L.forkBrighter === false) reasons.push("light-fork");
+  if (L.beauty === true) reasons.push("light-beauty");
+  if (L.fog === "thick") reasons.push("light-fog");
+  if (L.missStrobe === true) reasons.push("light-miss");
+  if (L.doorHuesMid === false) reasons.push("light-hue");
+  return [...new Set(reasons)];
+}
+
+export function lintGrade(subject: SmokeSubject): string[] {
+  const reasons: string[] = [];
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && GRADE_BAN.test(rest)) reasons.push("grade-lut");
+  const g = subject.grade;
+  if (!g) return [...new Set(reasons)];
+  if (g.hueL && g.hueL !== "teal") reasons.push("grade-hue");
+  if (g.hueR && g.hueR !== "gold") reasons.push("grade-hue");
+  if (g.withersWhite === false) reasons.push("grade-withers");
+  if (typeof g.dE === "number" && Number.isFinite(g.dE) && g.dE < GRADE_DE_MIN) reasons.push("grade-de");
+  if (g.duotone === true) reasons.push("grade-duotone");
+  if (g.lut === true) reasons.push("grade-lut");
+  if (g.missMono === true || g.missRed === true) reasons.push("grade-miss");
+  if (g.breathStable === false) reasons.push("grade-drift");
+  return [...new Set(reasons)];
 }
 
 function burnedBlob(subject: SmokeSubject): string {
@@ -785,12 +959,15 @@ const BATTERY: Array<(s: SmokeSubject) => string[]> = [
   lintCamera,
   lintBody,
   lintDoors,
+  lintDoorArch,
   lintChrome,
   lintPath,
   lintCues,
   lintContinuity,
   lintStillPairSubject,
   lintTaille,
+  lintLight,
+  lintGrade,
   lintVoidFrames,
   lintPromptResidue,
 ];

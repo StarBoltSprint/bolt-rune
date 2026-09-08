@@ -9,11 +9,16 @@ import { clipCachePut, commitHallPrime } from "./pcg-rail.ts";
 import {
   BLACK_HOLE_LOCK,
   RAILS_VERSION,
+  SMIR_DOOR_ARCH_LOCK,
+  SMIR_GRADE_LOCK,
+  SMIR_LIGHT_LOCK,
+  SMIR_LOCKOFF_LOCK,
   SMIR_TAILLE_LOCK,
   SPAWN_CAMERA_LAW,
   STILL_PAIR_FIELDS,
   STILL_PAIR_LAW,
   acceptPlayLibrary,
+  mayFlipProfileToBack,
   clearSmokeFail,
   clearSmokePass,
   clipCachePutIfPass,
@@ -343,6 +348,89 @@ describe("Smoke ship-gate — local lint", () => {
     }
   });
 
+  it("SmiR door architecture — slab / overlay / reach / path / hue FAIL", () => {
+    const slab = lintSmoke(goodWalk({ doorArch: { slab: true, hole: false } }));
+    assert.equal(slab.smoke, "FAIL");
+    assert.ok(slab.reasons.includes("door-slab"));
+    const overlay = lintSmoke(goodWalk({ doorArch: { overlayOnly: true } }));
+    assert.equal(overlay.smoke, "FAIL");
+    assert.ok(overlay.reasons.includes("door-overlay"));
+    const reach = lintSmoke(goodWalk({ doorArch: { reach: false } }));
+    assert.equal(reach.smoke, "FAIL");
+    assert.ok(reach.reasons.includes("door-reach"));
+    const path = lintSmoke(goodWalk({ doorArch: { pathH: 0.4, pathFork: false } }));
+    assert.equal(path.smoke, "FAIL");
+    assert.ok(path.reasons.includes("door-path"));
+    const hue = lintSmoke(goodWalk({ doorArch: { hueL: "gold", hueR: "teal" } }));
+    assert.equal(hue.smoke, "FAIL");
+    assert.ok(hue.reasons.includes("door-hue"));
+    const sill = lintSmoke(goodWalk({ kind: "walk", act: "walk", doorArch: { walkSill: "through" } }));
+    assert.equal(sill.smoke, "FAIL");
+    assert.ok(sill.reasons.includes("door-sill"));
+    const ok = lintSmoke(
+      goodWalk({
+        doorArch: {
+          hole: true,
+          reveal: true,
+          floorContact: true,
+          pathFork: true,
+          pathH: 0.1,
+          foliageClear: true,
+          hueL: "teal",
+          hueR: "gold",
+          massesOnFloor: true,
+          pathPixels: true,
+          reach: true,
+          band: "upper-mid",
+          walkSill: "short",
+        },
+      }),
+    );
+    assert.equal(ok.smoke, "PASS");
+    for (const line of SMIR_DOOR_ARCH_LOCK) assert.match(line, /plate|hole|sill|FAIL|overlay|Spawn|path/i);
+  });
+
+  it("SmiR lighting + grade + lock-off heuristics FAIL", () => {
+    assert.equal(mayFlipProfileToBack(), false);
+    const face = lintSmoke(goodWalk({ light: { faceBrightest: true, eyeGlint: true } }));
+    assert.equal(face.smoke, "FAIL");
+    assert.ok(face.reasons.includes("light-face"));
+    const paw = lintSmoke(goodWalk({ light: { pawStable: false } }));
+    assert.equal(paw.smoke, "FAIL");
+    assert.ok(paw.reasons.includes("light-paw"));
+    const fork = lintSmoke(goodWalk({ light: { forkBrighter: false } }));
+    assert.equal(fork.smoke, "FAIL");
+    assert.ok(fork.reasons.includes("light-fork"));
+    const beauty = lintSmoke(goodWalk({ prompt: `${assemblePrompt(goodSlots()).prompt} beauty dish` }));
+    assert.equal(beauty.smoke, "FAIL");
+    assert.ok(beauty.reasons.includes("light-beauty"));
+    const withers = lintSmoke(goodWalk({ grade: { withersWhite: false, dE: 3, hueL: "teal", hueR: "gold" } }));
+    assert.equal(withers.smoke, "FAIL");
+    assert.ok(withers.reasons.includes("grade-withers") || withers.reasons.includes("grade-de"));
+    const lut = lintSmoke(goodWalk({ grade: { lut: true, duotone: true } }));
+    assert.equal(lut.smoke, "FAIL");
+    assert.ok(lut.reasons.includes("grade-lut") || lut.reasons.includes("grade-duotone"));
+    const miss = lintSmoke(goodWalk({ grade: { missRed: true } }));
+    assert.equal(miss.smoke, "FAIL");
+    assert.ok(miss.reasons.includes("grade-miss"));
+    const splice = lintSmoke(goodWalk({ splice: true, cameras: ["profile", "behind"] }));
+    assert.equal(splice.smoke, "FAIL");
+    assert.ok(splice.reasons.includes("camera-splice"));
+    const flip = lintSmoke(goodWalk({ flipCrop: true }));
+    assert.equal(flip.smoke, "FAIL");
+    assert.ok(flip.reasons.includes("camera-flip"));
+    const ok = lintSmoke(
+      goodWalk({
+        light: { faceBrightest: false, pawStable: true, forkBrighter: true, fog: "thin", doorHuesMid: true },
+        grade: { hueL: "teal", hueR: "gold", withersWhite: true, dE: 20, breathStable: true },
+      }),
+    );
+    assert.equal(ok.smoke, "PASS");
+    for (const line of SMIR_LIGHT_LOCK) assert.match(line, /light|face|fork|beauty|paw|teal|haze|chrome/i);
+    for (const line of SMIR_GRADE_LOCK) assert.match(line, /teal|gold|duotone|ΔE|split|grade/i);
+    for (const line of SMIR_LOCKOFF_LOCK) assert.match(line, /lock-off|splice|flip/i);
+  });
+
   it("Howl / Pause / Keep replay skip; stock cached PASS skips", () => {
     assert.equal(shouldSmoke("howl"), false);
     assert.equal(shouldSmoke("pause"), false);
@@ -450,7 +538,16 @@ describe("Smoke ship-gate — engine hook + Door seat untouched", () => {
     assert.match(law, /assignLiveSrc/);
     assert.match(law, /holdEnded/);
     assert.doesNotMatch(law, /el\.src = ""/);
-    for (const line of [...SMIR_TAILLE_LOCK, ...BLACK_HOLE_LOCK]) {
+    assert.equal(mayFlipProfileToBack(), false);
+    assert.doesNotMatch(engine, /scaleX\(\s*-1|rotateY\(\s*180|flipProfileToBack/);
+    for (const line of [
+      ...SMIR_TAILLE_LOCK,
+      ...BLACK_HOLE_LOCK,
+      ...SMIR_DOOR_ARCH_LOCK,
+      ...SMIR_LIGHT_LOCK,
+      ...SMIR_GRADE_LOCK,
+      ...SMIR_LOCKOFF_LOCK,
+    ]) {
       assert.match(readme, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
   });
