@@ -561,7 +561,7 @@ export function clipCachePutIfPass(
   smoke?: SmokeResult | SmokeAttach | null,
 ): string {
   if (smoke && smoke.smoke !== "PASS") return "";
-  return clipCachePut(key, url, kind);
+  return clipCachePut(key, url, kind, smoke);
 }
 
 export function replaceStockEnterIfPass(

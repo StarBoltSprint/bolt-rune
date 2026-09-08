@@ -4,7 +4,8 @@ import { unbindDroppedHalls } from "@/game/artifacts.ts";
 import { dropHangPending, writeHangFloor } from "@/game/hang-ask.ts";
 import { dropCitadel, dropGuestCitadel, getCitadel, getGuestCitadel, listCitadels, listGuestCitadels, putCitadel, putGuestCitadel } from "@/lib/citadel-cloud";
 import { preferHalls } from "@/game/play-frame.ts";
-import { hydrateClipCache, isRunSeed, mergeClipCache, packClipCache } from "@/game/pcg-rail.ts";
+import { hydrateClipCache, isRunSeed, mergeClipCache, packClipCache, pinKeepFromSession } from "@/game/pcg-rail.ts";
+import { encodeKeepShare, exportKeepShare, scrubKeepSecrets } from "@/game/pcg-share.ts";
 
 const DB = "bolt-rune-sessions";
 const TABLE = "sessions";
@@ -120,8 +121,10 @@ export type RuneSession = RuneSessionMeta & {
   halls?: HallSlice[];
   /** PCG rail 1 run seed `s`. New citadel / Play mint it; Keep persists it. */
   seed?: string;
-  /** Clip cache keyed by `s_i` / `s_enter` — reuse before recook. */
+  /** Clip cache keyed by `s_i` / `s_enter` / rich key — reuse before recook. */
   clips?: Record<string, string>;
+  /** Compact Keep share recipe (graph + pins). Never mp4, never API keys. */
+  share?: string;
 };
 
 function openDb(): Promise<IDBDatabase> {
@@ -823,8 +826,20 @@ function keepHalls(halls?: HallSlice[], stills = false): HallSlice[] | undefined
     .filter((h) => h.n >= 1);
 }
 
+function keepShareToken(session: RuneSession): string | undefined {
+  pinKeepFromSession(session);
+  if (session.share) return session.share;
+  if (!isRunSeed(session.seed)) return undefined;
+  try {
+    return encodeKeepShare(exportKeepShare({ session }));
+  } catch {
+    return undefined;
+  }
+}
+
 function lightOf(session: RuneSession): RuneSession {
-  return {
+  const share = keepShareToken(session);
+  return scrubKeepSecrets({
     ...session,
     plate: keepUrl(session.plate) || "/refs/hall-doors.jpg",
     start: keepUrl(session.start),
@@ -837,12 +852,14 @@ function lightOf(session: RuneSession): RuneSession {
     halls: keepHalls(session.halls),
     seed: isRunSeed(session.seed) ? session.seed : undefined,
     clips: packClipCache(session.clips),
-  };
+    share,
+  });
 }
 
 function packOf(session: RuneSession): RuneSession {
   const plate = keepStill(session.plate) || keepUrl(session.plate) || "";
-  return {
+  const share = keepShareToken(session);
+  return scrubKeepSecrets({
     ...session,
     plate: plate || "/refs/hall-doors.jpg",
     start: keepStill(session.start) || keepUrl(session.start),
@@ -856,7 +873,8 @@ function packOf(session: RuneSession): RuneSession {
     halls: keepHalls(session.halls, true),
     seed: isRunSeed(session.seed) ? session.seed : undefined,
     clips: packClipCache(session.clips),
-  };
+    share,
+  });
 }
 
 function writeStore(rows: RuneSession[]) {
@@ -939,6 +957,7 @@ export function saveSessionSync(session: RuneSession): RuneSessionMeta {
     halls: preferHalls(packed.halls, kept.halls),
     seed: packed.seed || kept.seed,
     clips: mergeClipCache(kept.clips, packed.clips),
+    share: packed.share || kept.share,
     updated: Math.max(packed.updated || 0, kept.updated || 0, Date.now()),
   };
   merged.rooms = roomCap(merged);

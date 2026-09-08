@@ -7,9 +7,14 @@ import { FILM_BY_ID } from "./films.ts";
 import {
   beginRunSeed,
   clearStockBridges,
+  clipCacheFailReasons,
   clipCacheGet,
+  clipCacheGetPass,
+  clipCacheIsPinned,
+  clipCachePin,
   clipCachePut,
   clipCacheSnapshot,
+  clipCacheTestCaps,
   commitHallPrime,
   doorGlowState,
   enterCacheKey,
@@ -34,9 +39,12 @@ import {
   PICTURE_CALM_MS,
   PICTURE_PEAK_END_MS,
   PICTURE_PEAK_MS,
+  pinKeepFromSession,
   plateSeed,
+  RAILS_VERSION,
   readRunSeed,
   registerStockBridge,
+  richClipKey,
   replaceStockEnter,
   resolveEnterHotPath,
   reuseClipBeforeRecook,
@@ -161,6 +169,91 @@ describe("PCG rail 1 — clip cache reuse before recook", () => {
   });
 });
 
+describe("PCG rich clip key + PASS cache + LRU pin", () => {
+  beforeEach(() => {
+    mockStorage();
+    clipCacheTestCaps(null);
+  });
+
+  it("same rich key hits — same parts reuse, different act misses", () => {
+    const parts = {
+      railsVersion: RAILS_VERSION,
+      runSeed: "srichkey01aa",
+      plateIndex: 2,
+      act: "walk-A",
+      biomeFrom: "forest",
+      biomeTo: "forest",
+      chunkFromId: "chunk-forest",
+      chunkToId: "chunk-forest",
+      role: "lean-L",
+      slots: { trail: "thin", fork: "none" },
+      cues: [{ side: "A", on: 2, off: 2.8, kind: "walk" }],
+    };
+    const a = richClipKey(parts);
+    const b = richClipKey({ ...parts, slots: { fork: "none", trail: "thin" }, cues: [{ kind: "walk", side: "A", on: 2, off: 2.8 }] });
+    assert.equal(a, b);
+    assert.match(a, /^[0-9a-f]{16}$/);
+    assert.notEqual(richClipKey({ ...parts, act: "walk-B" }), a);
+    assert.notEqual(richClipKey({ ...parts, plateIndex: 3 }), a);
+    clipCachePut(parts, "/films/forge-forest.mp4", "plate", { smoke: "PASS" }, {
+      stillStart: "/films/cook-forest.jpg",
+      stillEnd: "/films/cook-forest.jpg",
+      cues: parts.cues,
+      bytes: 1200,
+    });
+    assert.equal(clipCacheGet(parts), "/films/forge-forest.mp4");
+    assert.equal(clipCacheGet(a), "/films/forge-forest.mp4");
+    assert.equal(reuseClipBeforeRecook(parts), "/films/forge-forest.mp4");
+    const row = clipCacheGetPass(parts);
+    assert.equal(row?.smoke, "PASS");
+    assert.equal(row?.railsVersion, "bolt-1");
+    assert.equal(row?.stillStart, "/films/cook-forest.jpg");
+    assert.equal(row?.bytes, 1200);
+    assert.equal(clipCacheGet({ ...parts, act: "walk-B" }), "");
+  });
+
+  it("FAIL is not a playable cache — optional reason cache only", () => {
+    const key = richClipKey({ runSeed: "sfailcache01", act: "enter", biomeFrom: "forest", biomeTo: "canyon" });
+    assert.equal(clipCachePut(key, "/films/forge-forest.mp4", "enter", { smoke: "FAIL", reasons: ["cue-window"] }), "");
+    assert.equal(clipCacheGet(key), "");
+    assert.equal(clipCacheGetPass(key), null);
+    assert.deepEqual(clipCacheFailReasons(key), ["cue-window"]);
+  });
+
+  it("pinned Keep edge / hung / Hall′ still is never LRU-evicted", () => {
+    clipCacheTestCaps({ count: 3 });
+    clipCachePut("keep-edge", "/films/forge-asteroid.mp4", "enter", { smoke: "PASS" }, { bytes: 80 });
+    clipCachePin("keep-edge");
+    pinKeepFromSession(
+      {
+        bank: [{ key: "keep-edge", url: "/films/forge-asteroid.mp4" }],
+        start: "/films/cook-asteroid.jpg",
+        halls: [{ n: 2, still: "/films/cook-asteroid.jpg", start: "/films/cook-asteroid.jpg" } as never],
+      },
+      [{ id: "hung-1", still: "/films/cook-forest.jpg", playlist: ["/films/forge-forest.mp4"] }],
+    );
+    clipCachePut("hung-clip", "/films/forge-forest.mp4", "plate", { smoke: "PASS" }, {
+      stillStart: "/films/cook-forest.jpg",
+      pin: true,
+    });
+    clipCachePut("hall-prime", "/ui/citadel.mp4", "plate", { smoke: "PASS" }, {
+      stillStart: "/films/cook-asteroid.jpg",
+    });
+    pinKeepFromSession({
+      start: "/films/cook-asteroid.jpg",
+      halls: [{ still: "/films/cook-asteroid.jpg" }],
+    });
+    assert.equal(clipCacheIsPinned("keep-edge"), true);
+    for (let i = 0; i < 12; i++) {
+      clipCachePut(`ephem-${i}`, `/ui/forge-${i}.mp4`.replace(`-${i}`, ""), "plate", { smoke: "PASS" }, { bytes: 40 });
+    }
+    assert.equal(clipCacheGet("keep-edge"), "/films/forge-asteroid.mp4");
+    assert.equal(clipCacheGet("hung-clip"), "/films/forge-forest.mp4");
+    assert.equal(clipCacheGet("hall-prime"), "/ui/citadel.mp4");
+    clipCacheTestCaps(null);
+  });
+});
+
 describe("PCG rail 1 — no Imagine on walk-toward-door speculation", () => {
   it("mayImagine allows plate / enter / forge only", () => {
     assert.equal(mayImagine("plate"), true);
@@ -193,8 +286,13 @@ describe("PCG rail 1 — Keep persist + Asteroid HOLD", () => {
     assert.match(session, /clips\?: Record<string, string>/);
     assert.match(session, /packed\.seed \|\| kept\.seed/);
     assert.match(session, /mergeClipCache\(kept\.clips, packed\.clips\)/);
+    assert.match(session, /pinKeepFromSession\(/);
+    assert.match(session, /scrubKeepSecrets\(/);
     assert.match(cloud, /seed: keepSeed\(session\.seed\)/);
     assert.match(cloud, /clips: packClipCache\(session\.clips\)/);
+    assert.match(cloud, /pinKeepFromSession\(/);
+    assert.match(cloud, /scrubKeepSecrets\(/);
+    assert.match(cloud, /encodeKeepShare\(/);
     assert.match(engine, /beginRunSeed\(/);
     assert.match(engine, /seed: seedHold\.current/);
     assert.match(engine, /reuseClipBeforeRecook\(/);
@@ -610,6 +708,8 @@ describe("PCG picture-time — film strip, never wall clock", () => {
     assert.match(readme, /## PCG role-WFC/);
     assert.match(readme, /## PCG chunk library/);
     assert.match(readme, /## PCG anti-3D \/ film-strip laws/);
+    assert.match(readme, /## PCG Keep share \/ rich clip cache/);
+    assert.match(readme, /never auto-bill a visitor/);
     const doc = readFileSync(join(here, "../../docs/pcg-anti-3d.md"), "utf8");
     assert.match(doc, /strip of films, not a volume you stand in/);
     assert.match(doc, /pictureTimeMs/);

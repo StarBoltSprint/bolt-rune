@@ -3,7 +3,8 @@ import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { citadelRoomCount } from "@/game/rooms";
 import type { HallSlice, RiftGate, RuneSession, RuneSessionMeta } from "@/game/rune-session";
-import { isRunSeed, packClipCache } from "@/game/pcg-rail";
+import { isRunSeed, packClipCache, pinKeepFromSession } from "@/game/pcg-rail";
+import { encodeKeepShare, exportKeepShare, scrubKeepSecrets } from "@/game/pcg-share";
 
 type Row = {
   id: string;
@@ -258,12 +259,15 @@ function pack(session: RuneSession): { meta: RuneSessionMeta; body: string; sess
     halls: keepHalls(session.halls),
     seed: keepSeed(session.seed),
     clips: packClipCache(session.clips),
+    share: session.share || (keepSeed(session.seed) ? encodeKeepShare(exportKeepShare({ session })) : undefined),
   };
-  const body = JSON.stringify(light);
+  pinKeepFromSession(light);
+  const safe = scrubKeepSecrets(light);
+  const body = JSON.stringify(safe);
   return {
     meta: metaFrom(light),
     body: body.slice(0, 180000),
-    session: light,
+    session: safe,
   };
 }
 

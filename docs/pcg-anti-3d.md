@@ -21,6 +21,8 @@ The README holds the refuse table, steal table, and smell tests. This note is th
 | Picture-time audio | `src/game/pcg-audio.ts` | Plate + engine buses; pause/mute; grade one-shots |
 | EDPCG density / awakening | `src/game/pcg-density.ts` | `smoothstep(m) * noise(s, pictureTime)` → cook slots |
 | Smoke ship-gate | `src/game/smoke-gate.ts` | PASS/FAIL before Hang / cache / enter; `railsVersion` `bolt-1` |
+| Rich cache + LRU pin | `src/game/pcg-rail.ts` | PASS rows only; Keep edges / hung / Hall′ stills never evict |
+| Keep share recipe | `src/game/pcg-share.ts` | Graph + pin keys; visitor never auto-billed |
 
 1D role-WFC neighbors are **time**, not floor tiles. Voxel WFC / STWFC T×Y×X does not belong here.
 
