@@ -36,6 +36,10 @@ Citadel is a graph, not a map. A grammar grows **pins** from run seed `s` + mome
 
 Every Imagine plate is two layers: **rails** (terminals — camera, Bolt, lens, chrome ban, gold-cyan path; never sampled) then **slots** (biome / act / fork / trail / floor / leftover / fromTo / still / destStill / seed) from tiny enums only. `assemblePrompt(slots)` fills the template; the linter checksums rails, blocks morph / banned flavor / missing lock, and fails → stock, no Imagine. Player voice maps Rome→ember, Mars→asteroid, space→asteroid, or one short flavor clause — never camera or body. Graph pins stay in `pcg-grammar.ts` (rail 3). Asteroid HOLD. No Pack seats expansion.
 
+## PCG chunk library + bridge stitch
+
+A chunk is a finished film you trust — still + optional loop + laws. PCG does **not** invent that film. It **places** a library plate on door A or B and, if two trusted films must touch, pays for a short **bridge** (Imagine only on confirm). Catalog biomes are the starter bookshelf; Vault holds hung forge artifacts; Hang A/B puts a book on a door. Human hung wins over `library.pick(hash(s, room, door), filter)`. Same hall A+B share a biome; the next hall is a neighbor biome only; peak phase may pick `energy=peak`. Walk stays 6 / 10 / 15 by phase. Room —enter→ Hall′ is illegal until a bridge clip exists (rail-2 cache / ticket) or a named stock pair — otherwise the door plays breath. Walk inside a hung chunk and remix hang are free; first stitch is one ticket on confirm; replay is cache. Prefetch decodes the next stock walk, never a surprise Imagine. Chunks lint with the same rails linter as prompts. Asteroid HOLD. No Pack seats expansion.
+
 ## Hall seats (SmiR pack)
 
 SmiR's own film-team bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Door, Smoke, Cook, Continuity. Not a side chat, not Connect Wallet, not freebots.lol, not a permanent bottom row. Asteroid HOLD.

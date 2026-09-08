@@ -2,6 +2,7 @@
  * PCG rail 1 — run seed, plate / enter hashes, clip cache.
  * PCG rail 2 — enter-ready glow, hot-path enter never Imagines, Hall′ after clip.
  * PCG rail 3 — graph grammar pins live in pcg-grammar.ts (seed + momentum).
+ * Chunk library + bridge stitch live in pcg-chunk.ts (place trusted films, pay for a short bridge).
  * Asteroid HOLD. No Imagine on walk-toward-door speculation.
  */
 

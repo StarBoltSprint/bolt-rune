@@ -128,6 +128,7 @@ import {
   reuseClipBeforeRecook,
 } from "@/game/pcg-rail";
 import { isDeadEndPin, pinsForCitadel, rewriteOnEnter } from "@/game/pcg-grammar";
+import { assembleHall, hangChunkOnDoor, stitchEnter } from "@/game/pcg-chunk";
 import { BootScreen } from "@/components/citadel-hub";
 import { HangAskSheet, HangCitadelStrip, HangRoomStrip } from "@/components/hang-ask";
 import { HANG_LEFTOVER_SWALLOW_MS, hangActEnters, hangBindHall, hangDoorAct, readHangPending, swallowOpeningTap, takeHangPending, writeHangPending } from "@/game/hang-ask";
@@ -2981,6 +2982,16 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       hung: incomingPins.length >= 2,
     });
     setPins(pinsRef.current);
+    const hungNow = readArtifacts();
+    assembleHall({
+      s: seedHold.current || readRunSeed(sid.current) || beginRunSeed(sid.current),
+      room: slice.n,
+      hungA: hungNow.find((a) => a.room?.door === "A" && (a.room.hall || 1) === slice.n),
+      hungB: hungNow.find((a) => a.room?.door === "B" && (a.room.hall || 1) === slice.n),
+      walkSecs: walkSecsRef.current,
+      momentum: momentumHold.current,
+      existingPins: pinsRef.current,
+    });
     forgedRef.current = slice.forged || 0;
     setForged(forgedRef.current);
     if (slice.walkSecs) {
@@ -5061,6 +5072,43 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         holdIdle();
         return;
       }
+      const arts = hungArts.length ? hungArts : readArtifacts();
+      const seed = seedHold.current || readRunSeed(sid.current) || beginRunSeed(sid.current);
+      const hereHall = assembleHall({
+        s: seed,
+        room: hallHold.current,
+        hungA: arts.find((a) => a.room?.door === "A" && (a.room.hall || 1) === hallHold.current),
+        hungB: arts.find((a) => a.room?.door === "B" && (a.room.hall || 1) === hallHold.current),
+        walkSecs: walkSecsRef.current,
+        existingPins: pinsRef.current,
+      });
+      const fromChunk = pick === "m2" ? hereHall.doors.B : hereHall.doors.A;
+      const destN = dest && dest !== hallHold.current ? dest : hallHold.current;
+      const nextHall =
+        dest && dest !== hallHold.current
+          ? assembleHall({
+              s: seed,
+              room: destN,
+              neighborOf: fromChunk.biome,
+              hungA: arts.find((a) => a.room?.door === "A" && (a.room.hall || 1) === destN),
+              hungB: arts.find((a) => a.room?.door === "B" && (a.room.hall || 1) === destN),
+              walkSecs: walkSecsRef.current,
+            })
+          : hereHall;
+      const toChunk = dest && dest !== hallHold.current ? nextHall.doors.A : fromChunk;
+      const stitch = stitchEnter({
+        s: seed,
+        from: fromChunk,
+        to: toChunk,
+        entered: true,
+        clip: clip?.url,
+        act: "enter",
+        deadEnd: isDeadEndPin(pick),
+      });
+      if (stitch.commit !== "pass") {
+        holdIdle();
+        return;
+      }
       momentumHold.current += 0.2;
       if (dest && dest !== hallHold.current) {
         persist({ phase: "play", halls: putSlice(hallsHold.current, snapHall()) });
@@ -5249,6 +5297,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           setHungArts(wired);
           const a = wired.find((x) => x.id === artId);
           if (a) {
+            hangChunkOnDoor(letter, a);
             void hangHall({
               data: {
                 id: a.id,
@@ -5723,6 +5772,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     });
     setPins(loadedPins);
     pinsRef.current = loadedPins;
+    const hungLoad = readArtifacts();
+    assembleHall({
+      s: seedHold.current,
+      room: s.hall || 1,
+      hungA: hungLoad.find((a) => a.room?.door === "A" && (a.room.hall || 1) === (s.hall || 1)),
+      hungB: hungLoad.find((a) => a.room?.door === "B" && (a.room.hall || 1) === (s.hall || 1)),
+      walkSecs: walkSecsRef.current,
+      existingPins: loadedPins,
+    });
     const startStill = hallStill || hallKeep.current;
     if (startStill) startHold.current = startStill;
     roomsHold.current = s.rooms || 1;
