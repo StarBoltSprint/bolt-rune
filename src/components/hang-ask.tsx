@@ -14,6 +14,7 @@ import {
   swallowOpeningTap,
   type HangDoorAct,
 } from "@/game/hang-ask";
+import { hangRefLabel, hangRefRole, poseOfHangRole, type HangRefRole, HANG_REF_BREATH, HANG_REF_WALK } from "@/game/hang-ref";
 import { type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import { press } from "@/lib/press";
 
@@ -98,6 +99,7 @@ function dropCaption(kind: "citadel" | "room" | undefined, armed: boolean) {
 
 function StillStage({
   still,
+  video,
   index,
   count,
   onNext,
@@ -114,6 +116,7 @@ function StillStage({
   actions,
 }: {
   still: string;
+  video?: string;
   index: number;
   count: number;
   onNext: () => void;
@@ -175,7 +178,17 @@ function StillStage({
         start.current = null;
       }}
     >
-      {still ? (
+      {video ? (
+        <video
+          src={video}
+          muted
+          playsInline
+          autoPlay
+          loop
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          data-hang-ref-video=""
+        />
+      ) : still ? (
         <img src={still} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
       ) : (
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(158,240,228,0.16),rgba(7,8,12,0.85))]" />
@@ -613,7 +626,7 @@ export function HangAskSheet({
                   </span>
                 </StillChip>
               </div>
-            ) : (
+            )             : (
               <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/45" data-hang-confirm-wait={door}>
                 pick a room — then Hang or Hang & enter
               </p>
@@ -622,5 +635,266 @@ export function HangAskSheet({
         />
       )}
     </div>
+  );
+}
+
+const ROLE_CHIP: Record<HangRefRole, string> = {
+  "breath-spawn": "spawn",
+  "breath-A": "A",
+  "breath-B": "B",
+  "walk-A": "A",
+  "walk-B": "B",
+  "walk-A-B": "A→B",
+  "walk-B-A": "B→A",
+};
+
+/** Import player mp4 / Imagine post as a room ref. Citadel → Room → role (≤3 beats). */
+export function HangRefSheet({
+  rooms,
+  hall,
+  onHall,
+  onClose,
+  citadels = [],
+  citadel = "",
+  onCitadel,
+  media,
+  role,
+  keep,
+  flag,
+  onMedia,
+  onFile,
+  onRole,
+  onKeep,
+  onHang,
+}: {
+  rooms: HangRoomPick[];
+  hall: number;
+  onHall: (n: number) => void;
+  onClose: () => void;
+  citadels?: HangCitadelPick[];
+  citadel?: string;
+  onCitadel?: (id: string) => void;
+  media: string;
+  role: HangRefRole;
+  keep?: boolean;
+  flag?: string;
+  onMedia: (url: string) => void;
+  onFile: (file: File) => void;
+  onRole: (role: HangRefRole) => void;
+  onKeep?: () => void;
+  onHang: (hall: number) => void;
+}) {
+  const [armed, setArmed] = useState(false);
+  const [step, setStep] = useState<"citadel" | "room">(citadels.length > 1 ? "citadel" : "room");
+  const [picked, setPicked] = useState(() => hangCardHall(hall) || 1);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const lockedCitadel = useRef(citadels.length <= 1);
+  useEffect(() => {
+    swallowOpeningTap(HANG_LEFTOVER_SWALLOW_MS);
+    const t = window.setTimeout(() => setArmed(true), HANG_CONFIRM_ARM_MS);
+    return () => window.clearTimeout(t);
+  }, []);
+  useEffect(() => {
+    if (citadels.length > 1 && !lockedCitadel.current) setStep("citadel");
+    if (citadels.length <= 1) {
+      lockedCitadel.current = true;
+      setStep("room");
+    }
+  }, [citadels.length]);
+  const r = rooms.find((x) => hangCardHall(x.hall) === hangCardHall(picked)) || rooms[0];
+  const still = media && !/\.mp4(\?|$)|blob:|data:video|xai-vidgen/i.test(media) ? media : r?.still || "";
+  const vid = media && hangMediaPreview(media);
+  function pickHall(n: number) {
+    const next = hangCardHall(n) || 1;
+    setPicked(next);
+    onHall(next);
+  }
+  function lockCitadel(id: string) {
+    lockedCitadel.current = true;
+    onCitadel?.(id);
+    setStep("room");
+  }
+  return (
+    <div
+      className="fixed inset-0 z-[90] bg-[#07080c]"
+      data-hang-ref="1"
+      data-hang-sheet="1"
+      data-hang-step={step}
+      data-hang-role={role}
+      data-hang-keep={keep ? "1" : "0"}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <input
+        ref={fileRef}
+        type="file"
+        accept="video/mp4,video/*"
+        className="hidden"
+        data-hang-file=""
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onFile(f);
+          e.target.value = "";
+        }}
+      />
+      {step === "citadel" && citadels.length > 1 ? (
+        <HangCitadelStrip citadels={citadels} citadel={citadel} onCitadel={lockCitadel} onBack={onClose} />
+      ) : (
+        <StillStage
+          kind="room"
+          still={still}
+          video={vid || undefined}
+          index={Math.max(0, rooms.findIndex((x) => hangCardHall(x.hall) === hangCardHall(picked)))}
+          count={Math.max(1, rooms.length)}
+          title={r?.name || `Room ${picked}`}
+          lockAttr={{ "data-hang-pick": picked, "data-hang-ref-role": role }}
+          actions={
+            armed ? (
+              <div className="flex w-full flex-col items-center gap-1.5" data-hang-ref-actions="">
+                {vid ? <span className="sr-only" data-hang-ref-media={vid} /> : null}
+                <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/40">
+                  {flag || (media ? "9:16 preferred · Hang wins stock" : "mp4 or grok.com/imagine/post")}
+                </p>
+                <div className="flex flex-col items-center gap-1.5" data-hang-roles="">
+                  <div className="flex flex-wrap items-center justify-center gap-1.5" data-hang-role-row="breath">
+                    <span className="font-mono text-[8px] uppercase tracking-[0.16em] text-white/35">breath</span>
+                    {HANG_REF_BREATH.map((id) => (
+                      <StillChip
+                        key={id}
+                        tone={role === id ? (poseOfHangRole(id) === "atB" ? "gold" : "ice") : "quiet"}
+                        data-hang-role={id}
+                        className="min-h-9 px-3"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        {...press(() => onRole(hangRefRole(id)))}
+                      >
+                        {ROLE_CHIP[id]}
+                      </StillChip>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-1.5" data-hang-role-row="walk">
+                    <span className="font-mono text-[8px] uppercase tracking-[0.16em] text-white/35">walk</span>
+                    {HANG_REF_WALK.map((id) => (
+                      <StillChip
+                        key={id}
+                        tone={role === id ? (poseOfHangRole(id) === "atB" ? "gold" : "ice") : "quiet"}
+                        data-hang-role={id}
+                        className="min-h-9 px-3"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        {...press(() => onRole(hangRefRole(id)))}
+                      >
+                        {ROLE_CHIP[id]}
+                      </StillChip>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-wrap justify-center gap-2">
+                  <StillChip
+                    tone="quiet"
+                    data-hang-upload=""
+                    onPointerDown={(e) => e.stopPropagation()}
+                    {...press(() => fileRef.current?.click())}
+                  >
+                    mp4
+                  </StillChip>
+                  <HangRefUrl onMedia={onMedia} media={media} />
+                  {onKeep ? (
+                    <StillChip
+                      tone={keep ? "gold" : "quiet"}
+                      data-hang-keep=""
+                      onPointerDown={(e) => e.stopPropagation()}
+                      {...press(onKeep)}
+                    >
+                      KEEP
+                    </StillChip>
+                  ) : null}
+                  <StillChip
+                    tone="ice"
+                    data-hang-confirm="ref"
+                    data-hang-act="bind"
+                    disabled={!media}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    {...press(() => {
+                      if (!media) return;
+                      onHang(hangBindHall(picked) || picked);
+                    })}
+                  >
+                    Hang
+                    <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/45">
+                      {hangRefLabel(role)} · room {picked}
+                    </span>
+                  </StillChip>
+                </div>
+              </div>
+            ) : (
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/45">room · role · Hang</p>
+            )
+          }
+          onNext={() => {
+            const i = rooms.findIndex((x) => hangCardHall(x.hall) === hangCardHall(picked));
+            const next = rooms[hangStillWrap(rooms.length, Math.max(0, i), 1)];
+            if (next) pickHall(hangCardHall(next.hall));
+          }}
+          onPrev={() => {
+            const i = rooms.findIndex((x) => hangCardHall(x.hall) === hangCardHall(picked));
+            const next = rooms[hangStillWrap(rooms.length, Math.max(0, i), -1)];
+            if (next) pickHall(hangCardHall(next.hall));
+          }}
+          onLock={() => pickHall(picked)}
+          onBack={() => {
+            if (citadels.length > 1) {
+              lockedCitadel.current = false;
+              setStep("citadel");
+              return;
+            }
+            onClose();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function hangMediaPreview(u: string): string {
+  if (u.startsWith("blob:") || u.startsWith("data:video") || /\.mp4(\?|$)/i.test(u) || u.includes("xai-vidgen") || u.startsWith("/api/clip")) return u;
+  return "";
+}
+
+function HangRefUrl({ media, onMedia }: { media: string; onMedia: (url: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(media);
+  if (!open) {
+    return (
+      <StillChip
+        tone={media ? "ice" : "quiet"}
+        data-hang-url=""
+        onPointerDown={(e) => e.stopPropagation()}
+        {...press(() => setOpen(true))}
+      >
+        URL
+      </StillChip>
+    );
+  }
+  return (
+    <form
+      className="flex w-full max-w-xs items-center gap-1"
+      data-hang-url-form=""
+      onSubmit={(e) => {
+        e.preventDefault();
+        onMedia(draft.trim());
+        setOpen(false);
+      }}
+    >
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="grok.com/imagine/post/…"
+        className="min-w-0 flex-1 rounded-full border border-white/22 bg-black/55 px-3 py-2 font-mono text-[10px] text-white outline-none"
+        autoFocus
+      />
+      <StillChip type="submit" tone="ice">
+        lock
+      </StillChip>
+    </form>
   );
 }

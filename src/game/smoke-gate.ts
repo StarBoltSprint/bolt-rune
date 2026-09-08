@@ -8,6 +8,7 @@
 
 import { hangArtifactOnDoor, type DoorLetter } from "./enter-graph.ts";
 import type { HungArtifact } from "./artifacts.ts";
+import { mayHangPlayerRef } from "./hang-ref.ts";
 import { glowContractIssues, MIN_CUE_WINDOW_S, type Cue, type Plate } from "./pcg-play.ts";
 import { lintPrompt, RAILS, type PromptSlots } from "./pcg-prompt.ts";
 import { clipCachePut, commitHallPrime, replaceStockEnter, type ClipCacheKind, type HallCommit, type PaidEnterTicket } from "./pcg-rail.ts";
@@ -484,8 +485,9 @@ export function smokeFailForward(biome?: string | null): SmokeFailForward {
   };
 }
 
-export function mayHang(smoke?: SmokeResult | null): boolean {
-  return smoke?.smoke === "PASS";
+export function mayHang(smoke?: SmokeResult | null, keep = false): boolean {
+  if (smoke?.smoke === "PASS") return true;
+  return mayHangPlayerRef(smoke, keep);
 }
 
 export function mayCacheInsert(smoke?: SmokeResult | null): boolean {
@@ -1255,11 +1257,11 @@ export function commitHallPrimeIfPass(clip?: string | null, smoke?: SmokeResult 
 export function hangOnDoorIfPass(
   id: string,
   door: DoorLetter,
-  opts: { hall: number; citadel?: string; still?: string; trans?: string; biome?: import("./enter-graph.ts").BiomeName; smoke?: SmokeResult },
+  opts: { hall: number; citadel?: string; still?: string; trans?: string; biome?: import("./enter-graph.ts").BiomeName; smoke?: SmokeResult; keep?: boolean },
   from: HungArtifact[],
 ): HungArtifact[] {
   const smoke = opts.smoke;
-  if (smoke && !mayHang(smoke)) return from;
+  if (smoke && !mayHang(smoke, opts.keep)) return from;
   return hangArtifactOnDoor(id, door, opts, from);
 }
 

@@ -1,6 +1,15 @@
 import type { Film, Grade } from "./films";
 import { hungPlayChrome } from "./enter-graph.ts";
 import { biomeSprintFilm, cookFilm, quietBiomeFilm } from "./cook";
+import {
+  hangRefRole,
+  isHangRefRole,
+  mayHangPlayerRef,
+  poseOfHangRole,
+  type HangRefFlags,
+  type HangRefPose,
+  type HangRefRole,
+} from "./hang-ref.ts";
 import { isHallFilm, isLivingHallLoop } from "./stock-room";
 import { unbindDroppedHalls as applyUnbind } from "./rooms.ts";
 import { lintSmoke, subjectFromFilm } from "./smoke-gate.ts";
@@ -23,6 +32,10 @@ export type HungRoom = {
   citadel?: string;
   hall?: number;
   biome?: string;
+  /** Player Hang role — keys pose SM (spawn|atA|atB). */
+  role?: HangRefRole;
+  pose?: HangRefPose;
+  flags?: HangRefFlags;
 };
 
 export type HungArtifact = {
@@ -41,6 +54,7 @@ let RAM: HungArtifact[] = [];
 
 function keepArt(u?: string) {
   if (!u) return "";
+  if (u.startsWith("blob:") || (u.startsWith("data:video") && u.length < 12_000_000)) return u;
   if (u.startsWith("http") || u.startsWith("/films/") || u.startsWith("/refs/") || u.startsWith("/ui/") || u.startsWith("/api/clip")) return u;
   if (u.startsWith("data:image/") && u.length < 900000) return u;
   return "";
@@ -93,6 +107,14 @@ export function packRoom(room?: HungRoom | null): HungRoom | null | undefined {
   const hall = Number(room.hall);
   const citadel = String(room.citadel || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
   const biome = String(room.biome || "").replace(/[^a-z]/g, "").slice(0, 16);
+  const role = isHangRefRole(room.role) ? hangRefRole(room.role) : undefined;
+  const flags = room.flags
+    ? {
+        continuity: room.flags.continuity === "FAIL" || room.flags.continuity === "PASS" ? room.flags.continuity : undefined,
+        kept: room.flags.kept ? true : undefined,
+        aspect: room.flags.aspect === "9:16" || room.flags.aspect === "other" ? room.flags.aspect : undefined,
+      }
+    : undefined;
   return {
     door: room.door === "B" ? "B" : "A",
     still: keepArt(room.still) || ROOM_ONE_STILL,
@@ -100,6 +122,9 @@ export function packRoom(room?: HungRoom | null): HungRoom | null | undefined {
     citadel: citadel || undefined,
     hall: hall >= 1 && hall <= 8 ? Math.round(hall) : undefined,
     biome: biome || undefined,
+    role,
+    pose: role ? poseOfHangRole(role) : undefined,
+    flags: flags && (flags.continuity || flags.kept || flags.aspect) ? flags : undefined,
   };
 }
 
@@ -144,7 +169,9 @@ export function localizeClip(u: string) {
 
 export function isClip(u?: string) {
   if (!u) return false;
-  if (u.startsWith("data:image") || /\.(jpe?g|png|webp|gif)(\?|$)/i.test(u)) return false;
+  if (u.startsWith("data:image") || (/\.(jpe?g|png|webp|gif)(\?|$)/i.test(u) && !u.includes(".mp4"))) return false;
+  if (u.startsWith("blob:") || u.startsWith("data:video")) return true;
+  if (/^https:\/\/(?:www\.)?grok\.com\/imagine\/post\//i.test(u)) return true;
   return /\.mp4(\?|$)/i.test(u) || u.includes("xai-vidgen") || u.startsWith("/api/clip") || u.includes("/films/clips/") || u.includes("/films/") || u.includes("/ui/");
 }
 
@@ -434,12 +461,13 @@ export function hangArtifact(
   film: Film,
   forceNew = false,
   runId?: string,
-  smoke?: { smoke?: string } | null,
+  smoke?: { smoke?: string; reasons?: string[] } | null,
   stillPair?: StillPairPixels,
+  keep = false,
 ): HungArtifact[] {
   try {
     const gate = smoke ?? lintHangFilm(film, stillPair);
-    if (gate && gate.smoke !== "PASS") return readArtifacts();
+    if (gate && !mayHangPlayerRef(gate, keep)) return readArtifacts();
     const list = readArtifacts();
     const incoming = uniqueClips(
       (film.playlist?.length ? film.playlist : [film.local]).map(keepArt).filter(Boolean),
