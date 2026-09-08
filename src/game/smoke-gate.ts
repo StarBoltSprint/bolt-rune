@@ -79,8 +79,48 @@ export type SmokeSubject = {
   pair?: {
     walkStillEnd?: string;
     breathStillStart?: string;
+    breathAtFrame0?: string;
+    breathAtAFrame0?: string;
+    breathAtBFrame0?: string;
     walkSpawnStart?: string;
     breathSpawnStart?: string;
+    breathSpawnFrame0?: string;
+    /** bbox height / frame. stillEnd vs next stillStart jump = FAIL. */
+    tailleStillEnd?: number;
+    tailleStillStart?: number;
+  };
+  /** Bolt Continuity LOCK. GROS + full white + behind. */
+  boltScale?: "gros" | "large" | "ok" | "small" | "tiny" | "speck";
+  boltCoat?: "white" | "full-white" | "black" | "tan" | "other";
+  boltMorph?: boolean;
+  boltBehind?: boolean;
+  /** Finite hall / sealed biome. Infinite corridor = FAIL. */
+  hallFinite?: boolean;
+  biomeSealed?: boolean;
+  corridor?: "finite" | "sealed" | "infinite";
+  /**
+   * SmiR HARD LOCK taille/scale.
+   * bboxH / withersH = height ÷ frame. Spawn band ~0.22–0.32; withers ~1/4.
+   * Walk may rise toward ~0.35–0.40 at the door, never ~0.70.
+   */
+  taille?: {
+    bboxH?: number;
+    withersH?: number;
+    /** Consecutive bbox-height / frame samples. Breath jump >~15% = FAIL. */
+    samples?: number[];
+    spawnH?: number;
+    doorH?: number;
+    stillEndH?: number;
+    stillStartH?: number;
+    /** Same lens / height / distance on every hall plate. */
+    lens?: string;
+    height?: string;
+    distance?: string;
+    lastLens?: string;
+    lastHeight?: string;
+    lastDistance?: string;
+    /** Bolt must sit in the lower third of 9:16. */
+    band?: "lower-third" | "mid" | "upper" | "full" | "tiny-cathedral";
   };
   /** Mid-clip near-black void. Explicit true or lumaMid below floor = FAIL. */
   voidMid?: boolean;
@@ -121,7 +161,8 @@ const TRUSTED_STOCK =
 const CAMERA_BAN =
   /\b(face-on|side-profile|side view|overhead|handheld|orbit|truck|follow-through|follow through(?: the)? door|master shot|profile-hero|profile start|mood hall)\b/i;
 
-const SPAWN_CAMERA_BAN = /\b(face-on|side-profile|side view|profile-hero|profile start|mood hall|face[- ]readable)\b/i;
+const SPAWN_CAMERA_BAN =
+  /\b(face-on|side-profile|side view|side spawn|side-hero|profile-hero|profile start|mood hall|face[- ]readable)\b/i;
 
 const BODY_BAN =
   /\b(cape|clothes|clothing|saddle|human arms|biped|second character|other character|muzzle hero|text on fur|shirt|coat|dress)\b/i;
@@ -136,6 +177,26 @@ const VOID_BAN = /\b(near-black|black void|void mid(?:-clip)?)\b/i;
 
 const VOID_LUMA_FLOOR = 0.04;
 
+const BOLT_SCALE_BAN = /\b(tiny speck|dog small|bolt small|small bolt|≤20%|<=20%)\b/i;
+const BOLT_COAT_BAN = /\b(black coat|black dog|black bolt|tan coat|cream coat)\b/i;
+const BOLT_MORPH_BAN = /\b(wolf morph|fox morph|morphs?(?: into)?|species change|new dog)\b/i;
+const HALL_INFINITE_BAN =
+  /\b(infinite corridor|endless (?:hall|corridor)|infinite (?:hall|terrain)|unsealed biome|open biome forever)\b/i;
+
+const TAILLE_BAN =
+  /\b(grow|shrink|morph|zoom|dolly|orbit|hero close-up|tiny cathedral)\b/i;
+
+/** Spawn bbox height / frame. Withers ~1/4 sits in this band. */
+export const TAILLE_SPAWN_MIN = 0.22;
+export const TAILLE_SPAWN_MAX = 0.32;
+export const TAILLE_WITHERS = 0.25;
+export const TAILLE_WITHERS_SLACK = 0.06;
+/** Walk may rise toward the door; never a hero close-up. */
+export const TAILLE_WALK_DOOR_MAX = 0.4;
+export const TAILLE_WALK_HERO = 0.7;
+/** Breath size freeze + stillEnd/stillStart pair. */
+export const TAILLE_JUMP = 0.15;
+
 /** Play-plate law — ship text. Tests lock these lines. */
 export const PLAY_PLATE_LAW = [
   "Spawn play plate is lock-off BEHIND only — never face-on / side-profile / mood hall.",
@@ -143,6 +204,24 @@ export const PLAY_PLATE_LAW = [
   "still-pair required when metadata is present: walk.stillEnd === breath.stillStart; walk-spawn start === breath-spawn start.",
   "Burned SEATS / FILMS / ROOMS / REFS labels and near-black void mid-clip are Smoke FAIL.",
   "Play chrome: no SEATS/FILMS/ROOMS/REFS and no painted A/B wireframes over the film. Hitboxes stay video-layout. Forge/Pause chrome OK off play.",
+] as const;
+
+/** Continuity LOCK — ship text. Tests lock these lines. */
+export const CONTINUITY_LOCK = [
+  "Continuity LOCK: camera lock-off BEHIND only. Face-on / profile / side spawn is Smoke FAIL.",
+  "still-pair: breath-spawn frame0 === walk-spawn start.",
+  "still-pair: walk stillEnd === breath-atA/B frame0.",
+  "Bolt GROS full white from behind. Morph / black coat / small speck is Smoke FAIL.",
+  "Finite hall / sealed biome — no infinite corridor.",
+] as const;
+
+/** SmiR HARD LOCK taille/scale — ship text. Tests lock these lines. */
+export const SMIR_TAILLE_LOCK = [
+  "SmiR HARD LOCK taille/scale: Bolt lower third of 9:16; withers ~1/4 frame height; same lens/height/distance every hall plate.",
+  "Breath: size frozen — jump >~15% bbox height/frame between consecutive samples = FAIL.",
+  "Walk: may rise toward ~0.35–0.40 at door, never ~0.70; spawn band ~0.22–0.32.",
+  "stillEnd vs next stillStart taille jump = FAIL pair.",
+  "Document bans: grow/shrink/morph/zoom/dolly/orbit/hero close-up/tiny cathedral.",
 ] as const;
 
 function num(n: number | null | undefined) {
@@ -400,12 +479,102 @@ function lintStillPair(subject: SmokeSubject): string[] {
   const pair = subject.pair;
   if (!pair) return [];
   const walkEnd = String(pair.walkStillEnd || "").trim();
-  const breathStart = String(pair.breathStillStart || "").trim();
+  const breathStart = String(pair.breathStillStart || pair.breathAtFrame0 || "").trim();
+  const breathAtA = String(pair.breathAtAFrame0 || "").trim();
+  const breathAtB = String(pair.breathAtBFrame0 || "").trim();
   const walkSpawn = String(pair.walkSpawnStart || "").trim();
-  const breathSpawn = String(pair.breathSpawnStart || "").trim();
-  if (walkEnd && breathStart && walkEnd !== breathStart) return ["still-pair"];
+  const breathSpawn = String(pair.breathSpawnFrame0 || pair.breathSpawnStart || "").trim();
   if (walkSpawn && breathSpawn && walkSpawn !== breathSpawn) return ["still-pair"];
+  if (walkEnd && breathStart && walkEnd !== breathStart) return ["still-pair"];
+  const side = subject.slots?.act === "walk-B" || subject.pose === "atB" ? "B" : subject.pose === "atA" || subject.slots?.act === "walk-A" ? "A" : "";
+  if (walkEnd && breathAtA && (!side || side === "A") && walkEnd !== breathAtA) return ["still-pair"];
+  if (walkEnd && breathAtB && (!side || side === "B") && walkEnd !== breathAtB) return ["still-pair"];
   return [];
+}
+
+function lintBolt(subject: SmokeSubject): string[] {
+  const reasons: string[] = [];
+  const scale = subject.boltScale;
+  if (scale === "small" || scale === "tiny" || scale === "speck") reasons.push("bolt-scale");
+  const coat = subject.boltCoat;
+  if (coat === "black" || coat === "tan" || coat === "other") reasons.push("bolt-coat");
+  if (subject.boltMorph === true) reasons.push("bolt-morph");
+  if (subject.boltBehind === false) reasons.push("bolt-view");
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && BOLT_SCALE_BAN.test(rest)) reasons.push("bolt-scale");
+  if (rest && BOLT_COAT_BAN.test(rest)) reasons.push("bolt-coat");
+  if (rest && BOLT_MORPH_BAN.test(rest)) reasons.push("bolt-morph");
+  return [...new Set(reasons)];
+}
+
+function lintHallFinite(subject: SmokeSubject): string[] {
+  if (subject.hallFinite === false || subject.biomeSealed === false || subject.corridor === "infinite") {
+    return ["hall-infinite"];
+  }
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && HALL_INFINITE_BAN.test(rest)) return ["hall-infinite"];
+  return [];
+}
+
+function relJump(a: number, b: number): number {
+  const base = Math.max(Math.abs(a), 1e-6);
+  return Math.abs(b - a) / base;
+}
+
+function lintTaille(subject: SmokeSubject): string[] {
+  const reasons: string[] = [];
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && TAILLE_BAN.test(rest)) reasons.push("taille-ban");
+
+  const t = subject.taille;
+  const pair = subject.pair;
+  const spawnH = t?.spawnH ?? (isSpawnPlayPlate(subject) ? t?.bboxH : undefined);
+  const doorH = t?.doorH;
+  const withers = t?.withersH;
+  const stillEndH = t?.stillEndH ?? pair?.tailleStillEnd;
+  const stillStartH = t?.stillStartH ?? pair?.tailleStillStart;
+
+  if (t?.band === "tiny-cathedral" || t?.band === "upper" || t?.band === "mid" || t?.band === "full") {
+    reasons.push("taille-band");
+  }
+  if (typeof withers === "number" && Number.isFinite(withers)) {
+    if (Math.abs(withers - TAILLE_WITHERS) > TAILLE_WITHERS_SLACK) reasons.push("taille-withers");
+  }
+  if (typeof spawnH === "number" && Number.isFinite(spawnH)) {
+    if (spawnH < TAILLE_SPAWN_MIN || spawnH > TAILLE_SPAWN_MAX) reasons.push("taille-spawn");
+  }
+  if (typeof doorH === "number" && Number.isFinite(doorH)) {
+    if (doorH >= TAILLE_WALK_HERO - 0.02 || doorH > TAILLE_WALK_DOOR_MAX + 0.02) reasons.push("taille-walk");
+  }
+  if (typeof t?.bboxH === "number" && Number.isFinite(t.bboxH) && t.bboxH >= TAILLE_WALK_HERO - 0.02) {
+    reasons.push("taille-walk");
+  }
+
+  const samples = Array.isArray(t?.samples) ? t.samples.filter((n) => typeof n === "number" && Number.isFinite(n)) : [];
+  if ((subject.kind === "breath" || subject.pose === "spawn" || samples.length >= 2) && samples.length >= 2) {
+    for (let i = 1; i < samples.length; i++) {
+      if (relJump(samples[i - 1]!, samples[i]!) > TAILLE_JUMP) {
+        reasons.push("taille-breath");
+        break;
+      }
+    }
+  }
+
+  if (typeof stillEndH === "number" && typeof stillStartH === "number" && Number.isFinite(stillEndH) && Number.isFinite(stillStartH)) {
+    if (relJump(stillEndH, stillStartH) > TAILLE_JUMP) reasons.push("taille-pair");
+  }
+
+  const lens = String(t?.lens || "").trim();
+  const lastLens = String(t?.lastLens || "").trim();
+  const height = String(t?.height || "").trim();
+  const lastHeight = String(t?.lastHeight || "").trim();
+  const distance = String(t?.distance || "").trim();
+  const lastDistance = String(t?.lastDistance || "").trim();
+  if ((lens && lastLens && lens !== lastLens) || (height && lastHeight && height !== lastHeight) || (distance && lastDistance && distance !== lastDistance)) {
+    reasons.push("taille-lens");
+  }
+
+  return [...new Set(reasons)];
 }
 
 function lintVoid(subject: SmokeSubject): string[] {
@@ -507,6 +676,9 @@ const BATTERY: Array<(s: SmokeSubject) => string[]> = [
   lintCues,
   lintContinuity,
   lintStillPair,
+  lintBolt,
+  lintTaille,
+  lintHallFinite,
   lintVoid,
   lintPromptResidue,
 ];

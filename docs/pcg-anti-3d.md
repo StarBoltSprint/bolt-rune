@@ -24,7 +24,7 @@ The README holds the refuse table, steal table, and smell tests. This note is th
 | Picture-time audio | `src/game/pcg-audio.ts` | Plate + engine buses; pause/mute; grade one-shots |
 | Play input / haptics / a11y | `src/game/pcg-input.ts` | Video-layout A/B; same cue sheet; no XYZ / WASD |
 | EDPCG density / awakening | `src/game/pcg-density.ts` | `smoothstep(m) * noise(s, pictureTime)` → cook slots |
-| Smoke ship-gate | `src/game/smoke-gate.ts` | PASS/FAIL before Hang / cache / enter; `railsVersion` `bolt-1`; play-plate / still-pair / void |
+| Smoke ship-gate | `src/game/smoke-gate.ts` | PASS/FAIL before Hang / cache / enter; `railsVersion` `bolt-1`; play-plate / still-pair / Continuity LOCK / SmiR taille / void |
 | Rich cache + LRU pin | `src/game/pcg-rail.ts` | PASS rows only; Keep edges / hung / Hall′ stills never evict |
 | Keep share recipe | `src/game/pcg-share.ts` | Graph + pin keys; visitor never auto-billed |
 
@@ -70,6 +70,26 @@ Burned SEATS / FILMS / ROOMS / REFS labels and near-black void mid-clip are Smok
 Play chrome: no SEATS/FILMS/ROOMS/REFS and no painted A/B wireframes over the film. Hitboxes stay video-layout. Forge/Pause chrome OK off play.
 
 Walk A↔B stays optional. Pose SM unchanged. Asteroid HOLD. No Pack seats. No Imagine wakes.
+
+Continuity LOCK: camera lock-off BEHIND only. Face-on / profile / side spawn is Smoke FAIL.
+
+still-pair: breath-spawn frame0 === walk-spawn start.
+
+still-pair: walk stillEnd === breath-atA/B frame0.
+
+Bolt GROS full white from behind. Morph / black coat / small speck is Smoke FAIL.
+
+Finite hall / sealed biome — no infinite corridor.
+
+SmiR HARD LOCK taille/scale: Bolt lower third of 9:16; withers ~1/4 frame height; same lens/height/distance every hall plate.
+
+Breath: size frozen — jump >~15% bbox height/frame between consecutive samples = FAIL.
+
+Walk: may rise toward ~0.35–0.40 at door, never ~0.70; spawn band ~0.22–0.32.
+
+stillEnd vs next stillStart taille jump = FAIL pair.
+
+Document bans: grow/shrink/morph/zoom/dolly/orbit/hero close-up/tiny cathedral.
 
 ## Smell tests
 

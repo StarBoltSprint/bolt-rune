@@ -7,7 +7,9 @@ import { hangArtifactOnDoor } from "./enter-graph.ts";
 import { assemblePrompt, type PromptSlots } from "./pcg-prompt.ts";
 import { clipCachePut, commitHallPrime } from "./pcg-rail.ts";
 import {
+  CONTINUITY_LOCK,
   PLAY_PLATE_LAW,
+  SMIR_TAILLE_LOCK,
   RAILS_VERSION,
   clearSmokeFail,
   clearSmokePass,
@@ -167,13 +169,16 @@ describe("Smoke ship-gate — local lint", () => {
     assert.match(smokeForgeFrost(fail.reasons), /smoke FAIL/);
   });
 
-  it("face-on / profile spawn play plate is Smoke FAIL", () => {
+  it("face-on / profile / side spawn play plate is Smoke FAIL", () => {
     const face = lintSmoke(goodWalk({ kind: "breath", pose: "spawn", role: "play", camera: "face-on" }));
     assert.equal(face.smoke, "FAIL");
     assert.ok(face.reasons.includes("spawn-camera") || face.reasons.includes("camera-lock"));
     const profile = lintSmoke(goodWalk({ kind: "breath", pose: "spawn", role: "play", camera: "side-profile" }));
     assert.equal(profile.smoke, "FAIL");
     assert.ok(profile.reasons.includes("spawn-camera") || profile.reasons.includes("camera-lock"));
+    const side = lintSmoke(goodWalk({ kind: "breath", pose: "spawn", role: "play", camera: "side" }));
+    assert.equal(side.smoke, "FAIL");
+    assert.ok(side.reasons.includes("spawn-camera") || side.reasons.includes("camera-lock"));
     const mood = lintSmoke(goodWalk({ kind: "breath", pose: "spawn", role: "vault-ref" }));
     assert.equal(mood.smoke, "FAIL");
     assert.ok(mood.reasons.includes("spawn-mood"));
@@ -198,24 +203,123 @@ describe("Smoke ship-gate — local lint", () => {
     assert.ok(walkBreath.reasons.includes("still-pair"));
     const spawnPair = lintSmoke(
       goodWalk({
-        pair: { walkSpawnStart: "spawn-walk-0", breathSpawnStart: "spawn-breath-1" },
+        pair: { walkSpawnStart: "spawn-walk-0", breathSpawnFrame0: "spawn-breath-1" },
       }),
     );
     assert.equal(spawnPair.smoke, "FAIL");
     assert.ok(spawnPair.reasons.includes("still-pair"));
+    const atA = lintSmoke(
+      goodWalk({
+        pose: "atA",
+        pair: { walkStillEnd: "walk-end-a", breathAtAFrame0: "breath-a-other" },
+      }),
+    );
+    assert.equal(atA.smoke, "FAIL");
+    assert.ok(atA.reasons.includes("still-pair"));
+    const atB = lintSmoke(
+      goodWalk({
+        pose: "atB",
+        slots: goodSlots({ act: "walk-B" }),
+        pair: { walkStillEnd: "walk-end-b", breathAtBFrame0: "breath-b-other" },
+      }),
+    );
+    assert.equal(atB.smoke, "FAIL");
+    assert.ok(atB.reasons.includes("still-pair"));
     const aligned = lintSmoke(
       goodWalk({
         pair: {
           walkStillEnd: "still-a",
           breathStillStart: "still-a",
+          breathAtAFrame0: "still-a",
           walkSpawnStart: "spawn-0",
-          breathSpawnStart: "spawn-0",
+          breathSpawnFrame0: "spawn-0",
         },
       }),
     );
     assert.equal(aligned.smoke, "PASS");
     const missing = lintSmoke(goodWalk({ pair: { walkStillEnd: "only-one-side" } }));
     assert.equal(missing.smoke, "PASS");
+  });
+
+  it("Bolt GROS full white from behind; morph / black / small FAIL", () => {
+    const small = lintSmoke(goodWalk({ boltScale: "small" }));
+    assert.equal(small.smoke, "FAIL");
+    assert.ok(small.reasons.includes("bolt-scale"));
+    const black = lintSmoke(goodWalk({ boltCoat: "black" }));
+    assert.equal(black.smoke, "FAIL");
+    assert.ok(black.reasons.includes("bolt-coat"));
+    const morph = lintSmoke(goodWalk({ boltMorph: true }));
+    assert.equal(morph.smoke, "FAIL");
+    assert.ok(morph.reasons.includes("bolt-morph"));
+    const face = lintSmoke(goodWalk({ boltBehind: false }));
+    assert.equal(face.smoke, "FAIL");
+    assert.ok(face.reasons.includes("bolt-view"));
+    const gros = lintSmoke(goodWalk({ boltScale: "gros", boltCoat: "white", boltBehind: true, boltMorph: false }));
+    assert.equal(gros.smoke, "PASS");
+  });
+
+  it("SmiR HARD LOCK taille/scale — spawn band, breath jump, walk hero, pair, lens", () => {
+    const cooked = assemblePrompt(goodSlots());
+    const tiny = lintSmoke(goodWalk({ pose: "spawn", kind: "breath", taille: { bboxH: 0.1, spawnH: 0.1 } }));
+    assert.equal(tiny.smoke, "FAIL");
+    assert.ok(tiny.reasons.includes("taille-spawn"));
+    const withers = lintSmoke(goodWalk({ taille: { withersH: 0.08 } }));
+    assert.equal(withers.smoke, "FAIL");
+    assert.ok(withers.reasons.includes("taille-withers"));
+    const breathJump = lintSmoke(
+      goodWalk({ kind: "breath", pose: "spawn", taille: { samples: [0.27, 0.42] } }),
+    );
+    assert.equal(breathJump.smoke, "FAIL");
+    assert.ok(breathJump.reasons.includes("taille-breath"));
+    const hero = lintSmoke(goodWalk({ kind: "walk", taille: { spawnH: 0.27, doorH: 0.7 } }));
+    assert.equal(hero.smoke, "FAIL");
+    assert.ok(hero.reasons.includes("taille-walk"));
+    const pairJump = lintSmoke(goodWalk({ pair: { tailleStillEnd: 0.27, tailleStillStart: 0.48 } }));
+    assert.equal(pairJump.smoke, "FAIL");
+    assert.ok(pairJump.reasons.includes("taille-pair"));
+    const lens = lintSmoke(goodWalk({ taille: { lens: "35mm", lastLens: "85mm" } }));
+    assert.equal(lens.smoke, "FAIL");
+    assert.ok(lens.reasons.includes("taille-lens"));
+    const cathedral = lintSmoke(goodWalk({ taille: { band: "tiny-cathedral" } }));
+    assert.equal(cathedral.smoke, "FAIL");
+    assert.ok(cathedral.reasons.includes("taille-band"));
+    const banned = lintSmoke(goodWalk({ prompt: `${cooked.prompt} tiny cathedral dolly zoom` }));
+    assert.equal(banned.smoke, "FAIL");
+    assert.ok(banned.reasons.includes("taille-ban"));
+    const ok = lintSmoke(
+      goodWalk({
+        pose: "spawn",
+        kind: "breath",
+        taille: {
+          bboxH: 0.27,
+          withersH: 0.25,
+          spawnH: 0.27,
+          doorH: 0.38,
+          samples: [0.26, 0.27, 0.28],
+          stillEndH: 0.27,
+          stillStartH: 0.28,
+          lens: "35mm",
+          lastLens: "35mm",
+          height: "1.4m",
+          lastHeight: "1.4m",
+          distance: "4m",
+          lastDistance: "4m",
+          band: "lower-third",
+        },
+      }),
+    );
+    assert.equal(ok.smoke, "PASS");
+  });
+
+  it("finite hall / sealed biome — infinite corridor FAIL", () => {
+    const hall = lintSmoke(goodWalk({ hallFinite: false }));
+    assert.equal(hall.smoke, "FAIL");
+    assert.ok(hall.reasons.includes("hall-infinite"));
+    const corridor = lintSmoke(goodWalk({ corridor: "infinite" }));
+    assert.equal(corridor.smoke, "FAIL");
+    assert.ok(corridor.reasons.includes("hall-infinite"));
+    const sealed = lintSmoke(goodWalk({ hallFinite: true, biomeSealed: true, corridor: "sealed" }));
+    assert.equal(sealed.smoke, "PASS");
   });
 
   it("near-black void mid-clip FAIL", () => {
@@ -327,7 +431,7 @@ describe("Smoke ship-gate — engine hook + Door seat untouched", () => {
     assert.match(engine, /lintEnterClip/);
     assert.match(engine, /smokeForgeFrost/);
     const docs = readFileSync(join(here, "../../docs/pcg-anti-3d.md"), "utf8");
-    for (const line of PLAY_PLATE_LAW) {
+    for (const line of [...PLAY_PLATE_LAW, ...CONTINUITY_LOCK, ...SMIR_TAILLE_LOCK]) {
       assert.match(readme, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
       assert.match(docs, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
       assert.match(gate, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
