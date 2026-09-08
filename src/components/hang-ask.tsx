@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
-import { vaultHangRoom } from "@/game/path-entry";
+import { vaultHangRoom, vaultHangStart } from "@/game/path-entry";
 import {
   HANG_CONFIRM_ARM_MS,
   HANG_LEFTOVER_SWALLOW_MS,
@@ -660,6 +660,7 @@ export function HangRefSheet({
   onKeep,
   onHang,
   onPlay,
+  onHangDoor,
   onAdvanced,
   onClose,
 }: {
@@ -674,6 +675,7 @@ export function HangRefSheet({
   onKeep?: () => void;
   onHang: () => void;
   onPlay?: () => void;
+  onHangDoor?: (door: "A" | "B") => void;
   onAdvanced?: () => void;
   onClose: () => void;
 }) {
@@ -814,6 +816,30 @@ export function HangRefSheet({
                   >
                     Play
                   </StillChip>
+                ) : null}
+                {hung && onHangDoor ? (
+                  <>
+                    <StillChip
+                      tone="ice"
+                      data-hang={vaultHangStart("A").dataHang}
+                      data-hang-biome="A"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      {...press(() => onHangDoor("A"))}
+                    >
+                      Hang A
+                      <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/40">to biome</span>
+                    </StillChip>
+                    <StillChip
+                      tone="gold"
+                      data-hang={vaultHangStart("B").dataHang}
+                      data-hang-biome="B"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      {...press(() => onHangDoor("B"))}
+                    >
+                      Hang B
+                      <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/40">to biome</span>
+                    </StillChip>
+                  </>
                 ) : null}
                 {advanced && onAdvanced ? (
                   <StillChip

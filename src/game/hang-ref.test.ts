@@ -21,9 +21,11 @@ import {
   hangRefRole,
   hangRoleOwnsDoor,
   hangSlotPreview,
+  hallGraphArt,
   hungOnRole,
   hungRefsForHall,
   isContinuityOnlyFail,
+  isHangGraphArt,
   isHangMediaUrl,
   isImaginePostUrl,
   isLegacyDoorHang,
@@ -32,8 +34,10 @@ import {
   parseHangSlot,
   parseImaginePostUrl,
   poseOfHangRole,
+  rehomeHungGraph,
   slotsFromHung,
   slotWrites,
+  HANG_GRAPH_PROMPT,
   HANG_REF_GRAPH_HALL,
   HANG_REF_LAW,
   HANG_REF_PRIMARY,
@@ -236,6 +240,14 @@ describe("Hang ref — Human Hang wins stock shelf", () => {
     assert.equal(slots["walk-A-B"], "/films/walk-ab-mine.mp4");
     assert.equal(isLegacyDoorHang({ room: { door: "A", still: "/films/forest.jpg", hall: 1 } }, 1), true);
     assert.equal(isLegacyDoorHang(hung[0], 2), false);
+    const bundle = art({ id: "art-hall", prompt: HANG_GRAPH_PROMPT, playlist: ["/films/walk-mine.mp4"] });
+    assert.equal(isHangGraphArt(bundle), true);
+    assert.equal(hallGraphArt([...hung, bundle])?.id, "art-hall");
+    const moved = rehomeHungGraph(hung, 2, 1, "cit-2");
+    assert.equal(moved.find((a) => a.id === "art-walk-a")?.room?.hall, 1);
+    assert.equal(moved.find((a) => a.id === "art-walk-a")?.room?.citadel, "cit-2");
+    assert.equal(moved.find((a) => a.id === "art-walk-a")?.room?.role, "walk-A");
+    assert.equal(overlayHungShelf(stock, moved, 1, "cit-2")["walk-spawn-A"], "/films/walk-mine.mp4");
   });
 });
 
@@ -259,6 +271,10 @@ describe("Hang ref — UI + engine wire + README", () => {
     assert.doesNotMatch(sheet, /HangCitadelStrip/);
     assert.doesNotMatch(sheet, /HangRoomStrip/);
     assert.doesNotMatch(sheet, /Room \$\{picked\}/);
+    assert.match(sheet, /onHangDoor/);
+    assert.match(sheet, /Hang A/);
+    assert.match(sheet, /Hang B/);
+    assert.match(sheet, /to biome/);
     assert.match(vault, /HangRefSheet/);
     assert.match(vault, /hangPlayerRef/);
     assert.match(vault, /data-hang-ref-open/);
@@ -266,6 +282,9 @@ describe("Hang ref — UI + engine wire + README", () => {
     assert.match(vault, /slotWrites\(refSlots\)/);
     assert.match(vault, /HANG_REF_GRAPH_HALL/);
     assert.match(vault, /playHungGraph/);
+    assert.match(vault, /askHangGraph/);
+    assert.match(vault, /rehomeHungGraph/);
+    assert.match(vault, /HANG_GRAPH_PROMPT/);
     assert.match(vault, /isLegacyDoorHang/);
     assert.match(engine, /overlayHungShelf/);
     assert.match(engine, /applyHungRefBank/);

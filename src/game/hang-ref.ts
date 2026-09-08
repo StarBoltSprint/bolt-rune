@@ -172,6 +172,49 @@ export function isLegacyDoorHang(art?: Pick<HungArtifact, "room"> | null, hall =
   return !isHangRefRole(room.role);
 }
 
+/** Vault card for the assembled hall — Hang A/B binds this to a biome door. */
+export const HANG_GRAPH_PROMPT = "hall-graph";
+
+export function isHangGraphArt(art?: Pick<HungArtifact, "prompt" | "name"> | null): boolean {
+  return String(art?.prompt || "") === HANG_GRAPH_PROMPT;
+}
+
+export function hallGraphArt(arts: HungArtifact[] = []): HungArtifact | undefined {
+  return arts.find((a) => isHangGraphArt(a));
+}
+
+/** Pose-role arts on one hall graph. */
+export function hallGraphRoles(arts: HungArtifact[] = [], hall = HANG_REF_GRAPH_HALL, citadel?: string): HungArtifact[] {
+  const n = hallOfRoom({ hall }, HANG_REF_GRAPH_HALL);
+  return arts.filter((a) => isHangRefRole(a.room?.role) && hallMatch(a, n, citadel));
+}
+
+/** After Hang A/B picks Room N, pose refs follow that hall so overlay still hits. */
+export function rehomeHungGraph(
+  arts: HungArtifact[] = [],
+  fromHall = HANG_REF_GRAPH_HALL,
+  toHall = HANG_REF_GRAPH_HALL,
+  citadel?: string,
+): HungArtifact[] {
+  const from = hallOfRoom({ hall: fromHall }, HANG_REF_GRAPH_HALL);
+  const to = hallOfRoom({ hall: toHall }, HANG_REF_GRAPH_HALL);
+  if (from === to && !citadel) return arts;
+  const cit = String(citadel || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+  return arts.map((a) => {
+    if (!isHangRefRole(a.room?.role)) return a;
+    if (hallOfRoom(a.room, 0) !== from) return a;
+    return {
+      ...a,
+      room: {
+        ...a.room!,
+        hall: to,
+        citadel: cit || a.room?.citadel,
+      },
+      hungAt: Date.now(),
+    };
+  });
+}
+
 /** Home pose for breaths; destination pose for walk edges. */
 export function poseOfHangRole(role?: string | null): HangRefPose {
   const r = hangRefRole(role);

@@ -7,17 +7,22 @@ import {
   hangMediaSrc,
   hangRefFlags,
   hangRefKind,
+  hallGraphArt,
   hangSlotPreview,
   hungOnRole,
   isContinuityOnlyFail,
+  isHangGraphArt,
+  isHangRefRole,
   isHangMediaUrl,
   isImaginePostUrl,
   isLegacyDoorHang,
   parseImaginePostUrl,
+  rehomeHungGraph,
   slotsFromHung,
   slotWrites,
   type HangRefRole,
   type HangRefSlots,
+  HANG_GRAPH_PROMPT,
   HANG_REF_GRAPH_HALL,
 } from "@/game/hang-ref";
 import { lintSmoke, mayHang, smokeForgeFrost } from "@/game/smoke-gate";
@@ -232,7 +237,14 @@ export function VaultHall() {
     const letter = doorLetterOf(door);
     const pick = rooms.find((r) => r.hall === bindHall);
     const citadel = pick?.citadel || hangCitadelRef.current || cit.citadel || undefined;
-    const hung = hangOnRoom(a.id, bindHungRoom(a, letter, { citadel, hall: bindHall }), from?.length ? from : hungRef.current);
+    const fromHall = a.room?.hall && hallN(a.room.hall) ? a.room.hall : HANG_REF_GRAPH_HALL;
+    let hung = hangOnRoom(a.id, bindHungRoom(a, letter, { citadel, hall: bindHall }), from?.length ? from : hungRef.current);
+    if (isHangGraphArt(a) || isHangRefRole(a.room?.role)) {
+      hung = rehomeHungGraph(hung, fromHall, bindHall, citadel);
+      for (const art of hung.filter((x) => x.id !== a.id && x.room?.hall === bindHall && x.room?.role)) {
+        persistArt(art);
+      }
+    }
     setHung(hung);
     hangHallRef.current = bindHall;
     setHangHallN(bindHall);
@@ -371,6 +383,22 @@ export function VaultHall() {
     window.location.assign(href);
   }
 
+  function askHangGraph(door: "A" | "B") {
+    const arts = hungRef.current.length ? hungRef.current : readArtifacts();
+    const bundle =
+      hallGraphArt(arts) ||
+      hungOnRole(arts, "walk-A", HANG_REF_GRAPH_HALL) ||
+      hungOnRole(arts, "walk-B", HANG_REF_GRAPH_HALL) ||
+      hungOnRole(arts, "breath-spawn", HANG_REF_GRAPH_HALL) ||
+      arts[0];
+    if (!bundle) {
+      setFrost("hang the slots first");
+      window.setTimeout(() => setFrost(""), 2400);
+      return;
+    }
+    void askHang(bundle, door, hangHallRef.current);
+  }
+
   function hangPlayerRef(_hallWant?: number | string | null) {
     const writes = slotWrites(refSlots);
     const bindHall = HANG_REF_GRAPH_HALL;
@@ -456,6 +484,16 @@ export function VaultHall() {
       const live = arts.find((x) => x.id === a.id);
       if (live) persistArt({ ...live, room: null });
     }
+    const urls = passed.map((p) => p.url);
+    const pic = hangMediaSrc(urls[0] || "") || urls[0] || "";
+    const have = hallGraphArt(arts);
+    if (have) {
+      arts = setPlaylist(have.id, urls, { still: have.still || pic, name: "Hall", prompt: HANG_GRAPH_PROMPT }, arts);
+    } else {
+      arts = hangArtifact(cookFilm("Hall", pic, urls, HANG_GRAPH_PROMPT), true, undefined, { smoke: "PASS", reasons: [] }, undefined, true);
+    }
+    const bundle = hallGraphArt(arts);
+    if (bundle) persistArt(bundle);
     setHung(arts);
     hangHallRef.current = bindHall;
     setHangHallN(bindHall);
@@ -1066,10 +1104,11 @@ export function VaultHall() {
           onKeep={() => setRefKeep((v) => !v)}
           onHang={() => hangPlayerRef()}
           onPlay={playHungGraph}
+          onHangDoor={askHangGraph}
           onAdvanced={() => setHangRef(false)}
           onClose={() => {
             setHangRef(false);
-            window.location.assign("/");
+            if (!refHung && !hung.length) window.location.assign("/");
           }}
         />
       ) : null}
@@ -1089,6 +1128,7 @@ export function VaultHall() {
             const cit = hangCitadelRef.current || hangAsk.rooms.find((r) => r.hall === bindHall)?.citadel || hangCitadel;
             const choice = hangDoorAct(act);
             setHangAsk(null);
+            setHangRef(false);
             /* Enter keeps today's pending walk. Bind writes the door and stays. */
             if (hangActEnters(choice)) {
               writeHangPending({ id: hangAsk.a.id, citadel: cit, hall: bindHall });
