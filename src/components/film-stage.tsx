@@ -34,6 +34,38 @@ import { biomeQteQuiet, doorLetterOf, firstBiomePlate, hallDoorTap, hallPlateAt,
 import { doorAtPoint, isHallFilm, isLivingHallLoop } from "@/game/stock-room";
 import { afterPlate, beginOnline, pictureTimeFromPlates, type OnlineStrip, type TapObserve } from "@/game/pcg-wfc";
 import { readRunSeed } from "@/game/pcg-rail";
+import {
+  COYOTE_S,
+  activeCueIndex,
+  advancePictureTime,
+  applyGradeMomentum,
+  beginPlayClock,
+  commitNodeStill,
+  cuesFromBeats,
+  decoderSkipNotMiss,
+  endPlateClock,
+  gradeEnterArm,
+  hidePlayClock,
+  howlAct,
+  makePlate,
+  mayAdvancePicture,
+  mayAdvanceWfc,
+  mayEnterArm,
+  mayPrefetch,
+  nextCueOn,
+  noteWalkHit,
+  pausePlayClock,
+  pictureTimeNow,
+  plateTapFromGrades,
+  recallStill,
+  resumePlayClock,
+  sideFromLane,
+  type Cue,
+  type CueSide,
+  type HitClass,
+  type Plate,
+  type PlayClock,
+} from "@/game/pcg-play";
 
 export type RunResult = {
   score: number;
@@ -181,6 +213,14 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   const wfcRef = useRef<OnlineStrip | null>(null);
   const wfcPlayed = useRef<number[]>([]);
   const plateTap = useRef({ miss: 0, hit: 0, late: 0 });
+  const playClockRef = useRef<PlayClock>(beginPlayClock());
+  const playPausedRef = useRef(false);
+  const playCuesRef = useRef<Cue[]>([]);
+  const playGradedRef = useRef<boolean[]>([]);
+  const playGradesRef = useRef<HitClass[]>([]);
+  const walkHitsRef = useRef({ A: false, B: false });
+  const lastMediaTRef = useRef(0);
+  const playPlateRef = useRef<Plate | null>(null);
   const hallFlagsRef = useRef<boolean[]>([]);
   const advancing = useRef(false);
   const laneRef = useRef<0 | 1>(0);
@@ -321,6 +361,56 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
   }
 
   /** One in-flight CueFill at a time — skip jumps, stacked L/R ticks, and already-gone fills. */
+  function playNodeId() {
+    return `${film.id}:${holdHall ?? ""}:${holdDoorRef.current || "run"}`;
+  }
+
+  function resetPlaySheet(beats: Beat[], duration: number, clip = "") {
+    const cues = cuesFromBeats(beats, duration);
+    playCuesRef.current = cues;
+    playGradedRef.current = cues.map(() => false);
+    playGradesRef.current = [];
+    walkHitsRef.current = { A: false, B: false };
+    lastMediaTRef.current = 0;
+    playPlateRef.current = makePlate({
+      clip: clip || src || film.local || "",
+      duration,
+      cues,
+      stillStart: poster || film.still || "",
+      stillEnd: poster || film.still || "",
+    });
+  }
+
+  function notePlayGrade(t: number, side?: CueSide | null) {
+    const cues = playCuesRef.current;
+    const i = activeCueIndex(cues, t, COYOTE_S, playGradedRef.current);
+    if (i < 0) return null;
+    const cue = cues[i]!;
+    const hit = gradeEnterArm(t, cue, walkHitsRef.current, COYOTE_S, nextCueOn(cues, i), side);
+    playGradedRef.current[i] = true;
+    playGradesRef.current.push(hit);
+    walkHitsRef.current = noteWalkHit(walkHitsRef.current, cue, hit);
+    return hit;
+  }
+
+  function togglePlayPause() {
+    const v = videoRef.current;
+    if (playPausedRef.current) {
+      playPausedRef.current = false;
+      playClockRef.current = resumePlayClock(playClockRef.current);
+      lastMediaTRef.current = v && Number.isFinite(v.currentTime) ? v.currentTime : lastMediaTRef.current;
+      void v?.play().catch(() => {});
+      return;
+    }
+    playPausedRef.current = true;
+    playClockRef.current = pausePlayClock(playClockRef.current);
+    try {
+      v?.pause();
+    } catch {
+      /* */
+    }
+  }
+
   function skipToHoldCue(g: G, afterAt = Number.NEGATIVE_INFINITY) {
     if (!holdDoorRef.current) return;
     const t = Number.isFinite(afterAt) ? clock() : Number.NEGATIVE_INFINITY;
@@ -435,6 +525,14 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     wfcRef.current = beginOnline({ s: readRunSeed() || "s0", n: Math.max(5, list.length || 6), momentum: 0.7 });
     wfcPlayed.current = [];
     plateTap.current = { miss: 0, hit: 0, late: 0 };
+    playClockRef.current = beginPlayClock();
+    playPausedRef.current = false;
+    playCuesRef.current = [];
+    playGradedRef.current = [];
+    playGradesRef.current = [];
+    walkHitsRef.current = { A: false, B: false };
+    lastMediaTRef.current = 0;
+    playPlateRef.current = null;
     hallFlagsRef.current = list.map((u) => isHallFilm(u) || Boolean(sprintHallDoor(u, 0.22, 0.42)));
     const startI = holdDoor ? firstBiomePlate(list) : 0;
     plateRef.current = startI;
@@ -608,12 +706,12 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         if (hold && holdLoopSeam(v.ended, v.currentTime, v.duration)) keepHoldLoop(v);
         else if (hold && holdPlateStuck(v.readyState, v.paused)) recoverHoldPlate(v);
         else if (hold && holdPlateUnderrun(v.readyState, v.paused, v.currentTime)) recoverHoldPlate(v, "waiting");
-        else if (v.paused && (live || hold)) void v.play().catch(() => {});
+        else if (v.paused && (live || hold) && !playPausedRef.current) void v.play().catch(() => {});
       }
 
       let t = 0;
       if (usingStill) {
-        g.fakeT += dt;
+        if (mayAdvancePicture(playClockRef.current)) g.fakeT += dt;
         t = g.fakeT;
       } else if (v) {
         t = clock();
@@ -622,9 +720,10 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           g.charted = true;
           g.i = 0;
           skipToHoldCue(g);
+          resetPlaySheet(g.beats, v.duration, v.getAttribute("data-url") || src);
         }
         const list = platesRef.current.length ? platesRef.current : uniqueClips(film.playlist || []);
-        if (!hold && list.length > 1 && plateRef.current < list.length - 1 && !advancing.current && v.duration > 1 && Number.isFinite(v.duration)) {
+        if (!hold && list.length > 1 && plateRef.current < list.length - 1 && !advancing.current && v.duration > 1 && Number.isFinite(v.duration) && mayPrefetch(playClockRef.current)) {
           const nxt = otherPlate();
           const nextUrl = list[plateRef.current + 1];
           if (nextUrl) armPlate(nxt, nextUrl);
@@ -639,6 +738,23 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       if (hold && t + 0.45 < loopT.current) restartHoldChart();
       loopT.current = t;
       if (film.score && phaseRef.current === "run") syncScore(t);
+
+      const mediaT = usingStill ? g.fakeT : v && Number.isFinite(v.currentTime) ? v.currentTime : 0;
+      const prevMedia = lastMediaTRef.current;
+      const jump = mediaT - prevMedia;
+      if (prevMedia > 0 && jump > 0.12) {
+        const cues = playCuesRef.current;
+        for (let i = 0; i < cues.length; i++) {
+          if (playGradedRef.current[i]) continue;
+          if (decoderSkipNotMiss(prevMedia, mediaT, cues[i]!, COYOTE_S, nextCueOn(cues, i))) {
+            playGradedRef.current[i] = true;
+          }
+        }
+      }
+      if (mayAdvancePicture(playClockRef.current) && jump > 0 && jump < 0.8) {
+        playClockRef.current = advancePictureTime(playClockRef.current, jump * 1000);
+      }
+      lastMediaTRef.current = mediaT;
 
       g.trauma = Math.max(0, g.trauma - dt * 2.4);
       if (phaseRef.current === "run") {
@@ -807,12 +923,18 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
 
   function observePlateTap(i: number, durationMs: number) {
     const live = wfcRef.current;
-    if (!live) return;
-    wfcPlayed.current[i] = Math.max(0, Number(durationMs) || live.wave.plateSecs * 1000);
-    const pictureTime = pictureTimeFromPlates(wfcPlayed.current.slice(0, i + 1));
+    if (!live || !mayAdvanceWfc(playClockRef.current)) return;
+    const played = playClockRef.current.platePlayedMs || Math.max(0, Number(durationMs) || live.wave.plateSecs * 1000);
+    playClockRef.current = endPlateClock(playClockRef.current, played);
+    wfcPlayed.current[i] = played;
+    const pictureTime = pictureTimeNow(playClockRef.current) || pictureTimeFromPlates(wfcPlayed.current.slice(0, i + 1));
     const m = Math.min(1, Math.max(0, gRef.current.resonance));
-    wfcRef.current = afterPlate(live, i, plateTapKind(), m, pictureTime);
+    const tap: TapObserve = playGradesRef.current.length ? plateTapFromGrades(playGradesRef.current) : plateTapKind();
+    wfcRef.current = afterPlate(live, i, tap, m, pictureTime);
+    const plate = playPlateRef.current;
+    commitNodeStill(playNodeId(), plate?.stillEnd || poster || film.still);
     plateTap.current = { miss: 0, hit: 0, late: 0 };
+    playGradesRef.current = [];
   }
 
   function goNextPlate() {
@@ -821,6 +943,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     if (!list.length || !cur) return false;
     const i = plateRef.current;
     if (i + 1 >= list.length) return false;
+    if (playPausedRef.current) return false;
     if (holdDoorRef.current && (usingStillRef.current || cur.currentTime < 0.5 || cur.paused)) return false;
     if (advancing.current) return true;
     if (performance.now() < swapLock.current) return true;
@@ -974,7 +1097,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.combo = 0;
     g.streakMiss += 1;
     g.trauma = Math.min(1, g.trauma + 0.45);
-    g.resonance = Math.max(0.04, g.resonance * 0.32);
+    g.resonance = applyGradeMomentum(g.resonance, "miss");
+    notePlayGrade(clock(), null);
     sfxHit("miss");
     pop("MISS", "bad", liveSpot(beat, clock()).x * 100, liveSpot(beat, clock()).y * 100);
     g.pace = paceAfterMiss(g.pace);
@@ -1021,7 +1145,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     g.combo += 1;
     g.maxCombo = Math.max(g.maxCombo, g.combo);
     g.streakMiss = 0;
-    g.resonance = Math.min(1, g.resonance + (word === "perfect" ? 0.07 : word === "great" ? 0.045 : 0.025));
+    g.resonance = applyGradeMomentum(g.resonance, word === "good" ? "late" : "hit");
+    notePlayGrade(clock(), sideFromLane(beat.kind === "left" ? "l" : beat.kind === "right" ? "r" : beat.lane));
     if (g.combo % 2 === 0) {
       g.pace = Math.min(PACE_MAX, g.pace + (word === "perfect" ? 0.28 : word === "great" ? 0.2 : 0.14));
     }
@@ -1145,6 +1270,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       /* Empty-space / dead-window taps: no MISS, no pace drop, no path fracture. */
       return;
     }
+    const liveCue = playCuesRef.current[activeCueIndex(playCuesRef.current, t, COYOTE_S, playGradedRef.current)];
+    if (liveCue?.kind === "enter-arm" && !mayEnterArm(walkHitsRef.current, liveCue.side)) {
+      miss(g, beat);
+      return;
+    }
     if (Math.abs(t - beat.at) > beat.win) {
       const soon = holdDoorRef.current ? HOLD_CUE_APPROACH : APPROACH;
       if (t < beat.at && beat.at - t < soon) {
@@ -1188,6 +1318,11 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     if (beat.kind !== "left" && beat.kind !== "right") return;
     if (holdDoorRef.current && !cueFillLive(beat, t)) {
       /* Empty-space / dead-window taps: no MISS, no pace drop, no path fracture. */
+      return;
+    }
+    const liveCue = playCuesRef.current[activeCueIndex(playCuesRef.current, t, COYOTE_S, playGradedRef.current)];
+    if (liveCue?.kind === "enter-arm" && !mayEnterArm(walkHitsRef.current, liveCue.side)) {
+      miss(g, beat);
       return;
     }
     if (Math.abs(t - beat.at) > beat.win) {
@@ -1246,6 +1381,22 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       onExit();
       return;
     }
+    if (e.code === "KeyP") {
+      e.preventDefault();
+      togglePlayPause();
+      return;
+    }
+    if (e.code === "KeyH") {
+      e.preventDefault();
+      howlAct();
+      return;
+    }
+    if (e.code === "KeyL") {
+      e.preventDefault();
+      const still = recallStill(playNodeId(), playPlateRef.current);
+      if (still) setPoster(still);
+      return;
+    }
     if (e.code === "KeyR") {
       e.preventDefault();
       rewind();
@@ -1285,6 +1436,15 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKeyUp);
     };
+  }, []);
+
+  useEffect(() => {
+    const onVis = () => {
+      playClockRef.current = hidePlayClock(playClockRef.current, document.hidden);
+    };
+    onVis();
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
   function pointerDown(e: PE<HTMLDivElement>) {
@@ -1348,6 +1508,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       className="relative h-dvh w-full overflow-hidden bg-bg text-fg select-none"
       data-sprint={ramp ? "1" : undefined}
       data-ramp={ramp ? "1" : undefined}
+      data-play-paused={playPausedRef.current ? "1" : undefined}
       data-qte={holdDoor ? "play" : undefined}
       data-biome-play={holdDoor ? "1" : undefined}
       data-biome-quiet={undefined}
@@ -1775,7 +1936,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
 function Resonance({ value, score = 0, pace = 1 }: { value: number; score?: number; pace?: number }) {
   const v = Math.max(0, Math.min(1, value));
   return (
-    <div className="pointer-events-none">
+    <div className="pointer-events-none" data-resonance="m">
       <div className="mb-1.5 flex items-end justify-between font-mono tabular-nums">
         <p className="text-[10px] uppercase tracking-[0.16em] text-muted">
           <span className="text-accent">{score}</span>
@@ -1785,6 +1946,7 @@ function Resonance({ value, score = 0, pace = 1 }: { value: number; score?: numb
       <div className="h-[5px] overflow-hidden rounded-full bg-line/40">
         <div
           className="h-full rounded-full"
+          data-m={v}
           style={{
             width: `${v * 100}%`,
             background: "linear-gradient(90deg, #3d6a78 0%, #9ec9d4 58%, #f2fbff 100%)",
