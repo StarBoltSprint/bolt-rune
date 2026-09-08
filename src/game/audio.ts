@@ -1,12 +1,42 @@
+import {
+  applySmokeAudioGate,
+  fireGradeAudio as fireGradeLaw,
+  howlOnce as howlOnceLaw,
+  isPictureMuted,
+  mutePictureAudio,
+  pictureAudioSnapshot,
+  prefetchStockAudio as prefetchStockLaw,
+  releasePictureAudio as releasePictureLaw,
+  holdPictureAudio as holdPictureLaw,
+  resetPictureAudio,
+  syncPictureAudio as syncPictureLaw,
+  toggleMutePictureAudio as toggleMuteLaw,
+  type EngineShot,
+  type PictureAudioClock,
+} from "./pcg-audio.ts";
+import type { HitClass } from "./pcg-play.ts";
+
+export {
+  applySmokeAudioGate,
+  isPictureMuted,
+  mutePictureAudio,
+  pictureAudioSnapshot,
+  resetPictureAudio,
+};
+
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let sfx: GainNode | null = null;
 let music: GainNode | null = null;
+let plateGain: GainNode | null = null;
+let engineGain: GainNode | null = null;
 let caveGain: GainNode | null = null;
 let caveOn = false;
 let dripTimer = 0;
 let crackleTimer = 0;
 const caveStops: Array<() => void> = [];
+let bedsHeld = false;
+let weather: { filter: BiquadFilterNode; gain: GainNode } | null = null;
 
 function ac(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -19,13 +49,19 @@ function ac(): AudioContext | null {
         ctx = new Ctor();
       }
       master = ctx.createGain();
+      plateGain = ctx.createGain();
+      engineGain = ctx.createGain();
       sfx = ctx.createGain();
       music = ctx.createGain();
       master.gain.value = 0.7;
+      plateGain.gain.value = 1;
+      engineGain.gain.value = 1;
       sfx.gain.value = 0.85;
       music.gain.value = 0.55;
-      sfx.connect(master);
-      music.connect(master);
+      plateGain.connect(master);
+      engineGain.connect(master);
+      sfx.connect(engineGain);
+      music.connect(plateGain);
       master.connect(ctx.destination);
     } catch {
       return null;
@@ -44,11 +80,30 @@ export function unlockAudio() {
   }
 }
 
-export function setMuted(muted: boolean) {
+function applyBusGains() {
   const c = ac();
-  if (!c || !master) return;
-  master.gain.setTargetAtTime(muted ? 0 : 0.7, c.currentTime, 0.04);
-  if (scoreEl) scoreEl.muted = muted;
+  if (!c) return;
+  const silent = isPictureMuted() || bedsHeld;
+  const plate = silent ? 0 : 1;
+  const engine = silent ? 0 : 1;
+  if (plateGain) plateGain.gain.setTargetAtTime(plate, c.currentTime, 0.04);
+  if (engineGain) engineGain.gain.setTargetAtTime(engine, c.currentTime, 0.04);
+  if (master) master.gain.setTargetAtTime(isPictureMuted() ? 0 : 0.7, c.currentTime, 0.04);
+  if (scoreEl) {
+    scoreEl.muted = isPictureMuted();
+    if (bedsHeld || isPictureMuted()) {
+      try {
+        scoreEl.pause();
+      } catch {
+        /* */
+      }
+    }
+  }
+}
+
+export function setMuted(muted: boolean) {
+  mutePictureAudio(muted);
+  applyBusGains();
 }
 
 function tone(freq: number, dur: number, type: OscillatorType, gain = 0.16, dest?: GainNode) {
@@ -105,6 +160,22 @@ function whoosh(dur = 0.32, gain = 0.1) {
 }
 
 export function sfxHit(kind: "perfect" | "great" | "good" | "miss" | "relic" | "rewind") {
+  const mapped = kind === "miss" ? "miss" : kind === "good" ? "late" : kind === "rewind" ? null : "hit";
+  if (mapped) {
+    const before = pictureAudioSnapshot().engineEvents.length;
+    const ev = fireGradeLaw(mapped);
+    if (ev && pictureAudioSnapshot().engineEvents.length === before) return;
+    if (ev?.audible) {
+      try {
+        unlockAudio();
+        playEngineOsc(ev.shot);
+      } catch {
+        /* */
+      }
+      return;
+    }
+    if (isPictureMuted() || bedsHeld) return;
+  }
   const c = ac();
   if (!c) return;
   const jitter = 0.96 + Math.random() * 0.08;
@@ -175,6 +246,7 @@ function loopNoise(c: AudioContext, dest: GainNode, opts: { brown?: boolean; typ
 }
 
 function drip() {
+  if (bedsHeld || isPictureMuted()) return;
   const c = ac();
   if (!c || !caveGain) return;
   const f = 1400 + Math.random() * 900;
@@ -193,6 +265,7 @@ function drip() {
 }
 
 function crackle() {
+  if (bedsHeld || isPictureMuted()) return;
   const c = ac();
   if (!c || !caveGain) return;
   const src = c.createBufferSource();
@@ -250,6 +323,7 @@ export function startBed() {
     unlockAudio();
     const c = ac();
     if (!c || !music) return;
+    if (bedsHeld) return;
     if (caveOn && caveGain) {
       caveGain.gain.setTargetAtTime(1, c.currentTime, 0.4);
       return;
@@ -297,6 +371,7 @@ let scoreEl: HTMLAudioElement | null = null;
 
 export function startScore(src: string, at = 0) {
   try {
+    if (bedsHeld || isPictureMuted()) return;
     unlockAudio();
     stopBed();
     if (!scoreEl) {
@@ -332,6 +407,10 @@ export function stopScore() {
 export function syncScore(t: number) {
   if (!scoreEl) return;
   try {
+    if (bedsHeld || isPictureMuted()) {
+      scoreEl.pause();
+      return;
+    }
     if (Math.abs(scoreEl.currentTime - t) > 0.4) scoreEl.currentTime = t;
     if (scoreEl.paused) void scoreEl.play().catch(() => {});
   } catch {
@@ -404,7 +483,7 @@ function hushLiving() {
 }
 
 function pulseBreath() {
-  if (living === "off") return;
+  if (living === "off" || bedsHeld || isPictureMuted()) return;
   breathPulse(living === "walk" ? 0.018 : 0.046);
   breathTimer = window.setTimeout(pulseBreath, living === "walk" ? 1500 : 2100 + Math.random() * 400);
 }
@@ -422,7 +501,7 @@ export function setLiving(kind: "off" | "idle" | "walk", walkSecs = 10) {
     const gap = Math.max(0.38, (Math.min(10, Math.max(6, walkSecs)) * 0.82) / n);
     let i = 0;
     const next = () => {
-      if (living !== "walk") return;
+      if (living !== "walk" || bedsHeld || isPictureMuted()) return;
       paw();
       i += 1;
       if (i < n) stepTimer = window.setTimeout(next, gap * 1000 * (0.9 + Math.random() * 0.18));
@@ -431,5 +510,133 @@ export function setLiving(kind: "off" | "idle" | "walk", walkSecs = 10) {
   } catch {
     /* never block UI */
   }
+}
+
+function holdBeds(held: boolean) {
+  bedsHeld = held;
+  applyBusGains();
+  if (held) {
+    window.clearTimeout(dripTimer);
+    window.clearTimeout(crackleTimer);
+    dripTimer = 0;
+    crackleTimer = 0;
+    hushLiving();
+    const c = ac();
+    if (c && caveGain) caveGain.gain.setTargetAtTime(0.0001, c.currentTime, 0.05);
+  } else if (caveOn && caveGain) {
+    const c = ac();
+    if (c) {
+      caveGain.gain.setTargetAtTime(1, c.currentTime, 0.2);
+      if (!dripTimer) armCave(c);
+    }
+    if (living !== "off") pulseBreath();
+  }
+}
+
+function playEngineOsc(shot: EngineShot) {
+  const c = ac();
+  if (!c || !engineGain) return;
+  if (shot === "hit") {
+    tone(2100, 0.07, "sine", 0.12, engineGain);
+    tone(3120, 0.09, "triangle", 0.04, engineGain);
+    return;
+  }
+  if (shot === "late") {
+    tone(1480, 0.08, "sine", 0.06, engineGain);
+    return;
+  }
+  if (shot === "miss" || shot === "drain") {
+    whoosh(0.22, 0.07);
+    return;
+  }
+  if (shot === "howl") {
+    whoosh(0.5, 0.1);
+    tone(140, 0.45, "sine", 0.05, engineGain);
+  }
+}
+
+function applyTrailVoice() {
+  const c = ac();
+  if (!c || !plateGain) return;
+  const snap = pictureAudioSnapshot();
+  if (!weather) {
+    const wind = loopNoise(c, plateGain, { brown: true, type: "lowpass", freq: 280, q: 0.7, gain: 0.05 });
+    weather = wind;
+  }
+  const freq = snap.trailVoice === "storm" ? 920 : snap.trailVoice === "light-crackle" ? 540 : snap.trailVoice === "decay-filter" ? 220 : 280;
+  weather.filter.frequency.setTargetAtTime(freq, c.currentTime, snap.trailVoice === "decay-filter" ? 0.8 : 0.25);
+  weather.gain.gain.setTargetAtTime(snap.plateOpen && !bedsHeld ? (snap.trailVoice === "storm" ? 0.09 : 0.05) : 0.0001, c.currentTime, 0.2);
+}
+
+export function syncPictureAudio(clock: PictureAudioClock) {
+  const snap = syncPictureLaw(clock);
+  holdBeds(snap.bedsFrozen);
+  applyTrailVoice();
+  return snap;
+}
+
+export function fireGradeAudio(hit: HitClass | EngineShot, playhead?: number) {
+  const ev = fireGradeLaw(hit, playhead);
+  if (ev?.audible) {
+    try {
+      unlockAudio();
+      playEngineOsc(ev.shot);
+    } catch {
+      /* never block UI */
+    }
+  }
+  return ev;
+}
+
+export function howlOnce(playhead?: number) {
+  const ev = howlOnceLaw(playhead);
+  if (ev?.audible) {
+    try {
+      unlockAudio();
+      playEngineOsc("howl");
+    } catch {
+      /* */
+    }
+  }
+  return ev;
+}
+
+export function holdPictureAudio() {
+  holdPictureLaw();
+  holdBeds(true);
+}
+
+export function releasePictureAudio() {
+  releasePictureLaw();
+  holdBeds(false);
+}
+
+export function toggleMutePictureAudio() {
+  const muted = toggleMuteLaw();
+  applyBusGains();
+  return muted;
+}
+
+export function prefetchStockAudio(url?: string | null) {
+  const got = prefetchStockLaw(url);
+  if (!got.decode || !url || typeof window === "undefined") return got;
+  try {
+    const c = ac();
+    if (!c) return got;
+    void fetch(url, { credentials: "same-origin", cache: "force-cache" })
+      .then((res) => (res.ok ? res.arrayBuffer() : null))
+      .then((buf) => (buf && c ? c.decodeAudioData(buf.slice(0)) : null))
+      .catch(() => null);
+  } catch {
+    /* decode is best-effort; never Imagine */
+  }
+  return got;
+}
+
+export function sfxHitPicture(kind: "perfect" | "great" | "good" | "miss" | "relic" | "rewind") {
+  if (kind === "miss") return fireGradeAudio("miss");
+  if (kind === "good") return fireGradeAudio("late");
+  if (kind === "rewind") return sfxHit(kind);
+  return fireGradeAudio("hit");
 }
 

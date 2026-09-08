@@ -114,6 +114,14 @@ PASS | FAIL + `reasons[]` on a clip or still **before** Hang, cook-cache insert,
 
 Local lint always runs first (even if `SMOKE_WAKE_URL` is down): container (~9:16, duration band, last frame, no zero-byte) → camera → body → doors → chrome ban → path → cue honesty (`off−on≥0.35s`) → continuity → prompt residue (`lintPrompt`). Pixel/CV-hard checks use prompt + cue + aspect proxies; explicit doubt / mismatch FAILs. Optional Smoke bot hop when the wake URL is set — timeout or unparseable `{pass, reasons[]}` is FAIL. `railsVersion: "bolt-1"` on every PASS. Stock ingest once a clip is cached PASS. Keep replay / Howl / Pause skip. Door seat stays talk-only. Asteroid HOLD. No Pack seats expansion.
 
+## PCG audio bus
+
+Picture stays the clock. Audio is a second layer that must obey that clock — never a wall-clock metronome, never a BPM that disagrees with `cue.on`. `playhead = video.currentTime`. Pause / Imagine lag (`waitingOnCook`) freezes both buses; the click track does not tick. Mute (M / system) silences both; picture-time still grades.
+
+Two buses: **Plate/Imagine** — diegetic weather (space tone, wind, paw, lightning) locked to clip decode; mute if a strong musical downbeat mismatches `cue.on`, or speech / countdown / TAP voice. **Engine** — Hit / Late / Miss ticks, Resonance drain, Howl, UI seats, fired from `gradeTap`, not a DAW grid. Hit = soft crystal tick; Late quieter/duller; Miss short drain/wind (no buzzer/voice); Early silence; Idle bed only; Peak = the film storm, no second drop. Do not stereo-pan A/B only.
+
+Trail CA: none = thin bed; thin = light crackle; full = storm; leaving storm = decay filter over 1 plate (don't snap off). Howl sounds once. Prefetch stock includes audio decode. No second audio-only Imagine cook. No wav assets in this tree — placeholder Web Audio oscillators / noise buffers in `src/game/audio.ts` (`src/game/pcg-audio.ts` is the law). Smoke FAIL mutes both (`applySmokeAudioGate`). Asteroid HOLD. No Pack seats.
+
 ## Hall seats (SmiR pack)
 
 SmiR's own film-team bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Door, Smoke, Cook, Continuity. Not a side chat, not Connect Wallet, not freebots.lol, not a permanent bottom row. Asteroid HOLD.

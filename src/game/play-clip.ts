@@ -1,3 +1,5 @@
+import { prefetchStockAudio } from "./pcg-audio.ts";
+
 /** Same-origin / blob / proxy clip URLs the <video> element can actually play. */
 
 const CLIP_PROXY = "/api/clip";
@@ -142,6 +144,7 @@ export function warmClip(url?: string | null): HTMLVideoElement | null {
   if (src.startsWith("/api/clip") || src.startsWith("/ui/") || src.startsWith("/films/")) {
     void fetch(src, { credentials: "same-origin", cache: "force-cache" }).catch(() => {});
   }
+  prefetchStockAudio(src);
   return v;
 }
 

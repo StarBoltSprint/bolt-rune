@@ -24,7 +24,7 @@ import {
   type Spot,
 } from "@/game/films";
 import { CANYON_APPROACH, projectHazard } from "@/game/canyon";
-import { sfxHit, unlockAudio, startScore, stopScore, syncScore } from "@/game/audio";
+import { sfxHit, unlockAudio, startScore, stopScore, syncScore, syncPictureAudio, fireGradeAudio, howlOnce, toggleMutePictureAudio, prefetchStockAudio, holdPictureAudio, releasePictureAudio } from "@/game/audio";
 import { press } from "@/lib/press";
 import { isClip, localizeClip, uniqueClips } from "@/game/artifacts";
 import { cacheClip } from "@/lib/cook";
@@ -331,6 +331,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       el.load();
       recoverAt.current = typeof performance !== "undefined" ? performance.now() : Date.now();
     }
+    prefetchStockAudio(src);
     el.onerror = () => {
       if (holdDoorRef.current) {
         const fallback = stockBiomeLoop();
@@ -407,6 +408,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     playGradesRef.current.push(hit);
     walkHitsRef.current = noteWalkHit(walkHitsRef.current, cue, hit);
     applyResonance(hit);
+    fireGradeAudio(hit, t);
     return hit;
   }
 
@@ -416,12 +418,14 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       playPausedRef.current = false;
       playClockRef.current = resumePlayClock(playClockRef.current);
       lastMediaTRef.current = v && Number.isFinite(v.currentTime) ? v.currentTime : lastMediaTRef.current;
+      releasePictureAudio();
       void v?.play().catch(() => {});
       setHud((h) => ({ ...h, paused: false }));
       return;
     }
     playPausedRef.current = true;
     playClockRef.current = pausePlayClock(playClockRef.current);
+    holdPictureAudio();
     try {
       v?.pause();
     } catch {
@@ -774,6 +778,16 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
         playClockRef.current = advancePictureTime(playClockRef.current, jump * 1000);
       }
       lastMediaTRef.current = mediaT;
+      const liveCell = wfcRef.current?.cells[plateRef.current];
+      syncPictureAudio({
+        playhead: mediaT,
+        paused: playClockRef.current.paused || playPausedRef.current,
+        waitingOnCook: playClockRef.current.waitingOnCook || Boolean(v && !usingStill && v.readyState < 2 && !playPausedRef.current),
+        hidden: playClockRef.current.hidden,
+        trail: liveCell?.trail,
+        role: liveCell?.role,
+        plate: plateRef.current,
+      });
 
       g.trauma = Math.max(0, g.trauma - dt * 2.4);
       const sh = g.trauma * g.trauma;
@@ -1298,6 +1312,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     if (Math.abs(t - beat.at) > beat.win) {
       const soon = holdDoorRef.current ? HOLD_CUE_APPROACH : APPROACH;
       if (t < beat.at && beat.at - t < soon) {
+        fireGradeAudio("early", t);
         pop("SOON", "mid", spotOf(beat).x * 100, spotOf(beat).y * 100);
       }
       return;
@@ -1347,7 +1362,10 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     }
     if (Math.abs(t - beat.at) > beat.win) {
       const soon = holdDoorRef.current ? HOLD_CUE_APPROACH : APPROACH;
-      if (t < beat.at && beat.at - t < soon) pop("SOON", "mid", 50, 72);
+      if (t < beat.at && beat.at - t < soon) {
+        fireGradeAudio("early", t);
+        pop("SOON", "mid", 50, 72);
+      }
       return;
     }
     const want: Lane = beat.kind === "left" ? "l" : "r";
@@ -1406,9 +1424,15 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       togglePlayPause();
       return;
     }
+    if (e.code === "KeyM") {
+      e.preventDefault();
+      toggleMutePictureAudio();
+      return;
+    }
     if (e.code === "KeyH") {
       e.preventDefault();
       howlAct();
+      howlOnce();
       return;
     }
     if (e.code === "KeyL") {
