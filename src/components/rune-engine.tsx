@@ -128,6 +128,7 @@ import {
   reuseClipBeforeRecook,
 } from "@/game/pcg-rail";
 import { isDeadEndPin, pinsForCitadel, rewriteOnEnter } from "@/game/pcg-grammar";
+import { placeHallChunks, resolveChunkEnter } from "@/game/pcg-chunk";
 import { BootScreen } from "@/components/citadel-hub";
 import { HangAskSheet, HangCitadelStrip, HangRoomStrip } from "@/components/hang-ask";
 import { HANG_LEFTOVER_SWALLOW_MS, hangActEnters, hangBindHall, hangDoorAct, readHangPending, swallowOpeningTap, takeHangPending, writeHangPending } from "@/game/hang-ask";
@@ -1567,8 +1568,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       }
     }
     if ((id === "m1" || id === "m2") && hungDoorTap(hereRef.current, id) === "enter" && !hungDoorReady(id)) {
+      const stitch = chunkEnterNow(id);
       const hot = resolveEnterHotPath(pcgEnterLook(id));
-      if (hot.act === "enter") {
+      if (stitch.act === "enter" || hot.act === "enter") {
         void goEnter(id);
         return;
       }
@@ -1608,8 +1610,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           void goEnter(id);
           return;
         }
+        const stitch = chunkEnterNow(id);
         const hot = resolveEnterHotPath(pcgEnterLook(id));
-        if (hot.act === "enter") {
+        if (stitch.act === "enter" || hot.act === "enter") {
           void goEnter(id);
           return;
         }
@@ -1639,8 +1642,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         void goEnter(id);
         return;
       }
+      const stitch = chunkEnterNow(id);
       const hot = resolveEnterHotPath(pcgEnterLook(id));
-      if (hot.act === "enter") {
+      if (stitch.act === "enter" || hot.act === "enter") {
         void goEnter(id);
         return;
       }
@@ -2376,8 +2380,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         return;
       }
       if ((id === "m1" || id === "m2") && beatRef.current === "idle") {
+        const stitch = chunkEnterNow(id);
         const hot = resolveEnterHotPath(pcgEnterLook(id));
-        if (hot.act === "enter") {
+        if (stitch.act === "enter" || hot.act === "enter") {
           void goEnter(id);
           return;
         }
@@ -2792,8 +2797,23 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     return enter.kind === "biome";
   }
 
-  /** Rail 2: `s_enter` lookup for this door → Hall′ spawn. */
+  /** Rail 2 + chunk stitch: `s_enter` and H(s, fromId, toId, act). */
+  function chunkEnterNow(door: "m1" | "m2") {
+    const arts = hungArts.length ? hungArts : readArtifacts();
+    return resolveChunkEnter({
+      s: seedHold.current || readRunSeed(sid.current),
+      room: hallHold.current,
+      door,
+      destRoom: destHall(door) || undefined,
+      phase: momentumHold.current,
+      hungArts: arts,
+      hung: hungDoorReady(door),
+    });
+  }
+
+  /** Rail 2: `s_enter` lookup for this door → Hall′ spawn. Chunk pair when placed. */
   function pcgEnterLook(door: "m1" | "m2") {
+    const stitch = chunkEnterNow(door);
     return {
       s: seedHold.current || readRunSeed(sid.current),
       i: hallHold.current,
@@ -2801,6 +2821,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       to: "spawn",
       door: doorLetterOf(door),
       hung: hungDoorReady(door),
+      fromId: stitch.fromId,
+      toId: stitch.toId,
+      act: "enter" as const,
     };
   }
 
@@ -2983,10 +3006,19 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setPins(pinsRef.current);
     forgedRef.current = slice.forged || 0;
     setForged(forgedRef.current);
+    const placed = placeHallChunks({
+      s: seedHold.current || readRunSeed(sid.current) || beginRunSeed(sid.current),
+      room: slice.n,
+      phase: momentumHold.current,
+      hungArts: readArtifacts(),
+    });
     if (slice.walkSecs) {
       const dur = clampWalk(slice.walkSecs);
       walkSecsRef.current = dur;
       setWalkSecs(dur);
+    } else {
+      walkSecsRef.current = placed.walkSecs;
+      setWalkSecs(placed.walkSecs);
     }
     const restored = hydrateRift(sid.current, slice.n, slice.rift || {}, readArtifacts());
     riftRef.current = restored;
@@ -5024,14 +5056,18 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       const enterKey = enterSeed(seedHold.current || beginRunSeed(sid.current), hallHold.current, pick, "spawn", doorLetterOf(pick));
       const bankClip = bank.current.get(`exit-${pick}`) || (dest ? bank.current.get("enter→spawn") : null);
       if (bankClip?.url) clipCachePut(enterKey, bankClip.url, "enter");
+      const stitch = chunkEnterNow(pick);
       const hit = lookupEnterClip({
         s: seedHold.current || readRunSeed(sid.current),
         i: hallHold.current,
         from: pick,
         to: "spawn",
         door: doorLetterOf(pick),
+        fromId: stitch.fromId,
+        toId: stitch.toId,
+        act: "enter",
       });
-      const clip = hit.url ? { url: hit.url, end: bankClip?.end || "" } : bankClip;
+      const clip = hit.url ? { url: hit.url, end: bankClip?.end || "" } : stitch.url ? { url: stitch.url, end: bankClip?.end || "" } : bankClip;
       if (clip?.url) {
         wrapping.current = false;
         setLoopOn(false);
@@ -7178,7 +7214,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const glowA = doorGlowState({
     here,
     door: "m1",
-    enterReady: Boolean(
+    enterReady: chunkEnterNow("m1").act === "enter" || Boolean(
       lookupEnterClip({
         s: seedHold.current || readRunSeed(sid.current),
         i: hallHold.current,
@@ -7192,7 +7228,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const glowB = doorGlowState({
     here,
     door: "m2",
-    enterReady: Boolean(
+    enterReady: chunkEnterNow("m2").act === "enter" || Boolean(
       lookupEnterClip({
         s: seedHold.current || readRunSeed(sid.current),
         i: hallHold.current,
