@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createServerFn } from "@tanstack/react-start";
-import { platePrompt, stillPrompt, type BiomeId, ACTS } from "@/game/cook";
+import { type BiomeId, ACTS } from "@/game/cook";
 import { playableClipSrc } from "@/game/play-clip";
 import { clipImaginePrompt, runeFilmVariants, runeStillJobs } from "@/game/imagine-payload";
+import { applyImagineAvoid, assembleCookPlate, fewShotRefs, isSprintGrammarPrompt, lintPrompt } from "@/game/pcg-prompt";
 import { CAM_LOCK, citadelPrompt, dropTaintedBolt } from "@/game/rune";
 import { bindCookSlot, classifyImagineRaw, emptyCookSlot, freeCookSlot, releaseCookSlot, slotStatus, sweepStale, takeCookSlot, type CookSlot } from "@/lib/cook-slot";
 import { imagineVideoOverCap, readImaginePoll } from "@/lib/cook-progress";
@@ -17,7 +18,7 @@ let slot: CookSlot = emptyCookSlot();
 const stillCache = new Map<string, string>();
 
 type StartOk = { ok: true; requestId: string };
-type StartErr = { ok: false; error: string; reason?: string; ageMs?: number };
+type StartErr = { ok: false; error: string; reason?: string; ageMs?: number; stock?: string };
 function clipStillErr(raw: string): string {
   return classifyImagineRaw(raw) ?? (raw.replace(/[{}"\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 42) || "rejected");
 }
@@ -201,21 +202,28 @@ export const startRuneStill = createServerFn({ method: "POST" })
 export const startCookStill = createServerFn({ method: "POST" })
   .validator((input: { world: string; kind?: "sprint" | "citadel" }) => input)
   .handler(async ({ data }): Promise<{ ok: true; url: string } | StartErr> => {
-    const headers = auth();
-    if (!headers) return { ok: false, error: "echo-off" };
     const world = data.world.trim().slice(0, 140);
     if (!world) return { ok: false, error: "empty" };
+    const cooked = data.kind === "citadel" ? null : assembleCookPlate({ biome: "open", playerVoice: world, tap: "walk-A" });
+    if (cooked && !cooked.lint.ok) {
+      return { ok: true, url: cooked.stock.still };
+    }
+    const headers = auth();
+    if (!headers) return { ok: false, error: "echo-off" };
+    const prompt = data.kind === "citadel" ? citadelPrompt(world) : cooked!.prompt;
+    const stillBody: Record<string, unknown> = {
+      model: "grok-imagine-image-2.0",
+      prompt,
+      n: 1,
+      aspect_ratio: "9:16",
+      storage_options: keepStore(`bolt-${Date.now().toString(36)}.jpg`),
+    };
+    if (cooked) applyImagineAvoid(stillBody, cooked.avoid);
     try {
       const res = await fetch(`${API}/images/generations`, {
         method: "POST",
         headers,
-        body: JSON.stringify({
-          model: "grok-imagine-image-2.0",
-          prompt: data.kind === "citadel" ? citadelPrompt(world) : stillPrompt(world),
-          n: 1,
-          aspect_ratio: "9:16",
-          storage_options: keepStore(`bolt-${Date.now().toString(36)}.jpg`),
-        }),
+        body: JSON.stringify(stillBody),
         signal: AbortSignal.timeout(38000),
       });
       const raw = await res.text();
@@ -242,19 +250,39 @@ export const startCookPlate = createServerFn({ method: "POST" })
     prevUrl?: string;
     world?: string;
     stillUrl?: string;
+    destStill?: string;
+    seed?: string;
     duration?: 6 | 10 | 15;
     res?: "720" | "1080";
   }) => input)
   .handler(async ({ data }): Promise<StartOk | StartErr> => {
+    const act = ACTS[Math.max(0, Math.min(ACTS.length - 1, data.act | 0))];
+    const cooked = assembleCookPlate({
+      biome: data.biome,
+      playerVoice: data.prompt || data.world,
+      world: data.world,
+      cookAct: act,
+      still: data.stillUrl || data.still,
+      destStill: data.destStill,
+      seed: data.seed,
+    });
+    const lint = cooked.lint.ok ? lintPrompt(cooked.prompt, cooked.slots) : cooked.lint;
+    if (!lint.ok) {
+      return { ok: false, error: "lint-stock", reason: lint.issue, stock: cooked.stock.clip };
+    }
     const headers = auth();
     if (!headers) return { ok: false, error: "echo-off" };
     const blocked = takeOrBlock();
     if (blocked) return blocked;
-    const act = ACTS[Math.max(0, Math.min(ACTS.length - 1, data.act | 0))];
     const chained = data.prevUrl ? await frameFromPrev(data.prevUrl) : null;
+    const refs = fewShotRefs({
+      ...cooked.slots,
+      still: chained || cooked.slots.still,
+    });
     const customImg = data.stillUrl && !/\/films\/cook-/.test(data.stillUrl) ? data.stillUrl : "";
     const imageUrl =
       chained ||
+      refs[0] ||
       customImg ||
       (data.world ? "" : data.still && !/\/films\/cook-/.test(data.still) ? stillDataUrl(data.still) : "");
     const duration = data.duration === 6 || data.duration === 15 ? data.duration : 10;
@@ -262,12 +290,13 @@ export const startCookPlate = createServerFn({ method: "POST" })
     try {
       const payload: Record<string, unknown> = {
         model: "grok-imagine-video-1.5",
-        prompt: platePrompt(data.biome, data.prompt, act, data.world, duration),
+        prompt: cooked.prompt,
         duration,
         aspect_ratio: "9:16",
         resolution,
         storage_options: keepStore(`bolt-${Date.now().toString(36)}.mp4`),
       };
+      applyImagineAvoid(payload, cooked.avoid);
       if (imageUrl) payload.image = { url: imageUrl };
       const res = await fetch(`${API}/videos/generations`, {
         method: "POST",
@@ -300,11 +329,15 @@ export const startRuneFilm = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<StartOk | StartErr> => {
     const headers = auth();
     if (!headers) return { ok: false, error: "echo-off" };
+    const rawPrompt = data.prompt.trim();
+    if (isSprintGrammarPrompt(rawPrompt)) {
+      const lint = lintPrompt(rawPrompt);
+      if (!lint.ok) return { ok: false, error: "lint-stock", reason: lint.issue, stock: assembleCookPlate({ biome: "asteroid" }).stock.clip };
+    }
     const blocked = takeOrBlock();
     if (blocked) return blocked;
     const imageUrl = resolveRuneStill(data.still);
     const duration = data.duration === 6 || data.duration === 15 ? data.duration : 10;
-    const rawPrompt = data.prompt.trim();
     const already = /STATIC CCTV|LOCKED-OFF|CAMERA LOCK|PORTAL CROSS|WIDE LOCKED CCTV|LOCKED CCTV|LEGAL SHOT ONLY|REJECT LIST/i.test(rawPrompt);
     const prompt = clipImaginePrompt(already ? rawPrompt : `${CAM_LOCK} ${rawPrompt}`);
     const resolution = data.res === "1080" ? "1080p" : "720p";
@@ -362,10 +395,14 @@ export const startRuneExtend = createServerFn({ method: "POST" })
     if (/\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(video)) return { ok: false, error: "no-extend" };
     const bytes = await probeVideoBytes(video, headers.Authorization);
     if (imagineVideoOverCap(bytes)) return { ok: false, error: "clip-too-large" };
+    const rawPrompt = data.prompt.trim();
+    if (isSprintGrammarPrompt(rawPrompt)) {
+      const lint = lintPrompt(rawPrompt);
+      if (!lint.ok) return { ok: false, error: "lint-stock", reason: lint.issue, stock: assembleCookPlate({ biome: "asteroid" }).stock.clip };
+    }
     const blocked = takeOrBlock();
     if (blocked) return blocked;
     const duration = data.duration === 10 ? 10 : 6;
-    const rawPrompt = data.prompt.trim();
     const already = /STATIC CCTV|LOCKED-OFF|CAMERA LOCK|PORTAL CROSS|WIDE LOCKED CCTV|LOCKED CCTV|LEGAL SHOT ONLY|REJECT LIST/i.test(rawPrompt);
     const prompt = clipImaginePrompt(already ? rawPrompt : `${CAM_LOCK} ${rawPrompt}`);
     const variants: Record<string, unknown>[] = [

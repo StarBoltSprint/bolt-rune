@@ -1,7 +1,10 @@
 import { hungBiomePlaylist, hungPlayChrome } from "./enter-graph";
 import { playableClipSrc } from "./play-clip";
-import { b, turnBeatsForRun, turnCue, type Beat, type Film } from "./films";
+import { b, turnBeatsForRun, type Beat, type Film } from "./films";
 import { ENGINE } from "./laws";
+import { assembleCookPlate } from "./pcg-prompt.ts";
+
+export { LOCK, RAILS, RAILS_AVOID } from "./pcg-prompt.ts";
 
 export type ClipSecs = 6 | 10 | 15;
 export type ClipRes = "720" | "1080";
@@ -204,16 +207,6 @@ export const ACTS: CookAct[] = [
   { id: "finale", title: "Answer", beat: "Densest field, corridor of light. Turns ONLY on the cue sheet." },
 ];
 
-const LOCK = [
-  "LOCKED-OFF CAMERA: dead center behind this exact white wolf StarBoltSprint, same lens, same height, same distance, EVERY frame.",
-  "His back, solid WHITE German Shepherd, four legs and paws. NO cape. NO face. NO orbit. NO side view. NO overhead. NO handheld.",
-  "The wolf may lean left or right. THE CAMERA NEVER PANS, NEVER ORBITS, NEVER CUTS. After a lean it is still dead-center behind him.",
-  "He sprints FAST. Orange sparks at the paws. Photoreal 9:16. No text, no UI.",
-  "PATH FORKS: the gold-cyan trail is a one-way arrow. Ahead of his paws, 2–3 forks that are NOT in the last frame: forward, LEFT new aisle, RIGHT new aisle.",
-  "On a lean he ENTERS that new aisle. New trunks, new rocks, new light fill the frame. The old corridor is behind him and gone.",
-  "FORBIDDEN: U-turn, 180, figure-8, looping, same unique tree twice, the still's path coming back.",
-].join(" ");
-
 export function forkLock(clipN = 1) {
   const n = Math.max(1, clipN | 0);
   return [
@@ -275,20 +268,14 @@ export function forkStillPrompt() {
   ].join(" ");
 }
 
-export function continuePrompt(world: string, secs: 6 | 10 | 15 = 10, clipN = 2) {
-  const seed = world.trim() || "the same biome as this last frame";
-  return [
-    "MATCH THIS FRAME. Same biome, same light, same wolf, same cyan lightning, same gold sparks, same locked camera.",
-    "DO NOT SHIFT BIOME. DO NOT go back to forest unless this frame is already forest. The destination is already here.",
-    "FORBIDDEN: a cut, a new wolf, a new art style, metamorphosis, returning to a previous biome.",
-    "This is the NEXT seconds of the SAME sprint. Frame 0 IS this image.",
-    LOCK,
-    paceLock(clipN),
-    "The gold-cyan trail splits AHEAD in THIS same world. He takes LEFT. That aisle of the SAME biome fills the frame.",
-    turnCue(secs),
-    `STAY IN THIS BIOME: ${seed}.`,
-    "Photoreal 9:16, same sharpness as this frame. No blur, no compression, no downscale.",
-  ].join(" ");
+export function continuePrompt(world: string, _secs: 6 | 10 | 15 = 10, clipN = 2) {
+  return assembleCookPlate({
+    biome: "open",
+    playerVoice: world,
+    tap: "walk-A",
+    i: Math.max(1, clipN | 0),
+    momentum: 0.35,
+  }).prompt;
 }
 
 export const SHIFTS: { id: string; name: string; world: string }[] = [
@@ -303,54 +290,36 @@ export const SHIFTS: { id: string; name: string; world: string }[] = [
   { id: "asteroid", name: "Void", world: "a sci-fi asteroid field in deep space, luminous gold-cyan path through the void" },
 ];
 
-export function shiftPrompt(fromWorld: string, toWorld: string, secs: 6 | 10 | 15 = 10, clipN = 2) {
-  const from = fromWorld.trim() || "the current biome";
-  const to = toWorld.trim() || "a new biome";
-  const tail = secs <= 6 ? 2 : 3.2;
-  return [
-    `BIOME SHIFT IS THE POINT OF THIS CLIP. Do not stay in the old world.`,
-    `Frame 0 is still: ${from}.`,
-    `By 40% of the clip the world is metamorphosing. Last ${tail} seconds: FULLY inside: ${to}.`,
-    `No forest leftover at the end if the destination is not forest. Trees, dirt and moss must become the new biome. Gold-cyan path is the through-line.`,
-    LOCK,
-    paceLock(clipN),
-    turnCue(secs, tail),
-    `Last frame MUST be: camera dead-center behind the wolf, he sprints STRAIGHT into ${to}, no turn, no side view, no look-back.`,
-    "Start on this last frame. No cut. Same wolf, same locked camera, faster sprint. Photoreal 9:16. No text, no UI.",
-  ].join(" ");
+export function shiftPrompt(fromWorld: string, toWorld: string, _secs: 6 | 10 | 15 = 10, clipN = 2) {
+  return assembleCookPlate({
+    biome: "open",
+    playerVoice: toWorld,
+    tap: "enter",
+    from: fromWorld.trim() || "hall",
+    to: toWorld.trim() || "biome",
+    leftover: true,
+    i: Math.max(1, clipN | 0),
+    momentum: 0.4,
+  }).prompt;
 }
 
 export function stillPrompt(world: string) {
-  return [
-    LOCK,
-    `World is EXACTLY this, invented by the player: ${world.trim()}.`,
-    "Do not switch to asteroid, space, cape, or any Forge preset. White German Shepherd from behind, four legs, no cape.",
-    "Single photoreal still frame, 9:16 portrait. Mid-sprint from behind. No text, no UI.",
-  ].join(" ");
+  return assembleCookPlate({
+    biome: "open",
+    playerVoice: world,
+    tap: "walk-A",
+    momentum: 0.3,
+  }).prompt;
 }
 
-export function platePrompt(biome: BiomeId, prompt: string, act: CookAct, world?: string, secs: 6 | 10 | 15 = 10) {
-  const seed = prompt.trim();
-  const custom = Boolean(world?.trim());
-  const base = custom
-    ? world!.trim()
-    : (BIOMES.find((b) => b.id === biome)?.world ?? BIOMES[0].world);
-  return [
-    forkLock(1),
-    LOCK,
-    paceLock(1),
-    turnCue(secs),
-    `World: ${base}.`,
-    custom
-      ? "This biome is entirely the player's invention. Do not fall back to asteroid, forest, city, Rome, or any other preset."
-      : seed
-        ? `LOCKED PLAYER SEED — this change must appear in every frame, do not drop it: ${seed}.`
-        : "",
-    `${act.title}. ${act.beat}`,
-    "Same wolf, same camera, same biome as the still. Continue THIS sprint from this exact frame. Do not restart. Crystal never chrome.",
-  ]
-    .filter(Boolean)
-    .join(" ");
+export function platePrompt(biome: BiomeId, prompt: string, act: CookAct, world?: string, _secs: 6 | 10 | 15 = 10) {
+  return assembleCookPlate({
+    biome,
+    playerVoice: prompt || world,
+    world,
+    cookAct: act,
+    momentum: 0.3,
+  }).prompt;
 }
 
 export function cookBeats(until = 10): Beat[] {

@@ -32,6 +32,10 @@ Door glow in the picture: **walk-ready** (tap to walk) vs **enter-ready** (secon
 
 Citadel is a graph, not a map. A grammar grows **pins** from run seed `s` + momentum; `compileCitadel` still realizes the walks. Hall → Door A + Door B (never one gate). Room —enter→ Hall′ only after a rail-2 clip, and the biome tag may change only on that enter. Dead-end → breath/idle, no rewrite. Legendary relic pin only when momentum ≥ τ — an extra pin, not a third front door. Manual Hang / Load pins win. Asteroid HOLD. No unpaid Imagine. No Pack seats expansion.
 
+## PCG prompt grammar
+
+Every Imagine plate is two layers: **rails** (terminals — camera, Bolt, lens, chrome ban, gold-cyan path; never sampled) then **slots** (biome / act / fork / trail / floor / leftover / fromTo / still / destStill / seed) from tiny enums only. `assemblePrompt(slots)` fills the template; the linter checksums rails, blocks morph / banned flavor / missing lock, and fails → stock, no Imagine. Player voice maps Rome→ember, Mars→asteroid, space→asteroid, or one short flavor clause — never camera or body. Graph pins stay in `pcg-grammar.ts` (rail 3). Asteroid HOLD. No Pack seats expansion.
+
 ## Hall seats (SmiR pack)
 
 SmiR's own film-team bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Door, Smoke, Cook, Continuity. Not a side chat, not Connect Wallet, not freebots.lol, not a permanent bottom row. Asteroid HOLD.
