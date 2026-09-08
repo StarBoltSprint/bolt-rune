@@ -269,12 +269,13 @@ export function forkStillPrompt() {
 }
 
 export function continuePrompt(world: string, _secs: 6 | 10 | 15 = 10, clipN = 2) {
+  const i = Math.max(1, clipN | 0);
   return assembleCookPlate({
     biome: "open",
     playerVoice: world,
     tap: "walk-A",
-    i: Math.max(1, clipN | 0),
-    momentum: 0.35,
+    i,
+    momentum: i >= 4 ? 0.8 : 0.35,
   }).prompt;
 }
 
@@ -291,6 +292,7 @@ export const SHIFTS: { id: string; name: string; world: string }[] = [
 ];
 
 export function shiftPrompt(fromWorld: string, toWorld: string, _secs: 6 | 10 | 15 = 10, clipN = 2) {
+  const i = Math.max(1, clipN | 0);
   return assembleCookPlate({
     biome: "open",
     playerVoice: toWorld,
@@ -298,7 +300,8 @@ export function shiftPrompt(fromWorld: string, toWorld: string, _secs: 6 | 10 | 
     from: fromWorld.trim() || "hall",
     to: toWorld.trim() || "biome",
     leftover: true,
-    i: Math.max(1, clipN | 0),
+    i,
+    doorCell: i,
     momentum: 0.4,
   }).prompt;
 }
@@ -313,12 +316,15 @@ export function stillPrompt(world: string) {
 }
 
 export function platePrompt(biome: BiomeId, prompt: string, act: CookAct, world?: string, _secs: 6 | 10 | 15 = 10) {
+  const i = Math.max(0, ACTS.findIndex((row) => row.id === act.id));
+  const momentum = act.id === "peak" || act.id === "finale" ? 0.85 : act.id === "lean" ? 0.55 : 0.3;
   return assembleCookPlate({
     biome,
     playerVoice: prompt || world,
     world,
     cookAct: act,
-    momentum: 0.3,
+    i,
+    momentum,
   }).prompt;
 }
 

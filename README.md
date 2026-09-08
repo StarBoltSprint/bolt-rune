@@ -36,6 +36,10 @@ Citadel is a graph, not a map. A grammar grows **pins** from run seed `s` + mome
 
 Every Imagine plate is two layers: **rails** (terminals — camera, Bolt, lens, chrome ban, gold-cyan path; never sampled) then **slots** (biome / act / fork / trail / floor / leftover / fromTo / still / destStill / seed) from tiny enums only. `assemblePrompt(slots)` fills the template; the linter checksums rails, blocks morph / banned flavor / missing lock, and fails → stock, no Imagine. Player voice maps Rome→ember, Mars→asteroid, space→asteroid, or one short flavor clause — never camera or body. Graph pins stay in `pcg-grammar.ts` (rail 3). Asteroid HOLD. No Pack seats expansion.
 
+## PCG role-WFC
+
+1D time-strip of plate-roles — not a 2D map. WFC collapses the ~60s bone (5–8 plates). Neighbors are **time**. Roles (`calm | lean-L | lean-R | fork | peak | decay | breath | enter`) unlock prompt slots only; never free-text Imagine. Quiet 0–8s cannot be peak|enter. Peak only if t≥45s and momentum ≥ τ. Miss/idle bans peak and boosts decay. Trail never jumps none→full. Contradiction → decay + stock, never a spinner. Every sample is `H(s, cell, observe)`. `collapseStrip` → `assemblePrompt` when cooking that cell. Asteroid HOLD. No Pack seats.
+
 ## Hall seats (SmiR pack)
 
 SmiR's own film-team bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Door, Smoke, Cook, Continuity. Not a side chat, not Connect Wallet, not freebots.lol, not a permanent bottom row. Asteroid HOLD.

@@ -162,11 +162,13 @@ describe("PCG prompt grammar — cook path + Asteroid HOLD", () => {
 
   it("cook.ts / lib/cook.ts wire assemble + linter before Imagine; seats untouched", () => {
     const cook = readFileSync(join(here, "./cook.ts"), "utf8");
+    const promptSrc = readFileSync(join(here, "./pcg-prompt.ts"), "utf8");
     const lib = readFileSync(join(here, "../lib/cook.ts"), "utf8");
     const studio = readFileSync(join(here, "../components/cook-studio.tsx"), "utf8");
     const seats = readFileSync(join(here, "../components/door-chat-line.tsx"), "utf8");
     assert.match(cook, /from "\.\/pcg-prompt/);
     assert.match(cook, /assembleCookPlate|assemblePrompt/);
+    assert.match(promptSrc, /collapsePlateCell/);
     assert.match(lib, /assembleCookPlate/);
     assert.match(lib, /lintPrompt|cooked\.lint/);
     assert.match(lib, /lint-stock/);

@@ -5,6 +5,7 @@
  */
 
 import { plateSeed } from "./pcg-rail.ts";
+import { actFromRole, collapsePlateCell } from "./pcg-wfc.ts";
 import { stockBiomeLoop } from "./play-clip.ts";
 
 /** Engine laws. Copied on every plate. Bolt, lens, chrome ban are terminals — never sampled. */
@@ -308,7 +309,7 @@ export function enterLine(slots: Pick<PromptSlots, "act" | "fromTo" | "leftover"
   return bits.join(" ");
 }
 
-/** Density / WFC stub — sample only from the fork enum. */
+/** Density stub — role-WFC (pcg-wfc) fills cook slots; this stays for tests / fallback. */
 export function stubFork(density = 0): ForkSlot {
   if (density >= 0.85) return "L+R";
   if (density >= 0.55) return "R";
@@ -393,11 +394,40 @@ export function slotsFromEngine(input: {
   seed?: string | null;
   runSeed?: string | null;
   i?: number;
+  miss?: boolean;
+  idle?: boolean;
+  doorCell?: number | null;
   playerVoice?: string | null;
-}): PromptSlots {
+}): PromptSlots & { wfcStock?: boolean; wfcRole?: string; wfcRelic?: boolean } {
   const voice = readPlayerVoice(input.playerVoice);
   const biome = voice.biome || asGrammarBiome(input.roomBiome || input.biome);
-  const act = mapCookAct(input.tap || input.act);
+  const tapRaw = String(input.tap || "").trim().toLowerCase();
+  const tapAct = mapCookAct(input.tap || input.act);
+  const i = Math.max(0, Math.round(Number(input.i) || 0));
+  const run = String(input.runSeed || "").trim() || String(input.seed || "").trim() || "s0";
+  const doorCell =
+    Number.isFinite(Number(input.doorCell))
+      ? Math.round(Number(input.doorCell))
+      : tapAct === "enter"
+        ? i
+        : null;
+  const { strip, cell } = collapsePlateCell({
+    s: run,
+    i,
+    momentum: Number(input.momentum) || 0,
+    miss: Boolean(input.miss),
+    idle: Boolean(input.idle),
+    doorCell,
+  });
+  const tapWins =
+    tapRaw === "l" ||
+    tapRaw === "r" ||
+    tapRaw === "left" ||
+    tapRaw === "right" ||
+    tapRaw === "enter" ||
+    tapRaw === "walk-a" ||
+    tapRaw === "walk-b";
+  const act = tapWins ? tapAct : actFromRole(cell.role);
   const leftover: LeftoverSlot =
     act === "enter" && (input.leftover === "from-token" || input.leftover === true) ? "from-token" : "none";
   const fromTo =
@@ -408,19 +438,22 @@ export function slotsFromEngine(input: {
   const dest = input.destStill ? String(input.destStill) : act === "enter" ? entry.still : null;
   const seed =
     String(input.seed || "").trim() ||
-    plateSeed(String(input.runSeed || "s0"), Number(input.i) || 0, act, biome);
+    plateSeed(String(input.runSeed || "s0"), i, act, biome);
   return {
     biome,
     act,
-    fork: stubFork(Number(input.density) || 0),
-    trail: stubTrail(Number(input.momentum) || 0, Number(input.phase) || 0),
-    floor: stubFloor(Number(input.density) || 0),
+    fork: cell.fork,
+    trail: cell.trail,
+    floor: cell.floor,
     leftover,
     fromTo,
     still: String(input.still || entry.still),
     destStill: dest,
     seed,
     flavor: voice.flavor,
+    wfcStock: cell.stock || strip.stock,
+    wfcRole: cell.role,
+    wfcRelic: cell.relic,
   };
 }
 
@@ -532,7 +565,11 @@ export function isSprintGrammarPrompt(prompt: string): boolean {
   return /LOCKED-OFF CAMERA/i.test(text);
 }
 
-export type CookAssemble = AssembledPrompt & { lint: LintResult; stock: { clip: string; still: string } };
+export type CookAssemble = AssembledPrompt & {
+  lint: LintResult;
+  stock: { clip: string; still: string };
+  wfc?: { role: string; stock: boolean; relic: boolean };
+};
 
 export function assembleCookPlate(input: {
   biome?: string | null;
@@ -551,8 +588,11 @@ export function assembleCookPlate(input: {
   density?: number;
   momentum?: number;
   phase?: number;
+  miss?: boolean;
+  idle?: boolean;
+  doorCell?: number | null;
 }): CookAssemble {
-  const slots = slotsFromEngine({
+  const filled = slotsFromEngine({
     biome: input.biome,
     playerVoice: input.playerVoice || input.world,
     act: input.cookAct,
@@ -568,12 +608,17 @@ export function assembleCookPlate(input: {
     density: input.density,
     momentum: input.momentum ?? 0.3,
     phase: input.phase,
+    miss: input.miss,
+    idle: input.idle,
+    doorCell: input.doorCell,
   });
+  const { wfcStock, wfcRole, wfcRelic, ...slots } = filled;
   const assembled = assemblePrompt(slots);
   return {
     ...assembled,
     lint: lintPrompt(assembled.prompt, slots),
     stock: stockOnLintFail(slots.biome),
+    wfc: { role: String(wfcRole || ""), stock: Boolean(wfcStock), relic: Boolean(wfcRelic) },
   };
 }
 
