@@ -1,5 +1,6 @@
 /**
  * PCG rail 1 — run seed, plate / enter hashes, clip cache.
+ * PCG rail 2 — enter-ready glow, hot-path enter never Imagines, Hall′ after clip.
  * Asteroid HOLD. No Imagine on walk-toward-door speculation.
  */
 
@@ -9,8 +10,34 @@ const FNV_PRIME = 16777619;
 const RUN_KEY = "bolt-pcg-run-v1";
 const CLIP_KEY = "bolt-pcg-clips-v1";
 
-export type ImagineJob = "plate" | "enter" | "forge" | "walk-toward-door" | "speculate";
+export type ImagineJob = "plate" | "enter" | "forge" | "walk-toward-door" | "speculate" | "enter-hot" | "enter-confirm";
 export type ClipCacheKind = "plate" | "enter";
+export type DoorGlow = "idle" | "walk-ready" | "enter-ready";
+export type EnterSource = "cache" | "stock" | "";
+export type HallCommit = "pass" | "hold";
+export type PaidEnterTicket = "confirm" | "forge" | "ticket";
+
+export type EnterLookup = {
+  s?: string | null;
+  i?: number;
+  from: string;
+  to: string;
+  door: string;
+};
+
+export type EnterClipHit = {
+  key: string;
+  url: string;
+  source: EnterSource;
+};
+
+export type EnterHotPath = {
+  act: "enter" | "idle";
+  url: string;
+  source: EnterSource;
+  imagine: boolean;
+  commit: HallCommit;
+};
 
 export type ClipCacheRow = {
   url: string;
@@ -113,9 +140,14 @@ export function enterSeed(s: string, i: number, from: string, to: string, door: 
   return pcgHash([s, Math.round(Number(i) || 0), "enter", from, to, door]);
 }
 
-/** Rail 1: Imagine only for plate / enter / explicit forge. Walk-toward-door is speculation. */
+/** Rail 1+2: plate / enter / forge / enter-confirm. Walk-toward-door and enter-hot never Imagine. */
 export function mayImagine(job: ImagineJob): boolean {
-  return job === "plate" || job === "enter" || job === "forge";
+  return job === "plate" || job === "enter" || job === "forge" || job === "enter-confirm";
+}
+
+/** Paid enter cook — Forge / ticket / explicit confirm only. Never walk-toward-door. */
+export function mayPaidEnterCook(ticket: PaidEnterTicket): boolean {
+  return ticket === "confirm" || ticket === "forge" || ticket === "ticket";
 }
 
 function durableClip(url?: string | null): string {
@@ -210,4 +242,122 @@ export function mergeClipCache(
   b?: Record<string, string> | null,
 ): Record<string, string> | undefined {
   return packClipCache({ ...(a || {}), ...(b || {}) });
+}
+
+/* ── PCG rail 2: enter-ready glow, stock bridge, no Imagine on double-tap ── */
+
+const stockLib = new Map<string, string>();
+
+function pairKey(from: string, to: string, door = ""): string {
+  return [from, to, door].map((p) => String(p ?? "").trim().toLowerCase()).join(">");
+}
+
+/**
+ * Stock enter-bridge library hook.
+ * Full stock enter mp4s are not shipped (too heavy). Register a playable
+ * from→to (optional door) URL, or leave empty — refuse enter, never spin / Imagine.
+ */
+export function registerStockBridge(from: string, to: string, url: string, door?: string): string {
+  const clip = durableClip(url);
+  if (!clip) return "";
+  const letter = String(door || "").trim();
+  stockLib.set(pairKey(from, to, letter), clip);
+  if (letter) stockLib.set(pairKey(from, to, ""), clip);
+  return clip;
+}
+
+export function clearStockBridges() {
+  stockLib.clear();
+}
+
+/** Stock bridge for this from→to pair (and optional door). Empty = unwired. */
+export function stockBridge(from: string, to: string, door?: string): string {
+  const letter = String(door || "").trim();
+  return stockLib.get(pairKey(from, to, letter)) || stockLib.get(pairKey(from, to, "")) || "";
+}
+
+/** `s_enter = H(s, i, enter, from, to, door)` — rail 1 key for enter cache lookup. */
+export function enterCacheKey(opts: EnterLookup): string {
+  return enterSeed(String(opts.s || ""), Number(opts.i) || 0, opts.from, opts.to, opts.door);
+}
+
+/** Cache hit by `s_enter`, else stock bridge. Never starts Imagine. */
+export function lookupEnterClip(opts: EnterLookup): EnterClipHit {
+  const key = enterCacheKey(opts);
+  const cached = key ? reuseClipBeforeRecook(key) : "";
+  if (cached) return { key, url: cached, source: "cache" };
+  const stock = stockBridge(opts.from, opts.to, opts.door);
+  if (stock) return { key, url: stock, source: "stock" };
+  return { key, url: "", source: "" };
+}
+
+export function isEnterReady(opts: EnterLookup): boolean {
+  return Boolean(lookupEnterClip(opts).url);
+}
+
+/** Hall door you can tap to walk (not already standing on it). */
+export function isWalkReady(here: string, door: string): boolean {
+  const at = String(here || "").trim().toLowerCase();
+  const id = String(door || "").trim().toLowerCase();
+  if (!id || (id !== "m1" && id !== "m2" && id !== "a" && id !== "b")) return false;
+  const doorId = id === "a" ? "m1" : id === "b" ? "m2" : id;
+  if (at === doorId) return false;
+  return at === "spawn" || at === "m1" || at === "m2" || !at;
+}
+
+/**
+ * Picture-UI glow.
+ * walk-ready = can tap to walk.
+ * enter-ready = second / distinct pulse only when enter clip (s_enter cache) or stock bridge exists,
+ * or the hung biome path is already wired.
+ */
+export function doorGlowState(opts: {
+  here: string;
+  door: string;
+  enterReady?: boolean;
+  hung?: boolean;
+}): DoorGlow {
+  const id = String(opts.door || "").trim().toLowerCase();
+  const doorId = id === "a" ? "m1" : id === "b" ? "m2" : id;
+  const at = String(opts.here || "").trim().toLowerCase() === doorId;
+  const enter = Boolean(opts.enterReady || (at && opts.hung));
+  if (at && enter) return "enter-ready";
+  if (isWalkReady(opts.here, opts.door)) return "walk-ready";
+  return "idle";
+}
+
+/** Graph commit Hall′ only after a playable enter clip exists (PASS). */
+export function commitHallPrime(clip?: string | null): HallCommit {
+  return durableClip(clip) ? "pass" : "hold";
+}
+
+/** Put a cooked enter URL under `s_enter` — confirm / Forge / ticket only. */
+export function replaceStockEnter(key: string, cookedUrl: string, ticket: PaidEnterTicket): string {
+  if (!mayPaidEnterCook(ticket) || !mayImagine("enter-confirm")) return "";
+  return clipCachePut(key, cookedUrl, "enter");
+}
+
+/**
+ * Double-tap / enter hot path.
+ * Plays cached `s_enter` or stock only. Unwired / uncached → idle, never Imagine.
+ * Hung biome enter is a separate PASS (engine plays the hung playlist).
+ */
+export function resolveEnterHotPath(opts: EnterLookup & { hung?: boolean }): EnterHotPath {
+  if (mayImagine("enter-hot") || mayImagine("walk-toward-door") || mayImagine("speculate")) {
+    return { act: "idle", url: "", source: "", imagine: false, commit: "hold" };
+  }
+  if (opts.hung) {
+    return { act: "enter", url: "", source: "", imagine: false, commit: "hold" };
+  }
+  const hit = lookupEnterClip(opts);
+  if (!hit.url) {
+    return { act: "idle", url: "", source: "", imagine: false, commit: "hold" };
+  }
+  return {
+    act: "enter",
+    url: hit.url,
+    source: hit.source,
+    imagine: false,
+    commit: commitHallPrime(hit.url),
+  };
 }

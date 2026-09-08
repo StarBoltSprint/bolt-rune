@@ -115,9 +115,16 @@ import {
   beginRunSeed,
   clipCachePut,
   clipCacheSnapshot,
+  commitHallPrime,
+  doorGlowState,
   enterSeed,
   hydrateClipCache,
+  lookupEnterClip,
   mayImagine,
+  mayPaidEnterCook,
+  readRunSeed,
+  replaceStockEnter,
+  resolveEnterHotPath,
   reuseClipBeforeRecook,
 } from "@/game/pcg-rail";
 import { BootScreen } from "@/components/citadel-hub";
@@ -1557,6 +1564,18 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         return;
       }
     }
+    if ((id === "m1" || id === "m2") && hungDoorTap(hereRef.current, id) === "enter" && !hungDoorReady(id)) {
+      const hot = resolveEnterHotPath(pcgEnterLook(id));
+      if (hot.act === "enter") {
+        void goEnter(id);
+        return;
+      }
+      /* No enter-ready pulse → double-tap stays idle/breath. Never Imagine. */
+      setLit(id);
+      window.setTimeout(() => setLit(null), 280);
+      holdIdle();
+      return;
+    }
     if (phaseRef.current === "play") {
       const stock = stockHallNow();
       const cutBreath = breathTapWalksNow({
@@ -1587,6 +1606,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           void goEnter(id);
           return;
         }
+        const hot = resolveEnterHotPath(pcgEnterLook(id));
+        if (hot.act === "enter") {
+          void goEnter(id);
+          return;
+        }
         setLit(id);
         window.setTimeout(() => setLit(null), 280);
         holdIdle();
@@ -1610,6 +1634,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     wrapping.current = false;
     if ((id === "m1" || id === "m2") && hereRef.current === id && beatRef.current === "idle") {
       if (hungDoorReady(id)) {
+        void goEnter(id);
+        return;
+      }
+      const hot = resolveEnterHotPath(pcgEnterLook(id));
+      if (hot.act === "enter") {
         void goEnter(id);
         return;
       }
@@ -2303,7 +2332,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   async function playEnterThenIdle() {
-    const clip = bank.current.get("enter→spawn");
+    const via = viaHold.current === "m2" ? "m2" : "m1";
+    const hit = lookupEnterClip({
+      s: seedHold.current || readRunSeed(sid.current),
+      i: hallHold.current,
+      from: via,
+      to: "spawn",
+      door: doorLetterOf(via),
+    });
+    const clip = bank.current.get("enter→spawn") || (hit.url ? { url: hit.url, end: "" } : null);
     if (!clip?.url) {
       holdIdle();
       return;
@@ -2335,6 +2372,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if ((id === "m1" || id === "m2") && beatRef.current === "idle" && hungDoorReady(id)) {
         void goEnter(id);
         return;
+      }
+      if ((id === "m1" || id === "m2") && beatRef.current === "idle") {
+        const hot = resolveEnterHotPath(pcgEnterLook(id));
+        if (hot.act === "enter") {
+          void goEnter(id);
+          return;
+        }
       }
       setLit(id);
       window.setTimeout(() => setLit(null), 280);
@@ -2738,6 +2782,18 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   function hungDoorReady(door: "m1" | "m2"): boolean {
     const enter = resolveHungEnter(doorLetterOf(door), hallHold.current, sid.current, readArtifacts(), riftRef.current);
     return enter.kind === "biome";
+  }
+
+  /** Rail 2: `s_enter` lookup for this door → Hall′ spawn. */
+  function pcgEnterLook(door: "m1" | "m2") {
+    return {
+      s: seedHold.current || readRunSeed(sid.current),
+      i: hallHold.current,
+      from: door,
+      to: "spawn",
+      door: doorLetterOf(door),
+      hung: hungDoorReady(door),
+    };
   }
 
   /** First hung biome plate while Bolt breathes at the door — FilmStage must not cold-load. */
@@ -3973,17 +4029,23 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       const enterDoor = enterSide === "RIGHT" ? "B" : "A";
       const enterFrom = viaHold.current || (enterSide === "RIGHT" ? "m2" : "m1");
       const enterKey = enterSeed(seedHold.current || beginRunSeed(sid.current), hallHold.current, enterFrom, "spawn", enterDoor);
-      let enterUrl = reuseClipBeforeRecook(enterKey);
+      let enterUrl = reuseClipBeforeRecook(enterKey) || lookupEnterClip({
+        s: seedHold.current,
+        i: hallHold.current,
+        from: enterFrom,
+        to: "spawn",
+        door: enterDoor,
+      }).url;
       if (enterUrl) {
         clipCachePut(enterKey, enterUrl, "enter");
-      } else if (mayImagine("enter")) {
+      } else if (mayPaidEnterCook("confirm") && mayImagine("enter")) {
         setBeat("cook");
         beatRef.current = "cook";
         setFrost("enter · last frame room 1 → room 2");
         sfxForge("cook");
         enterUrl = await cookFilm(enterSrc, enterHallPrompt(enterSide, worldHold.current), [hallStill], "enter", 6);
         if (!enterUrl) enterUrl = await cookFilm(enterSrc, enterHallPrompt(enterSide, worldHold.current), [hallStill], "enter retry", 6);
-        if (enterUrl) clipCachePut(enterKey, enterUrl, "enter");
+        if (enterUrl) replaceStockEnter(enterKey, enterUrl, "confirm");
       }
       if (!enterUrl) {
         setFrost("enter failed · tap retry");
@@ -4490,12 +4552,18 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const enterDoor = side === "RIGHT" ? "B" : "A";
     const enterFrom = viaHold.current || (side === "RIGHT" ? "m2" : "m1");
     const enterKey = enterSeed(seedHold.current || beginRunSeed(sid.current), hallHold.current, enterFrom, "spawn", enterDoor);
-    let url = reuseClipBeforeRecook(enterKey);
-    if (!url && mayImagine("enter")) {
+    let url = reuseClipBeforeRecook(enterKey) || lookupEnterClip({
+      s: seedHold.current,
+      i: hallHold.current,
+      from: enterFrom,
+      to: "spawn",
+      door: enterDoor,
+    }).url;
+    if (!url && mayPaidEnterCook("confirm") && mayImagine("enter")) {
       url = await cookFilm(start, enterHallPrompt(side, worldHold.current), kit, "enter", 6);
       if (!url) url = await cookFilm(start, enterHallPrompt(side, worldHold.current), kit, "enter retry", 6);
     }
-    if (url) clipCachePut(enterKey, url, "enter");
+    if (url) replaceStockEnter(enterKey, url, "confirm");
     if (!url) return null;
     setFilmUrl(url);
     setBeat("playvid");
@@ -4927,8 +4995,23 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         await switchHall(dest, false);
         return;
       }
+      /* PCG rail 2: enter hot path never Imagines. Cache `s_enter` or stock only. */
+      if (mayImagine("enter-hot")) {
+        holdIdle();
+        return;
+      }
       if (!bank.current.get(`exit-${pick}`)?.url && dest) await prefetchExit(pick);
-      const clip = bank.current.get(`exit-${pick}`) || (dest ? bank.current.get("enter→spawn") : null);
+      const enterKey = enterSeed(seedHold.current || beginRunSeed(sid.current), hallHold.current, pick, "spawn", doorLetterOf(pick));
+      const bankClip = bank.current.get(`exit-${pick}`) || (dest ? bank.current.get("enter→spawn") : null);
+      if (bankClip?.url) clipCachePut(enterKey, bankClip.url, "enter");
+      const hit = lookupEnterClip({
+        s: seedHold.current || readRunSeed(sid.current),
+        i: hallHold.current,
+        from: pick,
+        to: "spawn",
+        door: doorLetterOf(pick),
+      });
+      const clip = hit.url ? { url: hit.url, end: bankClip?.end || "" } : bankClip;
       if (clip?.url) {
         wrapping.current = false;
         setLoopOn(false);
@@ -4945,8 +5028,16 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         skipEnter.current = true;
       }
       if (dest && dest !== hallHold.current) {
+        if (commitHallPrime(clip?.url) !== "pass") {
+          holdIdle();
+          return;
+        }
         persist({ phase: "play", halls: putSlice(hallsHold.current, snapHall()) });
         await switchHall(dest, true);
+        return;
+      }
+      if (commitHallPrime(clip?.url) !== "pass") {
+        holdIdle();
         return;
       }
       enterNext(pick);
@@ -7045,6 +7136,34 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       liveHall,
     }) || hangBindHall(boundArt?.room?.hall) || hangBindHall(hangRoomN) || hangBindHall(liveHall) || 1;
   const chromeDoor = doorLetterOf(boundArt?.room?.door || hungDoor || "A");
+  const glowA = doorGlowState({
+    here,
+    door: "m1",
+    enterReady: Boolean(
+      lookupEnterClip({
+        s: seedHold.current || readRunSeed(sid.current),
+        i: hallHold.current,
+        from: "m1",
+        to: "spawn",
+        door: "A",
+      }).url,
+    ),
+    hung: hungDoorReady("m1"),
+  });
+  const glowB = doorGlowState({
+    here,
+    door: "m2",
+    enterReady: Boolean(
+      lookupEnterClip({
+        s: seedHold.current || readRunSeed(sid.current),
+        i: hallHold.current,
+        from: "m2",
+        to: "spawn",
+        door: "B",
+      }).url,
+    ),
+    hung: hungDoorReady("m2"),
+  });
 
   return (
     <div
@@ -7070,6 +7189,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       data-here={here}
       data-hall={liveHall}
       data-door-hit={doorHit ? "1" : "0"}
+      data-glow-a={phase === "play" ? glowA : undefined}
+      data-glow-b={phase === "play" ? glowB : undefined}
+      data-enter-ready={phase === "play" && (glowA === "enter-ready" || glowB === "enter-ready") ? "1" : undefined}
       data-stock-walk={phase === "play" && (beat === "playvid" || beat === "walk") ? "1" : "0"}
       data-marks={pins.length}
       data-rift={rift.m1 || rift.m2 ? "1" : "0"}
@@ -7335,6 +7457,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         <div className="pointer-events-none absolute inset-0 z-[80]" data-doors="1">
           {(["m1", "m2"] as const).map((id) => {
             const hit = (doorHit || STOCK_HITS)[id];
+            const glow = id === "m1" ? glowA : glowB;
             const layerRect = layer.current?.getBoundingClientRect();
             const box =
               picBox ||
@@ -7347,13 +7470,25 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             const top = box ? box.y + hit.y * box.h : "24%";
             const width = box ? hit.w * box.w : "38%";
             const height = box ? hit.h * box.h : "44%";
+            const glowClass =
+              glow === "enter-ready"
+                ? id === "m1"
+                  ? "door-glow-enter-teal"
+                  : "door-glow-enter-gold"
+                : glow === "walk-ready"
+                  ? id === "m1"
+                    ? "door-glow-teal"
+                    : "door-glow-gold"
+                  : "";
             return (
               <button
                 key={id}
                 type="button"
                 aria-label={id}
                 data-door={id}
-                className="pointer-events-auto absolute"
+                data-glow={glow}
+                data-enter-ready={glow === "enter-ready" ? "1" : undefined}
+                className={`pointer-events-auto absolute ${glowClass}`}
                 style={{
                   left,
                   top,

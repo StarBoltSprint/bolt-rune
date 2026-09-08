@@ -6,20 +6,32 @@ import { fileURLToPath } from "node:url";
 import { FILM_BY_ID } from "./films.ts";
 import {
   beginRunSeed,
+  clearStockBridges,
   clipCacheGet,
   clipCachePut,
   clipCacheSnapshot,
+  commitHallPrime,
+  doorGlowState,
+  enterCacheKey,
   enterSeed,
   hydrateClipCache,
+  isEnterReady,
   isRunSeed,
+  isWalkReady,
+  lookupEnterClip,
   mayImagine,
+  mayPaidEnterCook,
   mergeClipCache,
   newRunSeed,
   packClipCache,
   pcgHash,
   plateSeed,
   readRunSeed,
+  registerStockBridge,
+  replaceStockEnter,
+  resolveEnterHotPath,
   reuseClipBeforeRecook,
+  stockBridge,
 } from "./pcg-rail.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -173,5 +185,133 @@ describe("PCG rail 1 — Keep persist + Asteroid HOLD", () => {
     const rail = readFileSync(join(here, "./pcg-rail.ts"), "utf8");
     assert.match(rail, /Asteroid HOLD/);
     assert.doesNotMatch(rail, /prepareHoldBeats/);
+  });
+});
+
+describe("PCG rail 2 — door glow + enter-ready gating", () => {
+  beforeEach(() => {
+    mockStorage();
+    clearStockBridges();
+  });
+
+  it("walk-ready vs enter-ready (second pulse only when s_enter or stock exists)", () => {
+    const s = "sglowready01";
+    const look = { s, i: 1, from: "m1", to: "spawn", door: "A" };
+    assert.equal(isWalkReady("spawn", "m1"), true);
+    assert.equal(isWalkReady("spawn", "m2"), true);
+    assert.equal(isWalkReady("m1", "m1"), false);
+    assert.equal(isWalkReady("m1", "m2"), true);
+    assert.equal(isEnterReady(look), false);
+    assert.equal(doorGlowState({ here: "spawn", door: "m1" }), "walk-ready");
+    assert.equal(doorGlowState({ here: "m1", door: "m1" }), "idle");
+    assert.equal(doorGlowState({ here: "m1", door: "m2" }), "walk-ready");
+    assert.equal(doorGlowState({ here: "m1", door: "m1", hung: true }), "enter-ready");
+    clipCachePut(enterSeed(s, 1, "m1", "spawn", "A"), "/films/enter-cached.mp4", "enter");
+    assert.equal(isEnterReady(look), true);
+    assert.equal(doorGlowState({ here: "m1", door: "m1", enterReady: true }), "enter-ready");
+    assert.equal(doorGlowState({ here: "spawn", door: "m1", enterReady: true }), "walk-ready");
+    clearStockBridges();
+    mockStorage();
+    registerStockBridge("m2", "spawn", "/ui/citadel.mp4", "B");
+    assert.equal(stockBridge("m2", "spawn", "B"), "/ui/citadel.mp4");
+    assert.equal(isEnterReady({ s, i: 1, from: "m2", to: "spawn", door: "B" }), true);
+    assert.equal(doorGlowState({ here: "m2", door: "m2", enterReady: true }), "enter-ready");
+  });
+
+  it("s_enter = H(s,i,enter,from,to,door) is the enter cache key", () => {
+    const s = "senterkeyrail2";
+    const key = enterCacheKey({ s, i: 3, from: "m1", to: "spawn", door: "A" });
+    assert.equal(key, enterSeed(s, 3, "m1", "spawn", "A"));
+    assert.equal(key, pcgHash([s, 3, "enter", "m1", "spawn", "A"]));
+    clipCachePut(key, "https://imgen.x.ai/vid/s-enter.mp4", "enter");
+    const hit = lookupEnterClip({ s, i: 3, from: "m1", to: "spawn", door: "A" });
+    assert.equal(hit.source, "cache");
+    assert.equal(hit.url, "https://imgen.x.ai/vid/s-enter.mp4");
+    assert.equal(hit.key, key);
+    assert.equal(lookupEnterClip({ s, i: 3, from: "m1", to: "spawn", door: "B" }).source, "");
+  });
+});
+
+describe("PCG rail 2 — double-tap never Imagines when unwired / uncached", () => {
+  beforeEach(() => {
+    mockStorage();
+    clearStockBridges();
+  });
+
+  it("uncached + no stock → idle, imagine false, Hall′ HOLD", () => {
+    const hot = resolveEnterHotPath({ s: "snotready", i: 0, from: "m1", to: "spawn", door: "A" });
+    assert.equal(hot.act, "idle");
+    assert.equal(hot.url, "");
+    assert.equal(hot.imagine, false);
+    assert.equal(hot.commit, "hold");
+    assert.equal(mayImagine("enter-hot"), false);
+    assert.equal(mayImagine("walk-toward-door"), false);
+    assert.equal(mayImagine("speculate"), false);
+  });
+
+  it("cache hit or stock plays enter — still never Imagine; Hall′ PASS only with clip", () => {
+    const s = "scachedenter2";
+    const key = enterSeed(s, 2, "m1", "spawn", "A");
+    clipCachePut(key, "/films/enter-a.mp4", "enter");
+    const cached = resolveEnterHotPath({ s, i: 2, from: "m1", to: "spawn", door: "A" });
+    assert.equal(cached.act, "enter");
+    assert.equal(cached.source, "cache");
+    assert.equal(cached.url, "/films/enter-a.mp4");
+    assert.equal(cached.imagine, false);
+    assert.equal(cached.commit, "pass");
+    registerStockBridge("m2", "spawn", "/ui/citadel.mp4", "B");
+    const stock = resolveEnterHotPath({ s, i: 2, from: "m2", to: "spawn", door: "B" });
+    assert.equal(stock.act, "enter");
+    assert.equal(stock.source, "stock");
+    assert.equal(stock.imagine, false);
+    assert.equal(commitHallPrime(""), "hold");
+    assert.equal(commitHallPrime("blob:http://localhost/x"), "hold");
+    assert.equal(commitHallPrime("/ui/citadel.mp4"), "pass");
+  });
+
+  it("paid enter cook is confirm / Forge / ticket only — never approach speculation", () => {
+    assert.equal(mayPaidEnterCook("confirm"), true);
+    assert.equal(mayPaidEnterCook("forge"), true);
+    assert.equal(mayPaidEnterCook("ticket"), true);
+    assert.equal(mayImagine("enter-confirm"), true);
+    assert.equal(mayImagine("enter"), true);
+    assert.equal(mayImagine("enter-hot"), false);
+    const key = enterSeed("sconfirm1", 0, "m1", "spawn", "A");
+    assert.equal(replaceStockEnter(key, "/films/enter-paid.mp4", "confirm"), "/films/enter-paid.mp4");
+    assert.equal(clipCacheGet(key), "/films/enter-paid.mp4");
+  });
+
+  it("engine double-tap / goEnter never calls Imagine on the hot path", () => {
+    const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const goTo = engine.slice(engine.indexOf("function goTo"), engine.indexOf("function drainQueue"));
+    const playWalk = engine.slice(engine.indexOf("async function playWalk"), engine.indexOf("async function saveFilms"));
+    const goEnter = engine.slice(engine.indexOf("async function goEnter"), engine.indexOf("function enterNext"));
+    assert.match(engine, /resolveEnterHotPath\(/);
+    assert.match(engine, /lookupEnterClip\(/);
+    assert.match(engine, /enterSeed\(/);
+    assert.match(engine, /mayImagine\("enter-hot"\)/);
+    assert.match(engine, /commitHallPrime\(/);
+    assert.match(engine, /mayPaidEnterCook\("confirm"\)/);
+    assert.match(goTo, /resolveEnterHotPath\(/);
+    assert.match(goTo, /hot\.act === "enter"/);
+    assert.doesNotMatch(goTo, /cookFilm\(|startRuneFilm\(|forgeWalkNow\(/);
+    assert.match(playWalk, /resolveEnterHotPath\(/);
+    const playHead = playWalk.slice(0, playWalk.indexOf("walkingTo.current = id"));
+    assert.doesNotMatch(playHead, /cookFilm\(|startRuneFilm\(/);
+    assert.match(goEnter, /mayImagine\("enter-hot"\)/);
+    assert.match(goEnter, /lookupEnterClip\(/);
+    assert.match(goEnter, /commitHallPrime\(/);
+    assert.doesNotMatch(goEnter, /cookFilm\(|startRuneFilm\(|forgeWalkNow\(/);
+    assert.match(engine, /data-glow=/);
+    assert.match(engine, /door-glow-enter-/);
+    const rail = readFileSync(join(here, "./pcg-rail.ts"), "utf8");
+    assert.match(rail, /Stock enter-bridge library hook/);
+    assert.match(rail, /refuse enter, never spin/);
+    assert.match(rail, /Asteroid HOLD/);
+    assert.doesNotMatch(rail, /prepareHoldBeats/);
+    const asteroid = FILM_BY_ID.asteroid.beats.map((beat) => beat.at);
+    assert.deepEqual(asteroid, [7.0, 12.3, 16.3, 21.6, 25.6, 30.9, 34.9, 40.2, 44.2, 49.5, 53.5]);
+    const seats = readFileSync(join(here, "../components/door-chat-line.tsx"), "utf8");
+    assert.doesNotMatch(seats, /registerStockBridge|enter-ready|pcg-rail/);
   });
 });
