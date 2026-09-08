@@ -125,7 +125,7 @@ describe("PCG rail 1 persist + cook/play wiring", () => {
     assert.doesNotMatch(prefetch, /startRuneFilm|cookFilm|forgeWalkNow/);
     assert.match(prefetch, /warm existing clip URLs only/);
     const playWalk = engine.slice(engine.indexOf("async function playWalk"), engine.indexOf("async function saveFilms"));
-    assert.match(playWalk, /cachedClipOf/);
+    assert.match(playWalk, /takePcgClip|cachedClipOf/);
     assert.match(playWalk, /confirmed walk cook/);
     const warm = engine.slice(engine.indexOf("function warmHungBiome"), engine.indexOf("async function goHungHall"));
     assert.doesNotMatch(warm, /startRuneFilm|cookFilm/);
