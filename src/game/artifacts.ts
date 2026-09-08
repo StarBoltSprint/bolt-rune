@@ -3,6 +3,11 @@ import { hungPlayChrome } from "./enter-graph.ts";
 import { biomeSprintFilm, cookFilm, quietBiomeFilm } from "./cook";
 import { isHallFilm, isLivingHallLoop } from "./stock-room";
 import { unbindDroppedHalls as applyUnbind } from "./rooms.ts";
+import { lintSmoke, subjectFromFilm } from "./smoke-gate.ts";
+
+function lintHangFilm(film: Film) {
+  return lintSmoke(subjectFromFilm(film, "walk", "hang"));
+}
 
 const KEY = "bolt-artifacts-v1";
 const MEM = "bolt-artifacts-mem-v1";
@@ -424,8 +429,10 @@ function write(list: HungArtifact[]) {
   return packed;
 }
 
-export function hangArtifact(film: Film, forceNew = false, runId?: string): HungArtifact[] {
+export function hangArtifact(film: Film, forceNew = false, runId?: string, smoke?: { smoke?: string } | null): HungArtifact[] {
   try {
+    const gate = smoke ?? lintHangFilm(film);
+    if (gate && gate.smoke !== "PASS") return readArtifacts();
     const list = readArtifacts();
     const incoming = uniqueClips(
       (film.playlist?.length ? film.playlist : [film.local]).map(keepArt).filter(Boolean),

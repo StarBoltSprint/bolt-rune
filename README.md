@@ -106,6 +106,12 @@ Resonance is the bottom crystal: fill is momentum `m` only, never when-to-tap. H
 
 Smoke glow helper fails unreadable sheets (`on≥off`, `off>duration`, window `<0.35s`). Human Smoke stays visual. Asteroid HOLD. No Pack seats.
 
+## Smoke ship-gate
+
+PASS | FAIL + `reasons[]` on a clip or still **before** Hang, cook-cache insert, or last-frame / enter handoff. FAIL never becomes the next universe — same as empty WFC: no Hang, no bad `stillEnd`, decay/hold, no spinner. Reasons paint on paused forge UI only.
+
+Local lint always runs first (even if `SMOKE_WAKE_URL` is down): container (~9:16, duration band, last frame, no zero-byte) → camera → body → doors → chrome ban → path → cue honesty (`off−on≥0.35s`) → continuity → prompt residue (`lintPrompt`). Pixel/CV-hard checks use prompt + cue + aspect proxies; explicit doubt / mismatch FAILs. Optional Smoke bot hop when the wake URL is set — timeout or unparseable `{pass, reasons[]}` is FAIL. `railsVersion: "bolt-1"` on every PASS. Stock ingest once a clip is cached PASS. Keep replay / Howl / Pause skip. Door seat stays talk-only. Asteroid HOLD. No Pack seats expansion.
+
 ## Hall seats (SmiR pack)
 
 SmiR's own film-team bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Door, Smoke, Cook, Continuity. Not a side chat, not Connect Wallet, not freebots.lol, not a permanent bottom row. Asteroid HOLD.

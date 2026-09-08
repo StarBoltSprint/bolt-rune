@@ -19,6 +19,7 @@ The README holds the refuse table, steal table, and smell tests. This note is th
 | Prefab chunks | `src/game/pcg-chunk.ts` | Hang wins; bridge stitch on rail 2 |
 | Play-loop / cue sheet | `src/game/pcg-play.ts` | `gradeTap` / picture-time / Howl / Recall / Pause |
 | EDPCG density / awakening | `src/game/pcg-density.ts` | `smoothstep(m) * noise(s, pictureTime)` → cook slots |
+| Smoke ship-gate | `src/game/smoke-gate.ts` | PASS/FAIL before Hang / cache / enter; `railsVersion` `bolt-1` |
 
 1D role-WFC neighbors are **time**, not floor tiles. Voxel WFC / STWFC T×Y×X does not belong here.
 

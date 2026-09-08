@@ -127,6 +127,7 @@ import {
   resolveEnterHotPath,
   reuseClipBeforeRecook,
 } from "@/game/pcg-rail";
+import { lintEnterClip, smokeForgeFrost } from "@/game/smoke-gate";
 import { isDeadEndPin, pinsForCitadel, rewriteOnEnter } from "@/game/pcg-grammar";
 import { placeHallChunks, resolveChunkEnter } from "@/game/pcg-chunk";
 import { BootScreen } from "@/components/citadel-hub";
@@ -4084,7 +4085,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         door: enterDoor,
       }).url;
       if (enterUrl) {
-        clipCachePut(enterKey, enterUrl, "enter");
+        const smoke = lintEnterClip(enterUrl, hallStill);
+        if (smoke.smoke !== "PASS") {
+          failStay(smokeForgeFrost(smoke.reasons) || "enter failed · tap retry");
+          return;
+        }
+        clipCachePut(enterKey, enterUrl, "enter", smoke);
       } else if (mayPaidEnterCook("confirm") && mayImagine("enter")) {
         setBeat("cook");
         beatRef.current = "cook";
@@ -4092,7 +4098,14 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         sfxForge("cook");
         enterUrl = await cookFilm(enterSrc, enterHallPrompt(enterSide, worldHold.current), [hallStill], "enter", 6);
         if (!enterUrl) enterUrl = await cookFilm(enterSrc, enterHallPrompt(enterSide, worldHold.current), [hallStill], "enter retry", 6);
-        if (enterUrl) replaceStockEnter(enterKey, enterUrl, "confirm");
+        if (enterUrl) {
+          const smoke = lintEnterClip(enterUrl, hallStill);
+          if (smoke.smoke !== "PASS") {
+            failStay(smokeForgeFrost(smoke.reasons) || "enter failed · tap retry");
+            return;
+          }
+          replaceStockEnter(enterKey, enterUrl, "confirm", smoke);
+        }
       }
       if (!enterUrl) {
         setFrost("enter failed · tap retry");
@@ -4610,7 +4623,14 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       url = await cookFilm(start, enterHallPrompt(side, worldHold.current), kit, "enter", 6);
       if (!url) url = await cookFilm(start, enterHallPrompt(side, worldHold.current), kit, "enter retry", 6);
     }
-    if (url) replaceStockEnter(enterKey, url, "confirm");
+    if (url) {
+      const smoke = lintEnterClip(url, hall);
+      if (smoke.smoke !== "PASS") {
+        failStay(smokeForgeFrost(smoke.reasons) || "enter failed · tap retry");
+        return null;
+      }
+      replaceStockEnter(enterKey, url, "confirm", smoke);
+    }
     if (!url) return null;
     setFilmUrl(url);
     setBeat("playvid");
@@ -5055,7 +5075,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if (!bank.current.get(`exit-${pick}`)?.url && dest) await prefetchExit(pick);
       const enterKey = enterSeed(seedHold.current || beginRunSeed(sid.current), hallHold.current, pick, "spawn", doorLetterOf(pick));
       const bankClip = bank.current.get(`exit-${pick}`) || (dest ? bank.current.get("enter→spawn") : null);
-      if (bankClip?.url) clipCachePut(enterKey, bankClip.url, "enter");
+      if (bankClip?.url) {
+        const smoke = lintEnterClip(bankClip.url, bankClip.end || plateRef.current);
+        if (smoke.smoke !== "PASS") {
+          failStay(smokeForgeFrost(smoke.reasons) || "enter failed · tap retry");
+          holdIdle();
+          return;
+        }
+        clipCachePut(enterKey, bankClip.url, "enter", smoke);
+      }
       const stitch = chunkEnterNow(pick);
       const hit = lookupEnterClip({
         s: seedHold.current || readRunSeed(sid.current),
@@ -5083,8 +5111,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         holdNow(clip.end || lastLive.current);
         skipEnter.current = true;
       }
-      /* PCG rail 3: Hall′ rewrite only after clip (rail 2). Dead-end / no clip stays idle. */
-      if (commitHallPrime(clip?.url) !== "pass") {
+      /* PCG rail 3: Hall′ rewrite only after clip (rail 2). Smoke FAIL / dead-end / no clip stays idle. */
+      const enterSmoke = clip?.url
+        ? lintEnterClip(clip.url, clip.end || plateRef.current)
+        : { smoke: "FAIL" as const, reasons: ["enter-stillEnd"] };
+      if (enterSmoke.smoke !== "PASS" || commitHallPrime(clip?.url, enterSmoke) !== "pass") {
+        if (enterSmoke.smoke !== "PASS") failStay(smokeForgeFrost(enterSmoke.reasons));
         holdIdle();
         return;
       }
@@ -5092,6 +5124,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         clip: clip?.url,
         entered: true,
         deadEnd: isDeadEndPin(pick),
+        smoke: enterSmoke,
       });
       if (rewrite.commit !== "pass" || rewrite.rewrite !== "rewrite") {
         holdIdle();

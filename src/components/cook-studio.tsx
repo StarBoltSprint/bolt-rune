@@ -15,6 +15,8 @@ import { boltFull } from "@/lib/press";
 import { sfxForge, startBed, unlockAudio } from "@/game/audio";
 import { RuneEngine } from "@/components/rune-engine";
 import { beginRunSeed, clipCachePut, mayImagine, plateSeed, reuseClipBeforeRecook } from "@/game/pcg-rail";
+import { assembleCookPlate } from "@/game/pcg-prompt";
+import { lintSmoke, recallSmokePass, smokeForgeFrost, type SmokeGateOut } from "@/game/smoke-gate";
 import { lastPlay } from "@/game/rune-session";
 
 type Plate = { status: "wait" | "cook" | "ready" | "fail"; url?: string };
@@ -306,9 +308,23 @@ export function CookStudio({
     return cookFilm(name.slice(0, 42), customStill || (playlist[0] ? "" : world.still), playlist);
   }
 
-  function hangNow(live: string[]) {
+  function hangNow(live: string[], smoke?: SmokeGateOut) {
     const film = makeFilm(live);
     if (!film.playlist?.length) return film;
+    const gate =
+      smoke ??
+      lintSmoke({
+        kind: "walk",
+        when: "hang",
+        clip: film.playlist[0],
+        still: film.still,
+        stillEnd: film.still,
+        prompt: film.line,
+      });
+    if (gate.smoke !== "PASS") {
+      setFrost(smokeForgeFrost(gate.reasons));
+      return film;
+    }
     onHang?.(film);
     setVault(readArtifacts());
     return film;
@@ -634,6 +650,28 @@ export function CookStudio({
     let stillUrl = customStill;
     const got: string[] = [];
     let spec = readClipSpec();
+    function gateCookClip(playable: string, when: "cook" | "stock"): SmokeGateOut {
+      const plate = assembleCookPlate({
+        biome: cookBiome,
+        playerVoice: seedLine || worldLine,
+        world: worldLine,
+        tap: "walk-A",
+        still: stillUrl || still,
+        seed: plateSeed(beginRunSeed(lastPlay()?.id || "cook", undefined), 0, "intro", cookBiome),
+      });
+      return lintSmoke({
+        kind: "walk",
+        when,
+        clip: playable,
+        duration: spec.secs,
+        still: stillUrl || still,
+        stillEnd: stillUrl || still,
+        prompt: plate.prompt,
+        slots: plate.slots,
+        cachedPass: Boolean(recallSmokePass(playable)),
+        alreadyPassed: recallSmokePass(playable) || undefined,
+      });
+    }
     const pace = { n: 0, cap: 16 };
     const tick = window.setInterval(() => {
       pace.n = Math.min(pace.cap, pace.n + 1);
@@ -673,9 +711,15 @@ export function CookStudio({
       const cached = reuseClipBeforeRecook(plateKey);
       if (cached) {
         const playable = biomeReadySrc([cached], cookBiome);
+        const smoke = gateCookClip(playable, "stock");
+        if (smoke.smoke !== "PASS") {
+          mark(0, { status: "fail" });
+          setFrost(smokeForgeFrost(smoke.reasons));
+          return;
+        }
         got.push(playable);
         mark(0, { status: "ready", url: playable });
-        hangNow(got);
+        hangNow(got, smoke);
         watchI.current = 0;
         setWatch(playable);
         pace.n = 100;
@@ -727,9 +771,15 @@ export function CookStudio({
           if (started.ok) break;
           if (!started.ok && started.error === "lint-stock") {
             const playable = biomeReadySrc([started.stock || stockBiomeLoop(cookBiome)], cookBiome);
+            const smoke = gateCookClip(playable, "stock");
+            if (smoke.smoke !== "PASS") {
+              mark(0, { status: "fail" });
+              setFrost(smokeForgeFrost(smoke.reasons));
+              return;
+            }
             got.push(playable);
             mark(0, { status: "ready", url: playable });
-            hangNow(got);
+            hangNow(got, smoke);
             watchI.current = 0;
             setWatch(playable);
             pace.n = 100;
@@ -817,10 +867,16 @@ export function CookStudio({
           }
           if (polled.status === "done" && polled.url) {
             const playable = biomeReadySrc([polled.url, ...got], cookBiome);
-            clipCachePut(plateKey, playable, "plate");
+            const smoke = gateCookClip(playable, "cook");
+            if (smoke.smoke !== "PASS") {
+              mark(0, { status: "fail" });
+              setFrost(smokeForgeFrost(smoke.reasons));
+              break;
+            }
+            clipCachePut(plateKey, playable, "plate", smoke);
             got.push(playable);
             mark(0, { status: "ready", url: playable });
-            hangNow(got);
+            hangNow(got, smoke);
             watchI.current = 0;
             setWatch(playable);
             pace.n = 100;
