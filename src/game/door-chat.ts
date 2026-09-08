@@ -95,10 +95,15 @@ export function isHttpWakeUrl(raw: string): boolean {
   }
 }
 
-/** Server-only. Wake URL never goes to the client. */
+/**
+ * Resolve a seat against a secret bag. Default is empty — this module is also
+ * imported by the hall picture, so it must not touch `process.env` (Vite would
+ * snapshot / strip it for the client bundle). The hop loads secrets via
+ * `loadSeatSecretEnv` in `door-chat-env.server.ts`.
+ */
 export function resolveSeatWake(
   id: HallSeatId,
-  env: Record<string, string | undefined> | NodeJS.ProcessEnv = typeof process === "undefined" ? {} : process.env,
+  env: Record<string, string | undefined> | NodeJS.ProcessEnv = {},
 ): SeatWake {
   const spec = HALL_SEATS[id];
   const wakeUrl = envText(env, spec.wakeEnv);

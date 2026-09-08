@@ -10,6 +10,8 @@
  * Only `VITE_`-prefixed keys are honored: the file is a build flag carrier, not
  * a secret store, and only `VITE_` vars reach the browser anyway. A real
  * `process.env` entry always wins, so an explicit override still works.
+ * Seat wake URLs (`SMOKE_WAKE_URL`, …) stay out of this merge — the hop reads
+ * them via `src/game/door-chat-env.server.ts` so they never enter the client.
  *
  * That precedence also means the file governs this workspace only. A deployed
  * build runs with the provider's project env, where the deployer sets

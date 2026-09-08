@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { loadSeatSecretEnv } from "@/game/door-chat-env.server";
 import {
   HALL_SEAT_IDS,
   doorChatPayload,
@@ -18,8 +19,9 @@ function json(body: unknown, status = 200) {
 }
 
 function roster() {
+  const env = loadSeatSecretEnv();
   const seats = HALL_SEAT_IDS.map((id) => {
-    const wake = resolveSeatWake(id);
+    const wake = resolveSeatWake(id, env);
     return { ...wake, public: true };
   });
   return {
@@ -34,13 +36,14 @@ function roster() {
 }
 
 async function hopWake(seat: HallSeatId, text: unknown, source?: string): Promise<DoorChatHopResult> {
-  const wake = resolveSeatWake(seat);
+  const env = loadSeatSecretEnv();
+  const wake = resolveSeatWake(seat, env);
   const packed = doorChatPayload({ seat, text, source, botId: wake.botId });
   if (!packed.ok) return { ok: false, seat, error: packed.error, wired: wake.wired };
   if (!wake.wired) return { ok: false, seat, error: "wake-unwired", wired: false };
 
   const headers: Record<string, string> = { "content-type": "application/json" };
-  const secret = String(process.env.DOOR_CHAT_WAKE_SECRET || "").trim();
+  const secret = String(env.DOOR_CHAT_WAKE_SECRET || "").trim();
   if (secret) headers.Authorization = `Bearer ${secret}`;
 
   try {
