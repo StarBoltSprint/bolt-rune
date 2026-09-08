@@ -122,6 +122,22 @@ Two buses: **Plate/Imagine** — diegetic weather (space tone, wind, paw, lightn
 
 Trail CA: none = thin bed; thin = light crackle; full = storm; leaving storm = decay filter over 1 plate (don't snap off). Howl sounds once. Prefetch stock includes audio decode. No second audio-only Imagine cook. No wav assets in this tree — placeholder Web Audio oscillators / noise buffers in `src/game/audio.ts` (`src/game/pcg-audio.ts` is the law). Smoke FAIL mutes both (`applySmokeAudioGate`). Asteroid HOLD. No Pack seats.
 
+## PCG Keep share / rich clip cache
+
+Clip cache keys extend past simple `s_i`:
+
+`H(railsVersion, runSeed, plateIndex?, act, biomeFrom, biomeTo, chunkFromId, chunkToId, role, slotsHash, cueSheetHash)`
+
+Store **PASS** only: `{ key, url, stillStart, stillEnd, cues[], smoke: PASS, railsVersion, bytes, createdAt }`. FAIL is not a playable cache (optional reason cache only). Spec is still free early; film is paid on confirm + ticket only.
+
+**LRU + pin** — pin Keep graph edges in the current citadel, hung artifacts, and Hall′ spawn stills. Those never evict. LRU drops unpinned first, capped by count and bytes.
+
+**Share is a recipe, not an mp4 dump:**
+
+`{ v:1, railsVersion, runSeed, graph: nodes+edges, pins: { edgeId: cacheKey|catalogId }, transcript?: grades[] }`
+
+Compact `g1.` / `j1.` base64url (gzip when zlib is present) or a short host id. Resolve: catalog → local cache → missing = unlit door / forge ticket — **never auto-bill a visitor**. No wake URLs, API keys, or SuperGrok tokens in the share. Asteroid HOLD. No Pack seats.
+
 ## Hall seats (SmiR pack)
 
 SmiR's own film-team bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Door, Smoke, Cook, Continuity. Not a side chat, not Connect Wallet, not freebots.lol, not a permanent bottom row. Asteroid HOLD.

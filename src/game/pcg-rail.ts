@@ -3,6 +3,9 @@
  * PCG rail 2 — enter-ready glow, hot-path enter never Imagines, Hall′ after clip.
  * PCG rail 3 — graph grammar pins live in pcg-grammar.ts (seed + momentum).
  * Chunk bridge keys H(s, fromId, toId, act) live in pcg-chunk.ts and hook this cache.
+ * Rich cache key — hash(railsVersion, runSeed, plateIndex?, act, biomeFrom, biomeTo,
+ *   chunkFromId, chunkToId, role, slotsHash, cueSheetHash). PASS rows only.
+ * LRU + pin — Keep edges / hung artifacts / Hall′ spawn stills never evict.
  * Picture-time — sum of played plate durations; never Date.now in the generator.
  * Asteroid HOLD. No Imagine on walk-toward-door speculation.
  */
@@ -12,6 +15,17 @@ const FNV_PRIME = 16777619;
 
 const RUN_KEY = "bolt-pcg-run-v1";
 const CLIP_KEY = "bolt-pcg-clips-v1";
+const PIN_KEY = "bolt-pcg-clip-pins-v1";
+const FAIL_KEY = "bolt-pcg-clip-fail-v1";
+
+/** Rails stamp on every PASS cache row + Keep share. */
+export const RAILS_VERSION = "bolt-1" as const;
+
+export const CLIP_CACHE_COUNT_CAP = 96;
+export const CLIP_CACHE_BYTES_CAP = 64 * 1024 * 1024;
+const FAIL_REASON_CAP = 32;
+
+let testCaps: { count?: number; bytes?: number } | null = null;
 
 export type ImagineJob = "plate" | "enter" | "forge" | "walk-toward-door" | "speculate" | "enter-hot" | "enter-confirm";
 export type ClipCacheKind = "plate" | "enter";
@@ -19,6 +33,14 @@ export type DoorGlow = "idle" | "walk-ready" | "enter-ready";
 export type EnterSource = "cache" | "stock" | "";
 export type HallCommit = "pass" | "hold";
 export type PaidEnterTicket = "confirm" | "forge" | "ticket";
+
+/** Cue sheet slice stored on a PASS row — matches pcg-play Cue without importing it. */
+export type ClipCue = {
+  side: string;
+  on: number;
+  off: number;
+  kind?: string;
+};
 
 export type EnterLookup = {
   s?: string | null;
@@ -30,7 +52,33 @@ export type EnterLookup = {
   fromId?: string;
   toId?: string;
   act?: "enter" | "walk-across";
+  biomeFrom?: string;
+  biomeTo?: string;
+  role?: string;
+  slots?: unknown;
+  slotsHash?: string;
+  cues?: ClipCue[];
+  cueSheetHash?: string;
 };
+
+/** Inputs for the rich clip key — extends simple s_i / s_enter. */
+export type RichClipParts = {
+  railsVersion?: string;
+  runSeed: string;
+  plateIndex?: number | null;
+  act: string;
+  biomeFrom?: string;
+  biomeTo?: string;
+  chunkFromId?: string;
+  chunkToId?: string;
+  role?: string;
+  slots?: unknown;
+  slotsHash?: string;
+  cues?: ClipCue[];
+  cueSheetHash?: string;
+};
+
+export type ClipCacheKey = string | RichClipParts;
 
 export type EnterClipHit = {
   key: string;
@@ -47,9 +95,80 @@ export type EnterHotPath = {
 };
 
 export type ClipCacheRow = {
+  key?: string;
   url: string;
   kind: ClipCacheKind;
   at: number;
+  stillStart?: string;
+  stillEnd?: string;
+  cues?: ClipCue[];
+  smoke?: "PASS";
+  railsVersion?: typeof RAILS_VERSION | string;
+  bytes?: number;
+  createdAt?: number;
+  pin?: boolean;
+};
+
+/** Playable cache row — FAIL never lives here. */
+export type ClipCachePass = {
+  key: string;
+  url: string;
+  stillStart: string;
+  stillEnd: string;
+  cues: ClipCue[];
+  smoke: "PASS";
+  railsVersion: typeof RAILS_VERSION;
+  bytes: number;
+  createdAt: number;
+  kind: ClipCacheKind;
+};
+
+export type ClipCachePutMeta = {
+  stillStart?: string;
+  stillEnd?: string;
+  cues?: ClipCue[];
+  bytes?: number;
+  pin?: boolean;
+  createdAt?: number;
+};
+
+export type ClipCacheSmoke = {
+  smoke?: string;
+  reasons?: string[];
+  attach?: {
+    stillEnd?: string;
+    stillStart?: string;
+    cues?: ClipCue[];
+    railsVersion?: string;
+  };
+} | null;
+
+export type ClipFailRow = {
+  key: string;
+  reasons: string[];
+  at: number;
+};
+
+export type KeepPinSession = {
+  bank?: Array<{ key?: string; url?: string; start?: string; end?: string } | null> | null;
+  halls?: Array<{
+    still?: string;
+    start?: string;
+    plate?: string;
+    bank?: Array<{ key?: string; url?: string; start?: string; end?: string } | null> | null;
+    rift?: { m1?: { still?: string; playlist?: string[]; art?: string }; m2?: { still?: string; playlist?: string[]; art?: string } };
+  } | null> | null;
+  start?: string;
+  plate?: string;
+  clips?: Record<string, string> | null;
+  rift?: { m1?: { still?: string; playlist?: string[]; art?: string }; m2?: { still?: string; playlist?: string[]; art?: string } };
+  pins?: Array<{ id?: string } | null> | null;
+};
+
+export type HungPinArt = {
+  still?: string;
+  playlist?: string[] | null;
+  id?: string;
 };
 
 type RunBag = { id?: string; seed: string };
@@ -79,6 +198,96 @@ export function pcgHash(parts: Array<string | number>): string {
   const lo = fnv1a(raw);
   const hi = fnv1a(raw, 0x811c9dc5 ^ raw.length);
   return `${lo.toString(16).padStart(8, "0")}${hi.toString(16).padStart(8, "0")}`;
+}
+
+function stableJson(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value !== "object") return String(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  const rec = value as Record<string, unknown>;
+  const keys = Object.keys(rec).sort();
+  return `{${keys.map((k) => `${k}:${stableJson(rec[k])}`).join(",")}}`;
+}
+
+/** Hash of prompt slots — same slots → same hex. */
+export function slotsHash(slots?: unknown | null): string {
+  if (slots == null) return pcgHash(["slots", ""]);
+  return pcgHash(["slots", stableJson(slots)]);
+}
+
+/** Hash of a cue sheet — side/on/off/kind only. */
+export function cueSheetHash(cues?: ClipCue[] | null): string {
+  const rows = (Array.isArray(cues) ? cues : []).map((c) => {
+    const on = Number(c?.on);
+    const off = Number(c?.off);
+    return [
+      String(c?.side || "").trim().toLowerCase(),
+      Number.isFinite(on) ? on.toFixed(3) : "0",
+      Number.isFinite(off) ? off.toFixed(3) : "0",
+      String(c?.kind || "").trim().toLowerCase(),
+    ].join(":");
+  });
+  return pcgHash(["cues", rows.join("|")]);
+}
+
+/**
+ * Rich clip key beyond simple s_i.
+ * H(railsVersion, runSeed, plateIndex?, act, biomeFrom, biomeTo, chunkFromId, chunkToId, role, slotsHash, cueSheetHash)
+ */
+export function richClipKey(parts: RichClipParts): string {
+  const i = parts.plateIndex;
+  const plate = i == null || !Number.isFinite(Number(i)) ? "" : String(Math.round(Number(i)));
+  const sh = parts.slotsHash || slotsHash(parts.slots);
+  const ch = parts.cueSheetHash || cueSheetHash(parts.cues);
+  return pcgHash([
+    parts.railsVersion || RAILS_VERSION,
+    parts.runSeed,
+    plate,
+    parts.act,
+    parts.biomeFrom || "",
+    parts.biomeTo || "",
+    parts.chunkFromId || "",
+    parts.chunkToId || "",
+    parts.role || "",
+    sh,
+    ch,
+  ]);
+}
+
+export function clipCacheKey(key: ClipCacheKey): string {
+  if (typeof key === "string") return key;
+  return richClipKey(key);
+}
+
+function hasRichParts(opts: EnterLookup): boolean {
+  return Boolean(
+    opts.biomeFrom ||
+      opts.biomeTo ||
+      opts.role ||
+      opts.slots ||
+      opts.slotsHash ||
+      opts.cues ||
+      opts.cueSheetHash,
+  );
+}
+
+export function richEnterKey(opts: EnterLookup): string {
+  const act = opts.act || "enter";
+  return richClipKey({
+    railsVersion: RAILS_VERSION,
+    runSeed: String(opts.s || ""),
+    plateIndex: opts.i,
+    act,
+    biomeFrom: opts.biomeFrom || opts.from,
+    biomeTo: opts.biomeTo || opts.to,
+    chunkFromId: opts.fromId || opts.from,
+    chunkToId: opts.toId || opts.to,
+    role: opts.role || act,
+    slots: opts.slots,
+    slotsHash: opts.slotsHash,
+    cues: opts.cues,
+    cueSheetHash: opts.cueSheetHash,
+  });
 }
 
 export function isRunSeed(v?: string | null): v is string {
@@ -170,6 +379,63 @@ function durableClip(url?: string | null): string {
   return "";
 }
 
+export function clipCacheTestCaps(caps: { count?: number; bytes?: number } | null) {
+  testCaps = caps;
+}
+
+function countCap() {
+  return testCaps?.count ?? CLIP_CACHE_COUNT_CAP;
+}
+
+function bytesCap() {
+  return testCaps?.bytes ?? CLIP_CACHE_BYTES_CAP;
+}
+
+function readPinSet(): Set<string> {
+  try {
+    const raw = storage()?.getItem(PIN_KEY);
+    if (!raw) return new Set();
+    const list = JSON.parse(raw) as string[];
+    if (!Array.isArray(list)) return new Set();
+    return new Set(list.map((k) => String(k || "")).filter(Boolean).slice(0, 256));
+  } catch {
+    return new Set();
+  }
+}
+
+function writePinSet(pins: Set<string>) {
+  try {
+    storage()?.setItem(PIN_KEY, JSON.stringify([...pins].slice(0, 256)));
+  } catch {
+    /* */
+  }
+}
+
+function isPinnedKey(key: string, row?: ClipCacheRow | null, pins?: Set<string>): boolean {
+  if (!key) return false;
+  if (row?.pin) return true;
+  return (pins || readPinSet()).has(key);
+}
+
+function rowBytes(row?: ClipCacheRow | null): number {
+  const n = Number(row?.bytes);
+  if (Number.isFinite(n) && n > 0) return n;
+  return Math.max(1, String(row?.url || "").length);
+}
+
+function slimCues(cues?: ClipCue[] | null): ClipCue[] {
+  if (!Array.isArray(cues)) return [];
+  return cues
+    .map((c) => ({
+      side: String(c?.side || "").trim(),
+      on: Number(c?.on) || 0,
+      off: Number(c?.off) || 0,
+      kind: c?.kind ? String(c.kind) : undefined,
+    }))
+    .filter((c) => c.side)
+    .slice(0, 16);
+}
+
 function readClipBag(): ClipBag {
   try {
     const raw = storage()?.getItem(CLIP_KEY);
@@ -180,7 +446,21 @@ function readClipBag(): ClipBag {
     for (const [k, v] of Object.entries(bag)) {
       const url = durableClip(v?.url);
       if (!k || !url) continue;
-      out[k] = { url, kind: v.kind === "enter" ? "enter" : "plate", at: Number(v.at) || 0 };
+      if (v?.smoke && v.smoke !== "PASS") continue;
+      out[k] = {
+        key: k,
+        url,
+        kind: v.kind === "enter" ? "enter" : "plate",
+        at: Number(v.at) || 0,
+        stillStart: String(v.stillStart || "") || undefined,
+        stillEnd: String(v.stillEnd || "") || undefined,
+        cues: slimCues(v.cues).length ? slimCues(v.cues) : undefined,
+        smoke: "PASS",
+        railsVersion: v.railsVersion || RAILS_VERSION,
+        bytes: Number(v.bytes) || rowBytes({ url } as ClipCacheRow),
+        createdAt: Number(v.createdAt) || Number(v.at) || 0,
+        pin: Boolean(v.pin),
+      };
     }
     return out;
   } catch {
@@ -188,41 +468,285 @@ function readClipBag(): ClipBag {
   }
 }
 
+function evictClipBag(bag: ClipBag): ClipBag {
+  const pins = readPinSet();
+  const entries = Object.entries(bag);
+  const pinned: Array<[string, ClipCacheRow]> = [];
+  const unpinned: Array<[string, ClipCacheRow]> = [];
+  for (const row of entries) {
+    if (isPinnedKey(row[0], row[1], pins)) pinned.push(row);
+    else unpinned.push(row);
+  }
+  unpinned.sort((a, b) => (a[1]!.at || 0) - (b[1]!.at || 0));
+  let count = entries.length;
+  let bytes = entries.reduce((n, [, v]) => n + rowBytes(v), 0);
+  const drop = new Set<string>();
+  const capN = countCap();
+  const capB = bytesCap();
+  for (const [k, v] of unpinned) {
+    if (count <= capN && bytes <= capB) break;
+    drop.add(k);
+    count -= 1;
+    bytes -= rowBytes(v);
+  }
+  const slim: ClipBag = {};
+  for (const [k, v] of entries) {
+    if (drop.has(k)) continue;
+    slim[k] = { ...v, pin: isPinnedKey(k, v, pins) || Boolean(v.pin) };
+  }
+  return slim;
+}
+
 function writeClipBag(bag: ClipBag) {
   try {
-    const keys = Object.keys(bag).sort((a, b) => (bag[b]!.at || 0) - (bag[a]!.at || 0)).slice(0, 96);
-    const slim: ClipBag = {};
-    for (const k of keys) slim[k] = bag[k]!;
-    storage()?.setItem(CLIP_KEY, JSON.stringify(slim));
+    storage()?.setItem(CLIP_KEY, JSON.stringify(evictClipBag(bag)));
   } catch {
     /* */
   }
 }
 
-export function clipCacheGet(key: string): string {
-  if (!key) return "";
-  return durableClip(readClipBag()[key]?.url);
+function readFailBag(): Record<string, ClipFailRow> {
+  try {
+    const raw = storage()?.getItem(FAIL_KEY);
+    if (!raw) return {};
+    const bag = JSON.parse(raw) as Record<string, ClipFailRow>;
+    if (!bag || typeof bag !== "object") return {};
+    const out: Record<string, ClipFailRow> = {};
+    for (const [k, v] of Object.entries(bag)) {
+      if (!k || !v) continue;
+      const reasons = Array.isArray(v.reasons) ? v.reasons.map((r) => String(r || "")).filter(Boolean) : [];
+      out[k] = { key: k, reasons, at: Number(v.at) || 0 };
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }
 
-/** Optional Smoke stamp. FAIL never enters the cook cache. */
+function writeFailBag(bag: Record<string, ClipFailRow>) {
+  try {
+    const keys = Object.keys(bag)
+      .sort((a, b) => (bag[b]!.at || 0) - (bag[a]!.at || 0))
+      .slice(0, FAIL_REASON_CAP);
+    const slim: Record<string, ClipFailRow> = {};
+    for (const k of keys) slim[k] = bag[k]!;
+    storage()?.setItem(FAIL_KEY, JSON.stringify(slim));
+  } catch {
+    /* */
+  }
+}
+
+/** Optional FAIL reason cache — never playable. */
+export function clipCachePutFail(key: string, reasons: string[]): ClipFailRow | null {
+  const id = clipCacheKey(key);
+  if (!id) return null;
+  const list = (reasons || []).map((r) => String(r || "").trim()).filter(Boolean).slice(0, 12);
+  const row: ClipFailRow = { key: id, reasons: list, at: Date.now() };
+  const bag = readFailBag();
+  bag[id] = row;
+  writeFailBag(bag);
+  return row;
+}
+
+export function clipCacheFailReasons(key: string): string[] {
+  const id = clipCacheKey(key);
+  if (!id) return [];
+  return readFailBag()[id]?.reasons?.slice() || [];
+}
+
+export function clipCacheGet(key: ClipCacheKey): string {
+  const id = clipCacheKey(key);
+  if (!id) return "";
+  const row = readClipBag()[id];
+  if (!row || (row.smoke && row.smoke !== "PASS")) return "";
+  return durableClip(row.url);
+}
+
+export function clipCacheGetPass(key: ClipCacheKey): ClipCachePass | null {
+  const id = clipCacheKey(key);
+  if (!id) return null;
+  const row = readClipBag()[id];
+  const url = durableClip(row?.url);
+  if (!row || !url || (row.smoke && row.smoke !== "PASS")) return null;
+  return {
+    key: id,
+    url,
+    stillStart: String(row.stillStart || ""),
+    stillEnd: String(row.stillEnd || ""),
+    cues: slimCues(row.cues),
+    smoke: "PASS",
+    railsVersion: (row.railsVersion as typeof RAILS_VERSION) || RAILS_VERSION,
+    bytes: rowBytes(row),
+    createdAt: Number(row.createdAt) || Number(row.at) || 0,
+    kind: row.kind === "enter" ? "enter" : "plate",
+  };
+}
+
+function touchPin(key: string, pin: boolean) {
+  const pins = readPinSet();
+  if (pin) pins.add(key);
+  else pins.delete(key);
+  writePinSet(pins);
+}
+
+export function clipCachePin(keys: string | string[]): string[] {
+  const list = (Array.isArray(keys) ? keys : [keys]).map((k) => String(k || "")).filter(Boolean);
+  if (!list.length) return [...readPinSet()];
+  const pins = readPinSet();
+  const bag = readClipBag();
+  for (const k of list) {
+    pins.add(k);
+    if (bag[k]) bag[k] = { ...bag[k]!, pin: true, at: bag[k]!.at };
+  }
+  writePinSet(pins);
+  writeClipBag(bag);
+  return [...pins];
+}
+
+export function clipCacheUnpin(keys: string | string[]): string[] {
+  const list = (Array.isArray(keys) ? keys : [keys]).map((k) => String(k || "")).filter(Boolean);
+  const pins = readPinSet();
+  const bag = readClipBag();
+  for (const k of list) {
+    pins.delete(k);
+    if (bag[k]) bag[k] = { ...bag[k]!, pin: false };
+  }
+  writePinSet(pins);
+  writeClipBag(bag);
+  return [...pins];
+}
+
+export function clipCachePinned(): string[] {
+  return [...readPinSet()];
+}
+
+export function clipCacheIsPinned(key: string): boolean {
+  return isPinnedKey(String(key || ""), readClipBag()[key]);
+}
+
+/** Optional Smoke stamp. FAIL never enters the playable cook cache. */
 export function clipCachePut(
-  key: string,
+  key: ClipCacheKey,
   url: string,
   kind: ClipCacheKind,
-  smoke?: { smoke?: string } | null,
+  smoke?: ClipCacheSmoke,
+  meta?: ClipCachePutMeta,
 ): string {
-  if (smoke && smoke.smoke !== "PASS") return "";
+  const id = clipCacheKey(key);
+  if (smoke && smoke.smoke !== "PASS") {
+    clipCachePutFail(id, smoke.reasons || [String(smoke.smoke || "FAIL")]);
+    return "";
+  }
   const clip = durableClip(url);
-  if (!key || !clip) return "";
+  if (!id || !clip) return "";
+  const attach = smoke && "attach" in smoke ? smoke.attach : undefined;
+  const cues = slimCues(meta?.cues || attach?.cues);
+  const stillStart = String(meta?.stillStart || attach?.stillStart || "").trim();
+  const stillEnd = String(meta?.stillEnd || attach?.stillEnd || "").trim();
+  const now = Date.now(); // LRU / createdAt stamp only — not picture-time / peak
+  const pin = Boolean(meta?.pin) || readPinSet().has(id);
   const bag = readClipBag();
-  bag[key] = { url: clip, kind, at: Date.now() }; // LRU stamp only — not picture-time / peak
+  bag[id] = {
+    key: id,
+    url: clip,
+    kind,
+    at: now,
+    stillStart: stillStart || undefined,
+    stillEnd: stillEnd || undefined,
+    cues: cues.length ? cues : undefined,
+    smoke: "PASS",
+    railsVersion: attach?.railsVersion || RAILS_VERSION,
+    bytes: Number(meta?.bytes) > 0 ? Number(meta?.bytes) : Math.max(1, clip.length),
+    createdAt: Number(meta?.createdAt) || bag[id]?.createdAt || now,
+    pin,
+  };
+  if (pin) touchPin(id, true);
   writeClipBag(bag);
   return clip;
 }
 
-/** Reuse a cooked clip keyed by `s_i` / `s_enter` before any Imagine recook. */
-export function reuseClipBeforeRecook(key: string): string {
+/** Reuse a cooked clip keyed by `s_i` / `s_enter` / rich key before any Imagine recook. */
+export function reuseClipBeforeRecook(key: ClipCacheKey): string {
   return clipCacheGet(key);
+}
+
+function collectSessionUrls(session?: KeepPinSession | null, hung: HungPinArt[] = []): string[] {
+  const urls: string[] = [];
+  const push = (u?: string | null) => {
+    const clip = durableClip(u) || String(u || "").trim();
+    if (clip && (clip.startsWith("/") || clip.startsWith("http") || clip.startsWith("data:image/"))) urls.push(clip);
+  };
+  for (const b of session?.bank || []) {
+    push(b?.url);
+    push(b?.start);
+    push(b?.end);
+  }
+  push(session?.start);
+  push(session?.plate);
+  for (const h of session?.halls || []) {
+    if (!h) continue;
+    push(h.still);
+    push(h.start);
+    push(h.plate);
+    for (const b of h.bank || []) {
+      push(b?.url);
+      push(b?.start);
+      push(b?.end);
+    }
+    push(h.rift?.m1?.still);
+    push(h.rift?.m2?.still);
+    for (const u of h.rift?.m1?.playlist || []) push(u);
+    for (const u of h.rift?.m2?.playlist || []) push(u);
+  }
+  push(session?.rift?.m1?.still);
+  push(session?.rift?.m2?.still);
+  for (const u of session?.rift?.m1?.playlist || []) push(u);
+  for (const u of session?.rift?.m2?.playlist || []) push(u);
+  for (const a of hung) {
+    push(a.still);
+    for (const u of a.playlist || []) push(u);
+  }
+  return [...new Set(urls)];
+}
+
+function collectSessionEdgeKeys(session?: KeepPinSession | null): string[] {
+  const keys: string[] = [];
+  const push = (k?: string | null) => {
+    const id = String(k || "").trim();
+    if (id) keys.push(id);
+  };
+  for (const b of session?.bank || []) push(b?.key);
+  for (const h of session?.halls || []) {
+    for (const b of h?.bank || []) push(b?.key);
+  }
+  for (const k of Object.keys(session?.clips || {})) push(k);
+  return [...new Set(keys)];
+}
+
+/** Pin cache rows whose url / still matches hung artifacts or Hall′ spawn stills. */
+export function pinClipUrls(urls: string[]): string[] {
+  const want = new Set(urls.map((u) => String(u || "").trim()).filter(Boolean));
+  if (!want.size) return clipCachePinned();
+  const bag = readClipBag();
+  const hit: string[] = [];
+  for (const [k, v] of Object.entries(bag)) {
+    if (want.has(v.url) || (v.stillStart && want.has(v.stillStart)) || (v.stillEnd && want.has(v.stillEnd))) {
+      hit.push(k);
+    }
+  }
+  return clipCachePin(hit);
+}
+
+/**
+ * Pin Keep graph edges in the current citadel + hung artifacts + Hall′ spawn stills.
+ * Those keys are never LRU-evicted.
+ */
+export function pinKeepFromSession(session?: KeepPinSession | null, hung: HungPinArt[] = []): string[] {
+  const edgeKeys = collectSessionEdgeKeys(session);
+  const urls = collectSessionUrls(session, hung);
+  clipCachePin(edgeKeys);
+  pinClipUrls(urls);
+  return clipCachePinned();
 }
 
 export function clipCacheSnapshot(): Record<string, string> {
@@ -295,26 +819,37 @@ export function stockBridge(from: string, to: string, door?: string): string {
   return stockLib.get(pairKey(from, to, letter)) || stockLib.get(pairKey(from, to, "")) || "";
 }
 
-/** `s_enter = H(s, i, enter, from, to, door)` — rail 1 key for enter cache lookup. */
+/** Enter cache key — rich hash when biome/role/slots/cues are present, else `s_enter`. */
 export function enterCacheKey(opts: EnterLookup): string {
+  if (hasRichParts(opts)) return richEnterKey(opts);
   return enterSeed(String(opts.s || ""), Number(opts.i) || 0, opts.from, opts.to, opts.door);
 }
 
-/** Cache hit by chunk pair H(s, fromId, toId, act), else `s_enter`, else stock. Never starts Imagine. */
+function firstCached(keys: string[]): { key: string; url: string } | null {
+  for (const key of keys) {
+    if (!key) continue;
+    const url = reuseClipBeforeRecook(key);
+    if (url) return { key, url };
+  }
+  return null;
+}
+
+/** Cache hit by rich key, chunk pair H(s, fromId, toId, act), else `s_enter`, else stock. Never starts Imagine. */
 export function lookupEnterClip(opts: EnterLookup): EnterClipHit {
+  const rich = hasRichParts(opts) ? richEnterKey(opts) : "";
   if (opts.fromId && opts.toId) {
     const bkey = bridgeSeed(String(opts.s || ""), opts.fromId, opts.toId, opts.act || "enter");
-    const bridged = bkey ? reuseClipBeforeRecook(bkey) : "";
-    if (bridged) return { key: bkey, url: bridged, source: "cache" };
+    const hit = firstCached([rich, bkey]);
+    if (hit) return { key: hit.key, url: hit.url, source: "cache" };
     const pair = stockBridge(opts.fromId, opts.toId);
-    if (pair) return { key: bkey, url: pair, source: "stock" };
+    if (pair) return { key: rich || bkey, url: pair, source: "stock" };
   }
   const key = enterCacheKey(opts);
-  const cached = key ? reuseClipBeforeRecook(key) : "";
-  if (cached) return { key, url: cached, source: "cache" };
+  const hit = firstCached([rich, key]);
+  if (hit) return { key: hit.key, url: hit.url, source: "cache" };
   const stock = stockBridge(opts.from, opts.to, opts.door);
-  if (stock) return { key, url: stock, source: "stock" };
-  return { key, url: "", source: "" };
+  if (stock) return { key: rich || key, url: stock, source: "stock" };
+  return { key: rich || key, url: "", source: "" };
 }
 
 export function isEnterReady(opts: EnterLookup): boolean {
