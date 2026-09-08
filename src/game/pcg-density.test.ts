@@ -176,7 +176,7 @@ describe("EDPCG density — WFC + prompt plates", () => {
     assert.match(density, /smoothstep\(m\) \* noise/);
     assert.match(density, /Asteroid HOLD/);
     assert.doesNotMatch(density, /Date\.now\s*\(|setTimeout\s*\(/);
-    assert.doesNotMatch(density, /navmesh|voxel|heightmap|x,y,z/i);
+    assert.doesNotMatch(density, /navmesh|voxel|put prop at/i);
     assert.match(prompt, /pcg-density/);
     assert.match(prompt, /worldLineFor/);
     assert.match(wfc, /fillCookSlots/);

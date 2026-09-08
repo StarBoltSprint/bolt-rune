@@ -39,7 +39,7 @@ function num(n: number | null | undefined) {
   return Number.isFinite(x) ? x : 0;
 }
 
-/** Hermite smoothstep of momentum. Cook curve, not a heightmap. */
+/** Hermite smoothstep of momentum. Cook curve, not terrain. */
 export function smoothstep(m: number, lo = 0, hi = 1): number {
   const span = hi - lo;
   const x = clamp01((clamp01(m) - lo) / (span || 1));

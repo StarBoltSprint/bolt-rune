@@ -1,5 +1,5 @@
 /**
- * PCG role-WFC — 1D time-strip of plate-roles (not a 2D map, not STWFC T×Y×X).
+ * PCG role-WFC — 1D time-strip of plate-roles (not a 2D map, not a spacetime volume).
  * Neighbors are TIME, not floor tiles. Each cell is one plate in the ~60s bone.
  * Collapsed roles unlock prompt slots only — never free-text Imagine.
  * Online + tap-as-observe: miss/idle can kill a peak already in the future domain.
