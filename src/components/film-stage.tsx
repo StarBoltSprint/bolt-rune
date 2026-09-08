@@ -1584,6 +1584,8 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           </div>
           {(() => {
             const stage = hungStageChrome(holdHall, holdDoor, film);
+            /* Hall / hung stay: picture is the UI — no Room N • Door A Play Sprint header. */
+            if (holdHall || holdDoor) return null;
             return (
               <>
                 <h1 className="mt-2 font-display text-2xl leading-tight">{stage.title || film.name}</h1>
