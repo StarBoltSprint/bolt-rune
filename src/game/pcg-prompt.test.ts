@@ -144,6 +144,28 @@ describe("PCG prompt grammar — player voice + engine slots", () => {
     assert.deepEqual(fewShotRefs(goodSlots()), ["/films/cook-forest.jpg"]);
     assert.ok(ACT_IDS.includes(enter.act));
   });
+
+  it("playedPlates feed picture-time — Date.now does not", () => {
+    const realNow = Date.now;
+    try {
+      const quiet = slotsFromEngine({ biome: "forest", seed: "s1", momentum: 0.5, playedPlates: [4000] });
+      Date.now = () => 9_999_999_999_000;
+      const stillQuiet = slotsFromEngine({ biome: "forest", seed: "s1", momentum: 0.5, playedPlates: [4000] });
+      const late = slotsFromEngine({
+        biome: "forest",
+        seed: "s1",
+        momentum: 0.5,
+        i: 4,
+        taps: ["hit", "hit", "hit", "hit"],
+        playedPlates: [12000, 12000, 12000, 12000, 12000],
+      });
+      assert.deepEqual(quiet, stillQuiet);
+      assert.ok(quiet.wfcRole);
+      assert.ok(late.wfcRole);
+    } finally {
+      Date.now = realNow;
+    }
+  });
 });
 
 describe("PCG prompt grammar — cook path + Asteroid HOLD", () => {
