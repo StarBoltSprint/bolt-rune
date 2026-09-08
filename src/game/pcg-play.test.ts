@@ -107,6 +107,8 @@ describe("PCG play-loop — gradeTap", () => {
     assert.equal(gradeTap(2.61, walkA, 0.23, nextOn), "miss");
     assert.equal(gradeTap(2.5 + 0.17, walkA, 0.18), "late");
     assert.equal(gradeTap(2.5 + 0.27, walkA, 0.28), "late");
+    assert.equal(gradeTap(2.5 + 0.36, walkA, 0.375), "late");
+    assert.equal(gradeTap(2.2, walkA, 0.375), "hit");
   });
 
   it("enter-arm only after walk hit on that door", () => {

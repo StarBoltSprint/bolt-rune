@@ -16,7 +16,7 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/cook-busy.test.ts src/lib/cook-slot.test.ts src/lib/cook-progress.test.ts src/game/rune.test.ts src/game/enter-graph.test.ts src/game/play-frame.test.ts src/game/rooms.test.ts src/game/rune-session.test.ts src/game/cook-ready.test.ts src/game/hang-ask.test.ts src/game/door-chat.test.ts src/game/pcg-rail.test.ts src/game/pcg-prompt.test.ts src/game/pcg-wfc.test.ts src/game/pcg-chunk.test.ts src/game/pcg-play.test.ts src/game/pcg-density.test.ts src/game/smoke-gate.test.ts src/game/pcg-audio.test.ts src/game/pcg-share.test.ts",
+    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/cook-busy.test.ts src/lib/cook-slot.test.ts src/lib/cook-progress.test.ts src/game/rune.test.ts src/game/enter-graph.test.ts src/game/play-frame.test.ts src/game/rooms.test.ts src/game/rune-session.test.ts src/game/cook-ready.test.ts src/game/hang-ask.test.ts src/game/door-chat.test.ts src/game/pcg-rail.test.ts src/game/pcg-prompt.test.ts src/game/pcg-wfc.test.ts src/game/pcg-chunk.test.ts src/game/pcg-play.test.ts src/game/pcg-density.test.ts src/game/smoke-gate.test.ts src/game/pcg-audio.test.ts src/game/pcg-share.test.ts src/game/pcg-input.test.ts",
     "test:hall": "node scripts/living-hall-doors.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."

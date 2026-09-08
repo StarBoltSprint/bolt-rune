@@ -35,6 +35,11 @@ export const COYOTE_MS_MAX = 280;
 /** Mid-band default. Cut at next cue.on. */
 export const COYOTE_MS = 230;
 export const COYOTE_S = COYOTE_MS / 1000;
+/** Pause-assist Late window. Still Late — never a free Hit / peak. */
+export const ASSIST_COYOTE_MS_MIN = 350;
+export const ASSIST_COYOTE_MS_MAX = 400;
+export const ASSIST_COYOTE_MS = 375;
+export const ASSIST_COYOTE_S = ASSIST_COYOTE_MS / 1000;
 /** Optional pre-on buffer that still grades Hit. */
 export const PRE_ON_HIT_MS = 80;
 export const PRE_ON_HIT_S = PRE_ON_HIT_MS / 1000;
@@ -94,10 +99,13 @@ function num(n: number | null | undefined) {
 
 export function clampCoyoteS(coyote = COYOTE_S) {
   const s = num(coyote);
-  const lo = COYOTE_MS_MIN / 1000;
-  const hi = COYOTE_MS_MAX / 1000;
   if (s <= 0) return COYOTE_S;
-  return Math.max(lo, Math.min(hi, s));
+  const playLo = COYOTE_MS_MIN / 1000;
+  const playHi = COYOTE_MS_MAX / 1000;
+  const assistLo = ASSIST_COYOTE_MS_MIN / 1000;
+  const assistHi = ASSIST_COYOTE_MS_MAX / 1000;
+  if (s >= assistLo) return Math.min(assistHi, s);
+  return Math.max(playLo, Math.min(playHi, s));
 }
 
 /** Coyote after off, cut at the next cue's on. */

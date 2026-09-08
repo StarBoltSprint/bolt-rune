@@ -299,6 +299,15 @@
   }
 }
 
+/* Play surface — 9:16 lock-off. Hits use picture layout, not the device. */
+.play-surface {
+  touch-action: none;
+  overscroll-behavior: none;
+}
+.play-picture {
+  touch-action: none;
+}
+
 /* Resonance — readout of m only. Bottom 9:16 safe edge. Never a hitbox. */
 .resonance-chrome {
   pointer-events: none;
