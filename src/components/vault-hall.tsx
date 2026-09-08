@@ -619,7 +619,6 @@ export function VaultHall() {
             /* stay on biome — Leave calls onExit */
           }}
         />
-        <DoorChatLine where="play" />
       </div>
     );
   }
@@ -637,6 +636,7 @@ export function VaultHall() {
 
   return (
     <div className="relative min-h-dvh overflow-hidden bg-bg" data-vault-hall="10" style={{ touchAction: "manipulation" }}>
+      <DoorChatLine where="play" />
       {packs.length && vaultHead && vaultPack ? (
         <StillCarousel
           kind="vault"

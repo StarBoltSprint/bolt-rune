@@ -18,6 +18,8 @@ import {
   holdBreathUrl,
   isBoltSilhouette,
   isHallPlayStill,
+  isMoodProfileRef,
+  mayPlaySpawnStill,
   isNodeArrivalBreath,
   isNodeIdleKey,
   isStockHallClip,
@@ -137,6 +139,12 @@ describe("play frame after cook", () => {
     assert.equal(isHallPlayStill(BOLT_FACE), false);
     assert.equal(isHallPlayStill("/refs/hall-doors.jpg"), false);
     assert.equal(isHallPlayStill("data:image/jpeg;base64,xxxx"), false);
+    assert.equal(isMoodProfileRef("/films/mood-hall.jpg"), true);
+    assert.equal(isMoodProfileRef("/films/profile-hero.jpg"), true);
+    assert.equal(isHallPlayStill("/films/mood-hall.jpg"), false);
+    assert.equal(mayPlaySpawnStill("/films/mood-hall.jpg"), false);
+    assert.equal(mayPlaySpawnStill(HALL_STILL), true);
+    assert.equal(playCoverStill({ plate: "/films/mood-hall.jpg", hall: HALL }), HALL);
   });
 
   it("packIdentityStill never packs place-bolt / seed onto the isolated Bolt still", () => {
@@ -655,7 +663,7 @@ describe("picture never stops — Play / Load / forge-complete", () => {
     assert.equal(filmTrayStillKeep("m1", BREATH, COOKED_HALL), true);
   });
 
-  it("engine hydrates bank start, never wipes on Load, and shows trays on play", () => {
+  it("engine hydrates bank start, never wipes on Load, and hides trays on play", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     const hub = readFileSync(join(here, "../components/citadel-hub.tsx"), "utf8");
@@ -667,10 +675,16 @@ describe("picture never stops — Play / Load / forge-complete", () => {
     assert.match(src, /applyHall\(slice, false, "hydrate"\)/);
     assert.match(src, /start: b\.start/);
     assert.match(src, /setStripOn\(true\)/);
-    assert.match(src, /clipsUI\.length && \(phase === "forge" \|\| phase === "play"\)/);
-    assert.match(src, /phase === "forge" \|\| phase === "play" \? \(/);
-    assert.match(src, /\{refs\.length > 0 \? \(/);
-    assert.doesNotMatch(src, /refs\.length > 0 && phase !== "play"/);
+    assert.match(src, /clipsUI\.length && phase === "forge"/);
+    assert.match(src, /phase === "forge" \? \(/);
+    assert.match(src, /\{refs\.length > 0 && phase !== "play"/);
+    assert.doesNotMatch(src, /clipsUI\.length && \(phase === "forge" \|\| phase === "play"\)/);
+    assert.match(src, /phase !== "play" \? <DoorChatLine where="hall"/);
+    assert.match(src, /data-hitbox="video-layout"/);
+    assert.match(src, /SIDE_BAND/);
+    assert.match(src, /if \(ph !== "play"\) \{\s*\n\s*drawGraph/);
+    assert.match(src, /background: "transparent"/);
+    assert.doesNotMatch(src, /className=\{`pointer-events-auto absolute \$\{glowClass\}`\}/);
     const open = src.slice(src.indexOf("async function openSession"), src.indexOf("function wipeSession"));
     assert.match(open, /holdIdle\(\)/);
     assert.match(open, /if \(bank\.current\.size\) rememberSlice\(snapHall\(\)\)/);

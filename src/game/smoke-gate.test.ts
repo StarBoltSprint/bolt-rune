@@ -7,6 +7,7 @@ import { hangArtifactOnDoor } from "./enter-graph.ts";
 import { assemblePrompt, type PromptSlots } from "./pcg-prompt.ts";
 import { clipCachePut, commitHallPrime } from "./pcg-rail.ts";
 import {
+  PLAY_PLATE_LAW,
   RAILS_VERSION,
   clearSmokeFail,
   clearSmokePass,
@@ -166,6 +167,68 @@ describe("Smoke ship-gate — local lint", () => {
     assert.match(smokeForgeFrost(fail.reasons), /smoke FAIL/);
   });
 
+  it("face-on / profile spawn play plate is Smoke FAIL", () => {
+    const face = lintSmoke(goodWalk({ kind: "breath", pose: "spawn", role: "play", camera: "face-on" }));
+    assert.equal(face.smoke, "FAIL");
+    assert.ok(face.reasons.includes("spawn-camera") || face.reasons.includes("camera-lock"));
+    const profile = lintSmoke(goodWalk({ kind: "breath", pose: "spawn", role: "play", camera: "side-profile" }));
+    assert.equal(profile.smoke, "FAIL");
+    assert.ok(profile.reasons.includes("spawn-camera") || profile.reasons.includes("camera-lock"));
+    const mood = lintSmoke(goodWalk({ kind: "breath", pose: "spawn", role: "vault-ref" }));
+    assert.equal(mood.smoke, "FAIL");
+    assert.ok(mood.reasons.includes("spawn-mood"));
+  });
+
+  it("burned SEATS / FILMS / ROOMS / REFS labels FAIL", () => {
+    const labels = lintSmoke(goodWalk({ labels: "SEATS FILMS ROOMS REFS" }));
+    assert.equal(labels.smoke, "FAIL");
+    assert.ok(labels.reasons.includes("chrome-labels"));
+    const prompt = lintSmoke(goodWalk({ prompt: `${assemblePrompt(goodSlots()).prompt} SEATS FILMS` }));
+    assert.equal(prompt.smoke, "FAIL");
+    assert.ok(prompt.reasons.includes("chrome-labels"));
+  });
+
+  it("still-pair mismatch FAIL when both sides of metadata are present", () => {
+    const walkBreath = lintSmoke(
+      goodWalk({
+        pair: { walkStillEnd: "still-walk-end", breathStillStart: "still-breath-other" },
+      }),
+    );
+    assert.equal(walkBreath.smoke, "FAIL");
+    assert.ok(walkBreath.reasons.includes("still-pair"));
+    const spawnPair = lintSmoke(
+      goodWalk({
+        pair: { walkSpawnStart: "spawn-walk-0", breathSpawnStart: "spawn-breath-1" },
+      }),
+    );
+    assert.equal(spawnPair.smoke, "FAIL");
+    assert.ok(spawnPair.reasons.includes("still-pair"));
+    const aligned = lintSmoke(
+      goodWalk({
+        pair: {
+          walkStillEnd: "still-a",
+          breathStillStart: "still-a",
+          walkSpawnStart: "spawn-0",
+          breathSpawnStart: "spawn-0",
+        },
+      }),
+    );
+    assert.equal(aligned.smoke, "PASS");
+    const missing = lintSmoke(goodWalk({ pair: { walkStillEnd: "only-one-side" } }));
+    assert.equal(missing.smoke, "PASS");
+  });
+
+  it("near-black void mid-clip FAIL", () => {
+    const flagged = lintSmoke(goodWalk({ voidMid: true }));
+    assert.equal(flagged.smoke, "FAIL");
+    assert.ok(flagged.reasons.includes("void-mid"));
+    const luma = lintSmoke(goodWalk({ lumaMid: 0.01 }));
+    assert.equal(luma.smoke, "FAIL");
+    assert.ok(luma.reasons.includes("void-mid"));
+    const okLuma = lintSmoke(goodWalk({ lumaMid: 0.22 }));
+    assert.equal(okLuma.smoke, "PASS");
+  });
+
   it("Howl / Pause / Keep replay skip; stock cached PASS skips", () => {
     assert.equal(shouldSmoke("howl"), false);
     assert.equal(shouldSmoke("pause"), false);
@@ -263,5 +326,11 @@ describe("Smoke ship-gate — engine hook + Door seat untouched", () => {
     assert.match(studio, /lintSmoke|gateCookClip/);
     assert.match(engine, /lintEnterClip/);
     assert.match(engine, /smokeForgeFrost/);
+    const docs = readFileSync(join(here, "../../docs/pcg-anti-3d.md"), "utf8");
+    for (const line of PLAY_PLATE_LAW) {
+      assert.match(readme, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      assert.match(docs, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      assert.match(gate, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
   });
 });

@@ -71,6 +71,22 @@ export type SmokeSubject = {
   alreadyPassed?: SmokeAttach | boolean;
   /** Pixel/CV hint. Omitted = structural proxy only. `unknown` = doubt FAIL. */
   camera?: "behind" | "face-on" | "side" | "side-profile" | "overhead" | "handheld" | "unknown";
+  /** Pose this plate claims. Spawn play plates must be lock-off behind. */
+  pose?: "spawn" | "atA" | "atB";
+  /** play = living film. vault-ref = mood/profile still, never a play plate. */
+  role?: "play" | "vault-ref";
+  /** Still-pair metadata. Both sides present + mismatch → FAIL. */
+  pair?: {
+    walkStillEnd?: string;
+    breathStillStart?: string;
+    walkSpawnStart?: string;
+    breathSpawnStart?: string;
+  };
+  /** Mid-clip near-black void. Explicit true or lumaMid below floor = FAIL. */
+  voidMid?: boolean;
+  lumaMid?: number;
+  /** Burned-in UI text read from the picture (SEATS / FILMS / ROOMS / REFS). */
+  labels?: string;
   doors?: { a?: boolean; b?: boolean };
   pathAhead?: boolean;
   orbsOnBolt?: boolean;
@@ -103,13 +119,31 @@ const TRUSTED_STOCK =
   /\/(?:films|ui)\/(?:forge|cook)-[a-z0-9-]+\.(?:mp4|jpe?g)(?:\?|$)/i;
 
 const CAMERA_BAN =
-  /\b(face-on|side-profile|side view|overhead|handheld|orbit|truck|follow-through|follow through(?: the)? door|master shot|profile-hero)\b/i;
+  /\b(face-on|side-profile|side view|overhead|handheld|orbit|truck|follow-through|follow through(?: the)? door|master shot|profile-hero|profile start|mood hall)\b/i;
+
+const SPAWN_CAMERA_BAN = /\b(face-on|side-profile|side view|profile-hero|profile start|mood hall|face[- ]readable)\b/i;
 
 const BODY_BAN =
   /\b(cape|clothes|clothing|saddle|human arms|biped|second character|other character|muzzle hero|text on fur|shirt|coat|dress)\b/i;
 
 const CHROME_BAN =
   /\b(TAP|watermark|watermarks|logo|logos|HUD|UI bar|words on the dog|letters on (?:the )?dog)\b/;
+
+/** Burned play-chrome labels — never in the film. */
+const LABEL_BAN = /\b(SEATS|FILMS|ROOMS|REFS)\b/;
+
+const VOID_BAN = /\b(near-black|black void|void mid(?:-clip)?)\b/i;
+
+const VOID_LUMA_FLOOR = 0.04;
+
+/** Play-plate law — ship text. Tests lock these lines. */
+export const PLAY_PLATE_LAW = [
+  "Spawn play plate is lock-off BEHIND only — never face-on / side-profile / mood hall.",
+  "Mood / profile / face-readable stills are Vault refs, not play plates.",
+  "still-pair required when metadata is present: walk.stillEnd === breath.stillStart; walk-spawn start === breath-spawn start.",
+  "Burned SEATS / FILMS / ROOMS / REFS labels and near-black void mid-clip are Smoke FAIL.",
+  "Play chrome: no SEATS/FILMS/ROOMS/REFS and no painted A/B wireframes over the film. Hitboxes stay video-layout. Forge/Pause chrome OK off play.",
+] as const;
 
 function num(n: number | null | undefined) {
   const x = Number(n);
@@ -278,6 +312,19 @@ function lintContainer(subject: SmokeSubject): string[] {
   return reasons;
 }
 
+function isPlayUse(subject: SmokeSubject): boolean {
+  if (subject.role === "play") return true;
+  if (subject.when === "cook" || subject.when === "hang" || subject.when === "enter" || subject.when === "stock") return true;
+  return false;
+}
+
+function isSpawnPlayPlate(subject: SmokeSubject): boolean {
+  if (subject.pose === "spawn") return true;
+  const clip = clipOf(subject).toLowerCase();
+  if (/breath-spawn|idle-spawn|pose-spawn/.test(clip)) return true;
+  return subject.kind === "breath" && subject.role === "play" && !subject.pose;
+}
+
 function lintCamera(subject: SmokeSubject): string[] {
   const reasons: string[] = [];
   if (subject.camera === "face-on" || subject.camera === "side" || subject.camera === "side-profile") {
@@ -287,6 +334,19 @@ function lintCamera(subject: SmokeSubject): string[] {
   if (subject.camera === "unknown") reasons.push("camera-doubt");
   const rest = withoutRails(String(subject.prompt || ""));
   if (rest && CAMERA_BAN.test(rest)) reasons.push("camera-prompt");
+  return reasons;
+}
+
+function lintSpawnPlay(subject: SmokeSubject): string[] {
+  if (!isPlayUse(subject)) return [];
+  if (subject.role === "vault-ref") return ["spawn-mood"];
+  if (!isSpawnPlayPlate(subject)) return [];
+  const reasons: string[] = [];
+  if (subject.camera === "face-on" || subject.camera === "side" || subject.camera === "side-profile") {
+    reasons.push("spawn-camera");
+  }
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && SPAWN_CAMERA_BAN.test(rest)) reasons.push("spawn-camera");
   return reasons;
 }
 
@@ -331,7 +391,31 @@ function lintChrome(subject: SmokeSubject): string[] {
   if (subject.chrome === true) reasons.push("chrome");
   const rest = withoutRails(String(subject.prompt || ""));
   if (rest && CHROME_BAN.test(rest)) reasons.push("chrome-prompt");
+  const burned = `${subject.labels || ""} ${rest}`;
+  if (LABEL_BAN.test(burned)) reasons.push("chrome-labels");
   return reasons;
+}
+
+function lintStillPair(subject: SmokeSubject): string[] {
+  const pair = subject.pair;
+  if (!pair) return [];
+  const walkEnd = String(pair.walkStillEnd || "").trim();
+  const breathStart = String(pair.breathStillStart || "").trim();
+  const walkSpawn = String(pair.walkSpawnStart || "").trim();
+  const breathSpawn = String(pair.breathSpawnStart || "").trim();
+  if (walkEnd && breathStart && walkEnd !== breathStart) return ["still-pair"];
+  if (walkSpawn && breathSpawn && walkSpawn !== breathSpawn) return ["still-pair"];
+  return [];
+}
+
+function lintVoid(subject: SmokeSubject): string[] {
+  if (subject.voidMid === true) return ["void-mid"];
+  if (typeof subject.lumaMid === "number" && Number.isFinite(subject.lumaMid) && subject.lumaMid < VOID_LUMA_FLOOR) {
+    return ["void-mid"];
+  }
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && VOID_BAN.test(rest)) return ["void-mid"];
+  return [];
 }
 
 function lintPath(subject: SmokeSubject): string[] {
@@ -414,6 +498,7 @@ function lintPromptResidue(subject: SmokeSubject): string[] {
 
 const BATTERY: Array<(s: SmokeSubject) => string[]> = [
   lintContainer,
+  lintSpawnPlay,
   lintCamera,
   lintBody,
   lintDoors,
@@ -421,6 +506,8 @@ const BATTERY: Array<(s: SmokeSubject) => string[]> = [
   lintPath,
   lintCues,
   lintContinuity,
+  lintStillPair,
+  lintVoid,
   lintPromptResidue,
 ];
 

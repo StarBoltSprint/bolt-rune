@@ -26,15 +26,28 @@ export function isBoltSilhouette(u?: string | null): boolean {
   return BOLT_REF.test(u);
 }
 
+/** Mood / profile / face-on stills belong in the Vault, never as a play spawn plate. */
+export function isMoodProfileRef(u?: string | null): boolean {
+  if (!u) return false;
+  const s = u.toLowerCase();
+  if (s.includes("bolt-face")) return true;
+  return /mood[-_ ]?hall|profile[-_ ]?hero|profile[-_ ]?start|face[-_ ]?on|side[-_ ]?profile/.test(s);
+}
+
 /** Hall camera still that may cover play. Rejects sealed Bolt / non-hall refs / grab data URLs. */
 export function isHallPlayStill(u?: string | null): boolean {
-  if (!u || isBoltSilhouette(u)) return false;
+  if (!u || isBoltSilhouette(u) || isMoodProfileRef(u)) return false;
   if (isHallFilm(u)) return true;
   const s = u.toLowerCase();
   if (s.includes("/refs/")) return false;
   if (s.includes("/ui/citadel.jpg") || s.includes("hall-doors")) return false;
   if (s.startsWith("data:")) return false;
   return s.startsWith("/films/") || s.startsWith("http") || s.startsWith("blob:");
+}
+
+/** Lock-off behind spawn still. Mood / profile never play. */
+export function mayPlaySpawnStill(u?: string | null): boolean {
+  return isHallPlayStill(u) && !isMoodProfileRef(u);
 }
 
 /** stockRoomBank idle/walk — HALL_LOOP + HALL_STILL, not an arrival last-frame. */

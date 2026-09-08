@@ -164,6 +164,7 @@ import {
   type LivingPlayFrame,
   type PlayFrameKind,
 } from "@/game/play-frame";
+import { SIDE_BAND } from "@/game/pcg-input";
 import {
   applyPoseIntent,
   beginPose,
@@ -1510,10 +1511,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         if (ph !== "play") {
           drawGraph(ctx, w, h, list, graphRef.current, ph, nowClipRef.current, forgedRef.current, now);
           drawTravel(ctx, w, h, bolt.current, !!walk.current, now, beatRef.current === "idle");
-        }
-        for (const n of list) {
-          if (n.id === "spawn") continue;
-          drawMark(ctx, w, h, n, n.id === hereRef.current, n.id === litRef.current, ph);
+          for (const n of list) {
+            if (n.id === "spawn") continue;
+            drawMark(ctx, w, h, n, n.id === hereRef.current, n.id === litRef.current, ph);
+          }
         }
       }
       raf.current = window.requestAnimationFrame(draw);
@@ -6867,7 +6868,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             /* stay on biome — Leave calls onExit */
           }}
         />
-        <DoorChatLine where="play" />
+        {false ? <DoorChatLine where="play" /> : null}
       </div>
     );
   }
@@ -7880,11 +7881,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           Reset
         </button>
       ) : null}
-      {phase === "play" ? <DoorChatLine where="hall" box={picBox} /> : null}
+      {phase !== "play" ? <DoorChatLine where="hall" box={picBox} /> : null}
       {phase === "play" ? (
-        <div className="pointer-events-none absolute inset-0 z-[80]" data-doors="1">
+        <div className="pointer-events-none absolute inset-0 z-[80]" data-doors="1" data-hitbox="video-layout">
           {(["m1", "m2"] as const).map((id) => {
-            const hit = (doorHit || STOCK_HITS)[id];
             const glow = id === "m1" ? glowA : glowB;
             const layerRect = layer.current?.getBoundingClientRect();
             const box =
@@ -7894,10 +7894,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
                 : typeof window !== "undefined"
                   ? filmBox({ width: window.innerWidth, height: window.innerHeight, left: 0, top: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON() {} }, 9 / 16)
                   : null);
-            const left = box ? box.x + hit.x * box.w : id === "m1" ? "8%" : "54%";
-            const top = box ? box.y + hit.y * box.h : "24%";
-            const width = box ? hit.w * box.w : "38%";
-            const height = box ? hit.h * box.h : "44%";
+            const left = box ? box.x + (id === "m1" ? 0 : box.w * (1 - SIDE_BAND)) : id === "m1" ? "0%" : "60%";
+            const top = box ? box.y : 0;
+            const width = box ? box.w * SIDE_BAND : "40%";
+            const height = box ? box.h : "100%";
             const glowClass =
               glow === "enter-ready"
                 ? id === "m1"
@@ -7908,6 +7908,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
                     ? "door-glow-teal"
                     : "door-glow-gold"
                   : "";
+            void glowClass;
             return (
               <button
                 key={id}
@@ -7916,7 +7917,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
                 data-door={id}
                 data-glow={glow}
                 data-enter-ready={glow === "enter-ready" ? "1" : undefined}
-                className={`pointer-events-auto absolute ${glowClass}`}
+                className="pointer-events-auto absolute"
                 style={{
                   left,
                   top,
@@ -7924,7 +7925,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
                   height,
                   touchAction: "manipulation",
                   WebkitTapHighlightColor: "transparent",
-                  background: "rgba(0,0,0,0.01)",
+                  background: "transparent",
                 }}
                 onPointerDown={(e) => {
                   e.preventDefault();
@@ -7947,7 +7948,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         {status}
       </p>
       )}
-      {clipsUI.length && (phase === "forge" || phase === "play") ? (
+      {clipsUI.length && phase === "forge" ? (
         <>
           {reelOn ? null : (
           <button
@@ -8105,7 +8106,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           ) : null}
         </>
       ) : null}
-      {phase === "forge" || phase === "play" ? (
+      {phase === "forge" ? (
         <>
           {hallsOn ? null : (
             <button
@@ -8514,7 +8515,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           </div>
         </div>
       ) : null}
-      {refs.length > 0 ? (
+      {refs.length > 0 && phase !== "play" ? (
         stripOn ? (
         <div
           className="absolute inset-x-0 bottom-0 z-50 overflow-visible"
