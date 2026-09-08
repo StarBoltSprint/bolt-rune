@@ -14,6 +14,7 @@ import {
   type OnlineStrip,
   type TapObserve,
 } from "./pcg-wfc.ts";
+import { awakenLevel, cookDensity, worldLineFor, type AwakenLevel } from "./pcg-density.ts";
 import { stockBiomeLoop } from "./play-clip.ts";
 
 /** Engine laws. Copied on every plate. Bolt, lens, chrome ban are terminals — never sampled. */
@@ -117,6 +118,10 @@ export type PromptSlots = {
   destStill: string | null;
   seed: string;
   flavor?: string;
+  /** Catalog worldLine variant — density/awakening, not LLM. */
+  worldLine?: string;
+  density?: number;
+  awaken?: AwakenLevel;
 };
 
 export type BiomeCatalogEntry = {
@@ -317,7 +322,7 @@ export function enterLine(slots: Pick<PromptSlots, "act" | "fromTo" | "leftover"
   return bits.join(" ");
 }
 
-/** Density stub — role-WFC (pcg-wfc) fills cook slots; this stays for tests / fallback. */
+/** Density stub — EDPCG cook path uses pcg-density; this stays for tests / fallback. */
 export function stubFork(density = 0): ForkSlot {
   if (density >= 0.85) return "L+R";
   if (density >= 0.55) return "R";
@@ -488,6 +493,20 @@ export function slotsFromEngine(input: {
   const seed =
     String(input.seed || "").trim() ||
     plateSeed(String(input.runSeed || "s0"), i, act, biome);
+  const miss = Boolean(input.miss || input.tapObserve === "miss" || live?.wave.miss);
+  const idle = Boolean(input.idle || input.tapObserve === "idle" || live?.wave.idle);
+  const tIn = Number(input.pictureTime);
+  const tMs =
+    Number.isFinite(tIn) && tIn >= 0
+      ? tIn
+      : pictureTimes?.length
+        ? Number(pictureTimes[Math.min(i, pictureTimes.length - 1)]) || 0
+        : input.playedPlates?.length
+          ? pictureTimeMs(input.playedPlates)
+          : cell.t * 1000;
+  const density = cookDensity({ m: momentum, runSeed: run, pictureTimeMs: tMs, miss, idle });
+  const awaken = awakenLevel(tMs, momentum, miss, idle);
+  const worldLine = worldLineFor(biome, awaken, entry.worldLine);
   return {
     biome,
     act,
@@ -500,6 +519,9 @@ export function slotsFromEngine(input: {
     destStill: dest,
     seed,
     flavor: voice.flavor,
+    worldLine,
+    density,
+    awaken,
     wfcStock: cell.stock || Boolean(live?.stock || ("stock" in strip && strip.stock)),
     wfcRole: cell.role,
     wfcRelic: cell.relic,
@@ -518,12 +540,13 @@ export type AssembledPrompt = {
  */
 export function assemblePrompt(slots: PromptSlots): AssembledPrompt {
   const biome = biomeEntry(slots.biome);
+  const world = slots.worldLine || biome.worldLine;
   const flavor = slots.flavor ? `Flavor: ${slots.flavor}.` : "";
   const enter = enterLine(slots);
   const prompt = [
     RAILS,
     flavor,
-    `Biome: ${biome.name}. World: ${biome.worldLine}. Act: ${actLine(slots.act)}. Path: ${pathLine(slots.fork)}. Momentum: ${trailLine(slots.trail)} ${floorLine(slots.floor)}.`,
+    `Biome: ${biome.name}. World: ${world}. Act: ${actLine(slots.act)}. Path: ${pathLine(slots.fork)}. Momentum: ${trailLine(slots.trail)} ${floorLine(slots.floor)}.`,
     enter,
     `Continuity: match last frame exactly for body, lens, hall ribs. Seed: ${slots.seed}.`,
   ]

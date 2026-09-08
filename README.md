@@ -80,6 +80,10 @@ Deeper notes: [`docs/pcg-anti-3d.md`](docs/pcg-anti-3d.md). Picture-time lives i
 
 **Online + tap-as-observe** is required so miss/idle can kill a peak already in the future domain — otherwise the EDPCG curve lies. Before Play: window bans, collapse cell 0 to calm|breath, propagate. After plate `i`, `applyTapObserve(strip, i, tap, m, pictureTime)` bans what the act forbids (miss → peak off i+1 and i+2 + decay boost; idle → peak+fork off i+1; clean + m≥τ + picture-time in the peak window → keep peak). Then `advanceOnline` observes the lowest-entropy uncollapsed cell (prefer i+1 if tied) and propagates. Picture-time is the sum of played plate durations (`pictureTimeMs`) — never `Date.now()`. Partial cook: Imagine only for a confirmed (collapsed) plate. Live empty i+1 → force decay; if decay is banned → breath stock; never pause the picture.
 
+## PCG EDPCG density / awakening
+
+Within a ~60s play bone, success chains wake the world in the picture. `density = smoothstep(m) * noise(runSeed, pictureTime)` fills **cook slots** (trail none|thin|full, fork, floor empty|crystals-ahead) — not terrain, not XYZ. High `m` + peak window → denser catalog `worldLine` / slot fills into `assemblePrompt`. Miss → λm, thinner trail; peak ban stays in online WFC. Same biome tag; enter is still required for a Hall′ biome hop. Catalog variants (forest quiet vs forest-crystal peak) pick by phase×m, never free LLM text. Asteroid HOLD. No Pack seats. No `Date.now()`.
+
 ## PCG chunk library
 
 A chunk is a **trusted prefab film**. PCG places it on door A/B and does not invent pixels inside. Catalog biomes are the starter shelf (`chunk-{biome}`: still, optional loop, acts breath / walkA / walkB, walkSecs 6|10|15, pins A/B, laws RAILS). Tags: biome, door-handed, pose, energy, identity. Hung forge artifact wins over the seeded pick. Same hall A+B share a biome; biome hop only on enter.

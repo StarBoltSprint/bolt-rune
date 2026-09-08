@@ -18,6 +18,7 @@ The README holds the refuse table, steal table, and smell tests. This note is th
 | 1D time-WFC | `src/game/pcg-wfc.ts` | Roles on time cells; tap-as-observe |
 | Prefab chunks | `src/game/pcg-chunk.ts` | Hang wins; bridge stitch on rail 2 |
 | Play-loop / cue sheet | `src/game/pcg-play.ts` | `gradeTap` / picture-time / Howl / Recall / Pause |
+| EDPCG density / awakening | `src/game/pcg-density.ts` | `smoothstep(m) * noise(s, pictureTime)` → cook slots |
 
 1D role-WFC neighbors are **time**, not floor tiles. Voxel WFC / STWFC T×Y×X does not belong here.
 
