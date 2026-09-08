@@ -25,11 +25,18 @@ function firstHungUrl(art: Pick<HungArtifact, "playlist" | "still" | "room">): s
 export const HANG_REF_BREATH = ["breath-spawn", "breath-A", "breath-B"] as const;
 export const HANG_REF_WALK = ["walk-A", "walk-B", "walk-A-B", "walk-B-A"] as const;
 export const HANG_REF_ROLES = [...HANG_REF_BREATH, ...HANG_REF_WALK] as const;
+/** Slots the import sheet leads with. Empty is OK — stock stays. */
+export const HANG_REF_PRIMARY = ["breath-spawn", "walk-A", "walk-B", "breath-A", "breath-B"] as const;
+/** Already wired on the pose SM — optional empty on the sheet. */
+export const HANG_REF_OPTIONAL = ["walk-A-B", "walk-B-A"] as const;
 /** All roles ship — kept so older imports do not break. */
 export const HANG_REF_LATER = [] as const;
 export const HANG_REF_ALL = HANG_REF_ROLES;
+/** One Hang confirm writes this hall graph — not a carousel of biome rooms. */
+export const HANG_REF_GRAPH_HALL = 1;
 
 export type HangRefRole = (typeof HANG_REF_ALL)[number];
+export type HangRefSlots = Partial<Record<HangRefRole, string>>;
 export type HangRefPose = CitadelPose;
 export type HangRefSource = "file" | "imagine-post" | "imagine-clip" | "url";
 
@@ -109,6 +116,60 @@ export function hangRefLabel(role?: string | null): string {
   if (r === "walk-B") return "walk B";
   if (r === "walk-A-B") return "walk A→B";
   return "walk B→A";
+}
+
+export function parseHangSlot(raw?: string | null): { ok: true; url: string } | { ok: false } {
+  const t = String(raw || "").trim();
+  if (!t) return { ok: false };
+  const post = parseImaginePostUrl(t);
+  if (post.ok) return { ok: true, url: post.url };
+  if (isHangMediaUrl(t)) return { ok: true, url: t };
+  return { ok: false };
+}
+
+export function filledHangSlots(slots: HangRefSlots = {}): HangRefSlots {
+  const out: HangRefSlots = {};
+  for (const role of HANG_REF_ALL) {
+    const parsed = parseHangSlot(slots[role]);
+    if (parsed.ok) out[role] = parsed.url;
+  }
+  return out;
+}
+
+export function slotWrites(slots: HangRefSlots = {}): Array<{ role: HangRefRole; url: string }> {
+  const filled = filledHangSlots(slots);
+  return HANG_REF_ALL.flatMap((role) => {
+    const url = filled[role];
+    return url ? [{ role, url }] : [];
+  });
+}
+
+export function hangSlotPreview(slots: HangRefSlots = {}): string {
+  for (const role of [...HANG_REF_PRIMARY, ...HANG_REF_OPTIONAL]) {
+    const vid = hangMediaSrc(slots[role]);
+    if (vid) return vid;
+  }
+  return "";
+}
+
+/** Prefill the sheet from hung pose refs. Imagine posts stay as provenance URLs. */
+export function slotsFromHung(arts: HungArtifact[] = [], hall = HANG_REF_GRAPH_HALL, citadel?: string): HangRefSlots {
+  const out: HangRefSlots = {};
+  for (const role of HANG_REF_ALL) {
+    const art = hungOnRole(arts, role, hall, citadel);
+    if (!art) continue;
+    const url = firstHungUrl(art);
+    if (url) out[role] = url;
+  }
+  return out;
+}
+
+/** Door-A biome hang with no pose role — secondary Unhang, not the import path. */
+export function isLegacyDoorHang(art?: Pick<HungArtifact, "room"> | null, hall = HANG_REF_GRAPH_HALL): boolean {
+  const room = art?.room;
+  if (!room?.door) return false;
+  if (hallOfRoom(room, 0) !== hallOfRoom({ hall }, HANG_REF_GRAPH_HALL)) return false;
+  return !isHangRefRole(room.role);
 }
 
 /** Home pose for breaths; destination pose for walk edges. */

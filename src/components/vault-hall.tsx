@@ -7,12 +7,18 @@ import {
   hangMediaSrc,
   hangRefFlags,
   hangRefKind,
-  hangRefRole,
+  hangSlotPreview,
+  hungOnRole,
   isContinuityOnlyFail,
   isHangMediaUrl,
   isImaginePostUrl,
+  isLegacyDoorHang,
   parseImaginePostUrl,
+  slotsFromHung,
+  slotWrites,
   type HangRefRole,
+  type HangRefSlots,
+  HANG_REF_GRAPH_HALL,
 } from "@/game/hang-ref";
 import { lintSmoke, mayHang, smokeForgeFrost } from "@/game/smoke-gate";
 import { vaultHangRoom, vaultHangStart } from "@/game/path-entry";
@@ -79,11 +85,11 @@ export function VaultHall() {
   const [hangCitadel, setHangCitadel] = useState("");
   const [hangCitadels, setHangCitadels] = useState<HangCitadelPick[]>([]);
   const [hangAsk, setHangAsk] = useState<{ a: HungArtifact; door: "A" | "B"; rooms: HangRoomPick[] } | null>(null);
-  const [hangRef, setHangRef] = useState(false);
-  const [refMedia, setRefMedia] = useState("");
-  const [refRole, setRefRole] = useState<HangRefRole>("breath-spawn");
+  const [hangRef, setHangRef] = useState(true);
+  const [refSlots, setRefSlots] = useState<HangRefSlots>({});
   const [refKeep, setRefKeep] = useState(false);
   const [refFlag, setRefFlag] = useState("");
+  const [refHung, setRefHung] = useState(false);
   const [vaultAt, setVaultAt] = useState(0);
   const [seatChrome, setSeatChrome] = useState(false);
   const lock = useRef(false);
@@ -147,6 +153,9 @@ export function VaultHall() {
 
   useEffect(() => {
     refreshHangRooms(hung);
+    const from = slotsFromHung(hung, HANG_REF_GRAPH_HALL);
+    if (Object.keys(from).length) setRefHung(true);
+    setRefSlots((prev) => ({ ...from, ...prev }));
   }, [hung]);
 
   useEffect(() => {
@@ -308,16 +317,17 @@ export function VaultHall() {
     if (busy) return;
     swallowOpeningTap();
     refreshHangRooms();
+    setRefSlots((prev) => ({ ...slotsFromHung(hungRef.current, HANG_REF_GRAPH_HALL), ...prev }));
     setHangRef(true);
     setRefFlag("");
   }
 
-  function takeRefFile(file: File) {
+  function takeRefFile(role: HangRefRole, file: File) {
     if (!file || !/^video\//i.test(file.type) && !/\.mp4$/i.test(file.name)) {
       setRefFlag("need an mp4");
       return;
     }
-    const prev = refMedia;
+    const prev = refSlots[role] || "";
     if (prev.startsWith("blob:")) {
       try {
         URL.revokeObjectURL(prev);
@@ -325,83 +335,126 @@ export function VaultHall() {
         /* */
       }
     }
-    setRefMedia(URL.createObjectURL(file));
+    setRefSlots((cur) => ({ ...cur, [role]: URL.createObjectURL(file) }));
     setRefFlag("9:16 preferred");
   }
 
-  function takeRefUrl(raw: string) {
+  function takeRefUrl(role: HangRefRole, raw: string) {
     const t = raw.trim();
+    if (!t) {
+      setRefSlots((cur) => {
+        const next = { ...cur };
+        delete next[role];
+        return next;
+      });
+      return;
+    }
     const post = parseImaginePostUrl(t);
     if (post.ok) {
-      setRefMedia(post.url);
+      setRefSlots((cur) => ({ ...cur, [role]: post.url }));
       setRefFlag("Imagine post · hang then Play");
       return;
     }
     if (isHangMediaUrl(t)) {
-      setRefMedia(t);
+      setRefSlots((cur) => ({ ...cur, [role]: t }));
       setRefFlag("9:16 preferred");
       return;
     }
+    setRefSlots((cur) => ({ ...cur, [role]: t }));
     setRefFlag("mp4 or grok.com/imagine/post");
   }
 
-  function hangPlayerRef(hallWant?: number | string | null) {
-    const bindHall = hangBindHall(hallWant ?? hangHallRef.current);
-    const url = hangMediaSrc(refMedia) || (isImaginePostUrl(refMedia) ? refMedia : "");
-    if (!bindHall || !refMedia) {
-      setFrost("hang missed — pick media + room");
+  function playHungGraph() {
+    const href = walkHangHallHref(undefined, HANG_REF_GRAPH_HALL, 1);
+    if (!href) return;
+    sfxForge("enter");
+    window.location.assign(href);
+  }
+
+  function hangPlayerRef(_hallWant?: number | string | null) {
+    const writes = slotWrites(refSlots);
+    const bindHall = HANG_REF_GRAPH_HALL;
+    if (!writes.length) {
+      setFrost("hang missed — paste a clip");
       window.setTimeout(() => setFrost(""), 2400);
       return;
     }
-    const role = hangRefRole(refRole);
-    const kind = hangRefKind(role);
-    const smoke = lintSmoke({
-      kind,
-      when: "hang",
-      clip: url || refMedia,
-      still: url || refMedia,
-    });
-    if (!mayHang(smoke, refKeep)) {
-      if (isContinuityOnlyFail(smoke)) {
-        setRefKeep(true);
-        setRefFlag("Continuity FAIL · KEEP to hang");
-        setFrost("Continuity FAIL · KEEP to hang");
+    for (const { role, url } of writes) {
+      const kind = hangRefKind(role);
+      const play = hangMediaSrc(url) || (isImaginePostUrl(url) ? url : "");
+      const smoke = lintSmoke({
+        kind,
+        when: "hang",
+        clip: play || url,
+        still: play || url,
+      });
+      if (!mayHang(smoke, refKeep)) {
+        if (isContinuityOnlyFail(smoke)) {
+          setRefKeep(true);
+          setRefFlag(`${role} · Continuity FAIL · KEEP to hang`);
+          setFrost(`${role} · Continuity FAIL · KEEP to hang`);
+          window.setTimeout(() => setFrost(""), 2800);
+          return;
+        }
+        setFrost(smokeForgeFrost(smoke.reasons) || `${role} · smoke FAIL`);
         window.setTimeout(() => setFrost(""), 2800);
         return;
       }
-      setFrost(smokeForgeFrost(smoke.reasons) || "smoke FAIL");
-      window.setTimeout(() => setFrost(""), 2800);
-      return;
     }
-    const flags = hangRefFlags(smoke, refKeep);
-    const film = cookFilm(role, "", [refMedia], role);
-    const hung = hangArtifact(film, true, undefined, smoke, undefined, refKeep);
-    const art = hung[0];
-    if (!art) {
-      setFrost("hang missed");
-      window.setTimeout(() => setFrost(""), 2400);
-      return;
+    let arts = hungRef.current.length ? hungRef.current : readArtifacts();
+    for (const { role, url } of writes) {
+      const play = hangMediaSrc(url) || (isImaginePostUrl(url) ? url : url);
+      const smoke = lintSmoke({
+        kind: hangRefKind(role),
+        when: "hang",
+        clip: play,
+        still: play,
+      });
+      const flags = hangRefFlags(smoke, refKeep);
+      const existing = hungOnRole(arts, role, bindHall);
+      if (existing) {
+        arts = setPlaylist(existing.id, [url], { still: existing.still, name: role }, arts);
+        arts = hangOnRoom(
+          existing.id,
+          bindHangRefRoom(role, {
+            hall: bindHall,
+            still: existing.still,
+            trans: hangMediaSrc(url) || url,
+            flags,
+          }),
+          arts,
+        );
+      } else {
+        const film = cookFilm(role, "", [url], role);
+        const hung = hangArtifact(film, true, undefined, smoke, undefined, refKeep);
+        const art = hung[0];
+        if (!art) continue;
+        arts = hangOnRoom(
+          art.id,
+          bindHangRefRoom(role, {
+            hall: bindHall,
+            still: art.still,
+            trans: hangMediaSrc(url) || url,
+            flags,
+          }),
+          hung,
+        );
+      }
+      const live = arts.find((x) => (existing ? x.id === existing.id : x.room?.role === role && x.room?.hall === bindHall));
+      if (live) persistArt(live);
     }
-    const cit = bindCitadel(listSessions(), lastPlay(), hangCitadelRef.current);
-    const rooms = refreshHangRooms(hung);
-    const pick = rooms.find((r) => r.hall === bindHall);
-    const citadel = pick?.citadel || hangCitadelRef.current || cit.citadel || undefined;
-    const room = bindHangRefRoom(role, {
-      hall: bindHall,
-      citadel,
-      still: art.still,
-      trans: hangMediaSrc(refMedia) || refMedia,
-      flags,
-    });
-    const next = hangOnRoom(art.id, room, hung);
-    setHung(next);
-    const live = next.find((x) => x.id === art.id);
-    if (live) persistArt(live);
+    for (const a of arts.filter((x) => isLegacyDoorHang(x, bindHall))) {
+      arts = dropRoom(a.id, arts);
+      const live = arts.find((x) => x.id === a.id);
+      if (live) persistArt({ ...live, room: null });
+    }
+    setHung(arts);
     hangHallRef.current = bindHall;
     setHangHallN(bindHall);
-    setHangRef(false);
+    setRefHung(true);
+    setHangRef(true);
     sfxForge("page");
-    setFrost(`${role} · hung · Play to walk`);
+    setFrost("hall hung · Play to walk");
     window.setTimeout(() => setFrost(""), 2400);
   }
 
@@ -993,22 +1046,22 @@ export function VaultHall() {
       ) : null}
       {hangRef ? (
         <HangRefSheet
-          rooms={hangRooms}
-          hall={hangHallN}
-          onHall={pickHangHall}
-          citadels={hangCitadels}
-          citadel={hangCitadel}
-          onCitadel={pickHangCitadel}
-          onClose={() => setHangRef(false)}
-          media={refMedia}
-          role={refRole}
+          slots={refSlots}
+          still={hangThumbStill(hung.find((a) => a.room?.hall === HANG_REF_GRAPH_HALL && a.still) || hung[0]) || hangSlotPreview(refSlots)}
           keep={refKeep}
           flag={refFlag}
-          onMedia={takeRefUrl}
+          hung={refHung || Boolean(hungOnRole(hung, "breath-spawn", HANG_REF_GRAPH_HALL) || hungOnRole(hung, "walk-A", HANG_REF_GRAPH_HALL))}
+          advanced={hung.some((a) => isLegacyDoorHang(a) || a.room?.door)}
+          onSlot={takeRefUrl}
           onFile={takeRefFile}
-          onRole={setRefRole}
           onKeep={() => setRefKeep((v) => !v)}
-          onHang={(hall) => hangPlayerRef(hall)}
+          onHang={() => hangPlayerRef()}
+          onPlay={playHungGraph}
+          onAdvanced={() => setHangRef(false)}
+          onClose={() => {
+            setHangRef(false);
+            window.location.assign("/");
+          }}
         />
       ) : null}
       {hangAsk ? (
