@@ -12,9 +12,121 @@ import { glowContractIssues, MIN_CUE_WINDOW_S, type Cue, type Plate } from "./pc
 import { lintPrompt, RAILS, type PromptSlots } from "./pcg-prompt.ts";
 import { clipCachePut, commitHallPrime, replaceStockEnter, type ClipCacheKind, type HallCommit, type PaidEnterTicket } from "./pcg-rail.ts";
 import { stockBiomeLoop } from "./play-clip.ts";
+import { isHallFilm, isLivingHallLoop } from "./stock-room.ts";
 
 export const RAILS_VERSION = "bolt-1" as const;
 export const SMOKE_BOT_TIMEOUT_MS = 4000;
+export const VOID_LUMA = 0.04;
+
+/** Spawn / breath camera — lock-off BEHIND only. Face-on hero spawn = FAIL. */
+export const SPAWN_CAMERA_LAW = [
+  "lock-off BEHIND only",
+  "face-on hero spawn = FAIL",
+  "profile-as-primary = FAIL",
+  "mood/profile = Vault ref only",
+] as const;
+
+/** Still-pair before Hang / play library accept. Fail closed when authoring provides fields. */
+export const STILL_PAIR_FIELDS = ["stillStart", "stillEnd"] as const;
+export const STILL_PAIR_LAW = [
+  "stillEnd(walk) ≈ stillStart(breath dest)",
+  "stillStart(walk-spawn-*) ≈ stillStart(breath-spawn)",
+  "Required fields: stillStart, stillEnd. Fail closed when the authoring path provides them.",
+] as const;
+
+/** SmiR HARD LOCK taille/scale — ship text. Tests lock these lines. */
+export const SMIR_TAILLE_LOCK = [
+  "SmiR HARD LOCK taille/scale: Bolt lower third of 9:16; withers ~1/4 frame height; same lens/height/distance every hall plate.",
+  "Breath: size frozen — jump >~15% bbox height/frame between consecutive samples = FAIL.",
+  "Walk: may rise toward ~0.35–0.40 at door, never ~0.70; spawn band ~0.22–0.32.",
+  "stillEnd vs next stillStart taille jump = FAIL pair.",
+  "Document bans: grow/shrink/morph/zoom/dolly/orbit/hero close-up/tiny cathedral.",
+] as const;
+
+/** SmiR HARD LOCK — black hole illegal. Tests lock these lines. */
+export const BLACK_HOLE_LOCK = [
+  "SmiR HARD LOCK — black hole illegal: on ended or gap immediately show stillEnd (last decoded frame), prepare next breath/decay, cut or ≤0.28s dissolve.",
+  "NEVER clear <video> to empty. NEVER pause with opacity 0 and no still. NEVER video.src=\"\" to reset.",
+  "If next not ready: decay stock or freeze last frame. No spinner, no void.",
+  "Smoke: play plate that goes full black mid-hall = FAIL (encode black tail OR engine didn't hold still).",
+  "Preload breath of current/dest pose before walk ends so swap isn't empty.",
+] as const;
+
+/** SmiR HARD LOCK — doors are architecture in the plate, not glass boxes. */
+export const SMIR_DOOR_ARCH_LOCK = [
+  "SmiR door architecture: doors are architecture IN the plate, not rectangles on glass. If tap target is only a UI box, film failed Smoke.",
+  "Legal hall door must have ALL of: hole (jambs+lintel+depth, not flat slab); thickness/reveal; floor contact same plane as paws; gold-cyan path fork paws→sills (cue on fork/threshold not chrome orb); L teal / R gold color IN encode (overlay may trace never replace).",
+  "Spawn: doors upper-mid 9:16; path 5–15% height clear of foliage; foliage side wings only.",
+  "Walk stops short of sill (atA). Enter crosses. Slab/CSS outline door = FAIL.",
+  "Smoke: two door masses touching floor; path pixels; overlay-only glow = FAIL; dog too small to reach in one walk = FAIL.",
+] as const;
+
+/** SmiR HARD LOCK lighting — speaks A/B without chrome. */
+export const SMIR_LIGHT_LOCK = [
+  "SmiR lighting: lighting speaks A/B without chrome. Soft key on floor fork + door sills; Bolt rimmed from behind/above; face in shade (eye glint at camera = FAIL).",
+  "Split: raise teal practical on walk-A cue, gold quieter (and mirror). Peak = both bloom a little; miss = subtract fill not red strobe.",
+  "Practicals only (crystal veins, bronze seams, path inlay). Ban beauty dish, studio spots, lens flare, orbit, sun sweep on breath.",
+  "Exposure: stable grey at paws across breath; no smash between stillEnd and next stillStart. Thin floor haze for door depth; not thick fog.",
+  "Smoke: both door hues mid-frame; fork brighter than foliage; Bolt face never brightest object; breath paw exposure stable.",
+] as const;
+
+/** SmiR HARD LOCK color grade — protect L teal / R gold / Bolt white. */
+export const SMIR_GRADE_LOCK = [
+  "SmiR color grade: protect L door cool teal-cyan, R warm gold-amber, Bolt white (withers nearer white than either door), mid-floor neutral dusk, path thin gold-cyan.",
+  "Same grade family all plates of a hall. No full-frame duotone. No Hollywood skin LUT (apricot fur).",
+  "Secondary sat on doors/path only. Cue = tiny sat/+stop on active door ROI or bake in encode; engine grade static preferred.",
+  "Miss: sat down, split remains — never monochrome grey, never red flash.",
+  "Smoke: sample L jamb, R jamb, withers — hues in bands, ΔE L vs R above floor, breath hues stable frame0 vs last.",
+] as const;
+
+/** SmiR HARD LOCK — one plate one camera one act. */
+export const SMIR_LOCKOFF_LOCK = [
+  "SmiR lock-off: lens nailed behind him facing doors every play frame. One plate one camera one act — never splice profile+behind in one mp4.",
+  "Engine must NOT auto-flip/crop profile to fake back — FAIL and decay/old PASS.",
+] as const;
+
+/** SmiR lock-off RIG SURVEY — frame0 constants across siblings. */
+export const SMIR_RIG_LOCK = [
+  "SmiR lock-off RIG SURVEY: frame0 constants door-pair width/frame, paws Y, withers Y, mid-pillar X must match across breath/walk siblings.",
+] as const;
+
+export const RIG_JUMP = 0.05;
+
+export const PATH_H_MIN = 0.05;
+export const PATH_H_MAX = 0.15;
+export const GRADE_DE_MIN = 12;
+
+/** Never legal. Tests lock this. */
+export function mayFlipProfileToBack(): false {
+  return false;
+}
+
+export const TAILLE_SPAWN_MIN = 0.22;
+export const TAILLE_SPAWN_MAX = 0.32;
+export const TAILLE_WITHERS = 0.25;
+export const TAILLE_WITHERS_SLACK = 0.06;
+export const TAILLE_WALK_DOOR_MIN = 0.35;
+export const TAILLE_WALK_DOOR_MAX = 0.4;
+export const TAILLE_WALK_HERO = 0.7;
+export const TAILLE_JUMP = 0.15;
+
+const TAILLE_BAN =
+  /\b(grow|shrink|morph|zoom|dolly|orbit|hero close-up|tiny cathedral)\b/i;
+
+const BLACK_HOLE_BAN =
+  /\b(black hole|black tail|empty src|video\.src=""|video\.src='' )\b/i;
+
+const DOOR_ARCH_BAN =
+  /\b(flat slab|css outline|ui box|wireframe door|painted (?:a\/?b )?door|overlay[- ]only|rectangle on glass)\b/i;
+
+const LIGHT_BAN =
+  /\b(beauty dish|studio spots?|lens flare|sun sweep|muzzle key)\b/i;
+
+const GRADE_BAN =
+  /\b(duotone|hollywood (?:skin )?lut|apricot fur|monochrome grey|red flash|red strobe)\b/i;
+
+const SPLICE_BAN =
+  /\b(splice profile|profile\+behind|flip(?: to)?(?: fake)? back|auto-flip|crop profile)\b/i;
 
 export type SmokeVerdict = "PASS" | "FAIL";
 export type SmokeKind = "walk" | "breath" | "enter" | "biome";
@@ -78,6 +190,127 @@ export type SmokeSubject = {
   /** Readable L/R bias in [on,off]. Omitted = cue-math proxy. `unknown`/`equal` = FAIL. */
   pixelSide?: "A" | "B" | "equal" | "none" | "unknown";
   bodyOk?: boolean;
+  /** Plate act when kind is biome or when decay must lint as a play encode. */
+  act?: "breath" | "walk" | "enter" | "decay" | string;
+  pose?: "spawn" | "atA" | "atB" | string;
+  posePrimary?: "behind" | "profile" | "face-on" | "side" | "mood";
+  faceReadable?: boolean;
+  mood?: boolean;
+  /** Burned-in encode labels. Play acts FAIL on SEATS/FILMS/ROOMS/REFS. */
+  burnedText?: boolean | string | string[];
+  labels?: string[];
+  encodeText?: string;
+  /** Mid-clip near-black full frames (void). */
+  voidFrames?: boolean | Array<{ t: number; luma?: number }>;
+  blackHole?: boolean;
+  /** Encode black tail (~1s at clip end). */
+  blackTail?: boolean;
+  lumaTail?: number;
+  /** Engine held stillEnd on ended/gap. false = black hole. */
+  holdStill?: boolean;
+  emptySrc?: boolean;
+  /**
+   * SmiR HARD LOCK taille/scale.
+   * bboxH / withersH = height ÷ frame. Spawn band ~0.22–0.32; withers ~1/4.
+   */
+  taille?: {
+    bboxH?: number;
+    withersH?: number;
+    samples?: number[];
+    spawnH?: number;
+    doorH?: number;
+    stillEndH?: number;
+    stillStartH?: number;
+    lens?: string;
+    height?: string;
+    distance?: string;
+    lastLens?: string;
+    lastHeight?: string;
+    lastDistance?: string;
+    band?: "lower-third" | "mid" | "upper" | "full" | "tiny-cathedral";
+  };
+  /** SmiR door architecture — hole/reveal/floor/path/hues in the encode. */
+  doorArch?: {
+    hole?: boolean;
+    slab?: boolean;
+    reveal?: boolean;
+    floorContact?: boolean;
+    pathFork?: boolean;
+    pathH?: number;
+    foliageClear?: boolean;
+    overlayOnly?: boolean;
+    cssOutline?: boolean;
+    hueL?: "teal" | "gold" | "other";
+    hueR?: "teal" | "gold" | "other";
+    massesOnFloor?: boolean;
+    pathPixels?: boolean;
+    reach?: boolean;
+    band?: "upper-mid" | "low" | "full" | "glass";
+    walkSill?: "short" | "cross" | "through";
+  };
+  /** SmiR lighting heuristics. */
+  light?: {
+    faceBrightest?: boolean;
+    eyeGlint?: boolean;
+    pawStable?: boolean;
+    forkBrighter?: boolean;
+    beauty?: boolean;
+    fog?: "thin" | "thick";
+    missStrobe?: boolean;
+    doorHuesMid?: boolean;
+    smash?: boolean;
+  };
+  /** Lock-off RIG SURVEY — frame0 constants vs sibling plate. */
+  rig?: {
+    doorPairW?: number;
+    pawsY?: number;
+    withersY?: number;
+    midPillarX?: number;
+    sibling?: { doorPairW?: number; pawsY?: number; withersY?: number; midPillarX?: number };
+  };
+  /** SmiR color grade samples. */
+  grade?: {
+    hueL?: "teal" | "gold" | "other";
+    hueR?: "teal" | "gold" | "other";
+    withersWhite?: boolean;
+    dE?: number;
+    duotone?: boolean;
+    lut?: boolean;
+    missMono?: boolean;
+    missRed?: boolean;
+    breathStable?: boolean;
+  };
+  /** Profile+behind spliced in one mp4. */
+  splice?: boolean;
+  cameras?: Array<"behind" | "profile" | "face-on" | "side">;
+  /** Engine auto-flip/crop profile to fake a back. */
+  flipCrop?: boolean;
+  /** Library / pair stills for Hang + play accept. */
+  library?: StillPairRow[];
+  pair?: StillPairHints;
+  authoring?: boolean;
+};
+
+export type StillPairRow = {
+  id?: string;
+  act?: string;
+  poseStart?: string;
+  poseEnd?: string;
+  stillStart?: string;
+  stillEnd?: string;
+  side?: string;
+};
+
+export type StillPairHints = {
+  walkEnd?: string;
+  breathDestStart?: string;
+  walkSpawnStart?: string;
+  breathSpawnStart?: string;
+  breathSpawnFrame0?: string;
+  breathAtAFrame0?: string;
+  breathAtBFrame0?: string;
+  tailleStillEnd?: number;
+  tailleStillStart?: number;
 };
 
 export type SmokeBotBrief = {
@@ -111,6 +344,15 @@ const BODY_BAN =
 const CHROME_BAN =
   /\b(TAP|watermark|watermarks|logo|logos|HUD|UI bar|words on the dog|letters on (?:the )?dog)\b/;
 
+const PLAY_BURN =
+  /\b(SEATS|FILMS|ROOMS|REFS)\b/;
+
+const SPAWN_FACE =
+  /\b(face-on|face on|face readable|hero spawn|muzzle hero)\b/i;
+
+const SPAWN_PROFILE =
+  /\b(profile-hero|profile as primary|side-profile|side hero|mood(?:[-_\s]?(?:loop|film))?)\b/i;
+
 function num(n: number | null | undefined) {
   const x = Number(n);
   return Number.isFinite(x) ? x : 0;
@@ -140,6 +382,32 @@ function withoutRails(prompt: string): string {
   const text = String(prompt || "");
   if (text.startsWith(RAILS)) return text.slice(RAILS.length).trim();
   return text.replace(RAILS, "").trim();
+}
+
+export function playActOf(subject: Pick<SmokeSubject, "act" | "kind" | "slots">): "breath" | "walk" | "enter" | "decay" | "" {
+  const raw = String(subject.act || subject.slots?.act || subject.kind || "").trim();
+  if (/breath/i.test(raw)) return "breath";
+  if (/walk/i.test(raw)) return "walk";
+  if (/enter/i.test(raw)) return "enter";
+  if (/decay/i.test(raw)) return "decay";
+  return "";
+}
+
+export function isSpawnBreathAct(subject: SmokeSubject): boolean {
+  if (subject.pose === "spawn") return true;
+  if (subject.kind === "breath") return true;
+  if (playActOf(subject) === "breath") return true;
+  return /breath-spawn|idle-spawn/i.test(clipOf(subject) + " " + String(subject.still || ""));
+}
+
+export function stillKey(u?: string | null): string {
+  return String(u || "").trim().split("?")[0].toLowerCase();
+}
+
+export function stillApprox(a?: string | null, b?: string | null): boolean {
+  const x = stillKey(a);
+  const y = stillKey(b);
+  return Boolean(x && y && x === y);
 }
 
 /** Howl / Pause never gate. Keep replay of a cached PASS skips. Stock ingest once cached PASS. */
@@ -278,7 +546,51 @@ function lintContainer(subject: SmokeSubject): string[] {
   return reasons;
 }
 
+function spawnHeuristicBlob(subject: SmokeSubject): string {
+  return `${clipOf(subject)} ${subject.still || ""} ${subject.stillStart || ""} ${withoutRails(String(subject.prompt || ""))}`;
+}
+
+function lintSpawnCamera(subject: SmokeSubject): string[] {
+  if (subject.camera === "behind" && subject.posePrimary === "behind" && subject.faceReadable !== true && !subject.mood) {
+    /* tagged lock-off behind — still fail hall mood loops used as spawn */
+    const clip = clipOf(subject);
+    if (isHallFilm(clip) || isLivingHallLoop(clip)) return ["spawn-profile"];
+    return [];
+  }
+  if (subject.camera === "face-on" || subject.posePrimary === "face-on" || subject.faceReadable === true) {
+    return ["spawn-face"];
+  }
+  if (
+    subject.camera === "side" ||
+    subject.camera === "side-profile" ||
+    subject.posePrimary === "profile" ||
+    subject.posePrimary === "side" ||
+    subject.posePrimary === "mood" ||
+    subject.mood === true
+  ) {
+    return ["spawn-profile"];
+  }
+  const blob = spawnHeuristicBlob(subject);
+  const clip = clipOf(subject);
+  if (isHallFilm(clip) || isLivingHallLoop(clip)) return ["spawn-profile"];
+  if (SPAWN_FACE.test(blob)) return ["spawn-face"];
+  if (SPAWN_PROFILE.test(blob)) return ["spawn-profile"];
+  return [];
+}
+
+function lintLockoff(subject: SmokeSubject): string[] {
+  if (subject.flipCrop === true || mayFlipProfileToBack()) return ["camera-flip"];
+  const cams = Array.isArray(subject.cameras) ? subject.cameras : [];
+  if (subject.splice === true || (cams.includes("profile") && cams.includes("behind"))) return ["camera-splice"];
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && SPLICE_BAN.test(rest)) return ["camera-splice"];
+  return [];
+}
+
 function lintCamera(subject: SmokeSubject): string[] {
+  const lock = lintLockoff(subject);
+  if (lock.length) return lock;
+  if (isSpawnBreathAct(subject)) return lintSpawnCamera(subject);
   const reasons: string[] = [];
   if (subject.camera === "face-on" || subject.camera === "side" || subject.camera === "side-profile") {
     reasons.push("camera-lock");
@@ -326,11 +638,108 @@ function lintDoors(subject: SmokeSubject): string[] {
   return [];
 }
 
+/** Doors are architecture in the plate. Overlay-only / slab / CSS outline = FAIL. */
+export function lintDoorArch(subject: SmokeSubject): string[] {
+  if (subject.kind === "biome") return [];
+  const reasons: string[] = [];
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && DOOR_ARCH_BAN.test(rest)) reasons.push("door-slab");
+  const d = subject.doorArch;
+  if (!d) return [...new Set(reasons)];
+  if (d.slab === true || d.hole === false || d.cssOutline === true) reasons.push("door-slab");
+  if (d.reveal === false) reasons.push("door-reveal");
+  if (d.floorContact === false || d.massesOnFloor === false) reasons.push("door-floor");
+  if (d.pathFork === false || d.pathPixels === false) reasons.push("door-path");
+  if (typeof d.pathH === "number" && Number.isFinite(d.pathH) && (d.pathH < PATH_H_MIN || d.pathH > PATH_H_MAX)) {
+    reasons.push("door-path");
+  }
+  if (d.foliageClear === false) reasons.push("door-path");
+  if (d.hueL && d.hueL !== "teal") reasons.push("door-hue");
+  if (d.hueR && d.hueR !== "gold") reasons.push("door-hue");
+  if (d.overlayOnly === true) reasons.push("door-overlay");
+  if (d.reach === false) reasons.push("door-reach");
+  if (d.band && d.band !== "upper-mid" && (isSpawnBreathAct(subject) || subject.pose === "spawn")) {
+    reasons.push("door-spawn-band");
+  }
+  if (playActOf(subject) === "walk" && (d.walkSill === "cross" || d.walkSill === "through")) {
+    reasons.push("door-sill");
+  }
+  return [...new Set(reasons)];
+}
+
+export function lintLight(subject: SmokeSubject): string[] {
+  const reasons: string[] = [];
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && LIGHT_BAN.test(rest)) reasons.push("light-beauty");
+  const L = subject.light;
+  if (!L) return [...new Set(reasons)];
+  if (L.faceBrightest === true || L.eyeGlint === true) reasons.push("light-face");
+  if (L.pawStable === false) reasons.push("light-paw");
+  if (L.forkBrighter === false) reasons.push("light-fork");
+  if (L.beauty === true) reasons.push("light-beauty");
+  if (L.fog === "thick") reasons.push("light-fog");
+  if (L.missStrobe === true) reasons.push("light-miss");
+  if (L.doorHuesMid === false) reasons.push("light-hue");
+  if (L.smash === true) reasons.push("light-smash");
+  return [...new Set(reasons)];
+}
+
+function rigJump(a?: number, b?: number): boolean {
+  if (typeof a !== "number" || typeof b !== "number" || !Number.isFinite(a) || !Number.isFinite(b)) return false;
+  return Math.abs(a - b) > RIG_JUMP;
+}
+
+export function lintRig(subject: SmokeSubject): string[] {
+  const r = subject.rig;
+  const sib = r?.sibling;
+  if (!r || !sib) return [];
+  if (
+    rigJump(r.doorPairW, sib.doorPairW) ||
+    rigJump(r.pawsY, sib.pawsY) ||
+    rigJump(r.withersY, sib.withersY) ||
+    rigJump(r.midPillarX, sib.midPillarX)
+  ) {
+    return ["rig-jump"];
+  }
+  return [];
+}
+
+export function lintGrade(subject: SmokeSubject): string[] {
+  const reasons: string[] = [];
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && GRADE_BAN.test(rest)) reasons.push("grade-lut");
+  const g = subject.grade;
+  if (!g) return [...new Set(reasons)];
+  if (g.hueL && g.hueL !== "teal") reasons.push("grade-hue");
+  if (g.hueR && g.hueR !== "gold") reasons.push("grade-hue");
+  if (g.withersWhite === false) reasons.push("grade-withers");
+  if (typeof g.dE === "number" && Number.isFinite(g.dE) && g.dE < GRADE_DE_MIN) reasons.push("grade-de");
+  if (g.duotone === true) reasons.push("grade-duotone");
+  if (g.lut === true) reasons.push("grade-lut");
+  if (g.missMono === true || g.missRed === true) reasons.push("grade-miss");
+  if (g.breathStable === false) reasons.push("grade-drift");
+  return [...new Set(reasons)];
+}
+
+function burnedBlob(subject: SmokeSubject): string {
+  const bits: string[] = [];
+  if (typeof subject.burnedText === "string") bits.push(subject.burnedText);
+  if (Array.isArray(subject.burnedText)) bits.push(...subject.burnedText.map((s) => String(s)));
+  if (Array.isArray(subject.labels)) bits.push(...subject.labels.map((s) => String(s)));
+  if (subject.encodeText) bits.push(String(subject.encodeText));
+  bits.push(withoutRails(String(subject.prompt || "")));
+  return bits.join(" ");
+}
+
 function lintChrome(subject: SmokeSubject): string[] {
   const reasons: string[] = [];
   if (subject.chrome === true) reasons.push("chrome");
   const rest = withoutRails(String(subject.prompt || ""));
   if (rest && CHROME_BAN.test(rest)) reasons.push("chrome-prompt");
+  const act = playActOf(subject);
+  if (act && (subject.burnedText === true || PLAY_BURN.test(burnedBlob(subject)))) {
+    reasons.push("chrome-burn");
+  }
   return reasons;
 }
 
@@ -341,11 +750,181 @@ function lintPath(subject: SmokeSubject): string[] {
   const forkSlot = subject.slots?.fork && subject.slots.fork !== "none";
   const claimsFork = forkCue || Boolean(forkSlot);
   if (claimsFork && subject.pathAhead === false) reasons.push("path-missing");
+  if (isSpawnBreathAct(subject) && subject.pathAhead === false) reasons.push("path-missing");
   if (subject.kind === "walk" && claimsFork) {
     const prompt = String(subject.prompt || "");
     if (prompt && !/gold-cyan|gold cyan/i.test(prompt)) reasons.push("path-gold-cyan");
   }
   return reasons;
+}
+
+function rowId(row: StillPairRow): string {
+  return String(row.id || "").trim();
+}
+
+function isWalkRow(row: StillPairRow): boolean {
+  return row.act === "walk" || /^walk-/i.test(rowId(row));
+}
+
+function isWalkSpawnRow(row: StillPairRow): boolean {
+  return /walk-spawn/i.test(rowId(row)) || (row.act === "walk" && (row.poseStart === "spawn" || /spawn/i.test(rowId(row))));
+}
+
+function walkDest(row: StillPairRow): "atA" | "atB" | "" {
+  if (row.poseEnd === "atA" || row.poseEnd === "atB") return row.poseEnd;
+  const id = rowId(row);
+  if (/walk-A-B|walk-spawn-B/i.test(id)) return "atB";
+  if (/walk-B-A|walk-spawn-A/i.test(id)) return "atA";
+  if (row.side === "B") return "atB";
+  if (row.side === "A") return "atA";
+  return "";
+}
+
+function findBreath(library: StillPairRow[], dest: "spawn" | "atA" | "atB"): StillPairRow | undefined {
+  return library.find((row) => {
+    const id = rowId(row);
+    if (dest === "spawn") return row.act === "breath" && (row.poseStart === "spawn" || /breath-spawn|idle-spawn/i.test(id));
+    if (dest === "atA") return row.act === "breath" && (row.poseStart === "atA" || /breath-A|breath-atA|idle-m1/i.test(id));
+    return row.act === "breath" && (row.poseStart === "atB" || /breath-B|breath-atB|idle-m2/i.test(id));
+  });
+}
+
+/** Library still-pair. Mismatch → FAIL. Authoring without fields → fail closed. */
+export function lintStillPair(library: StillPairRow[] = [], opts: { authoring?: boolean } = {}): string[] {
+  const rows = library.filter((row) => isWalkRow(row) || row.act === "breath" || /breath-|walk-/i.test(rowId(row)));
+  const hasStill = rows.some((row) => stillKey(row.stillStart) || stillKey(row.stillEnd));
+  if (!hasStill) {
+    if (opts.authoring && rows.length) return ["still-pair-required"];
+    return [];
+  }
+  const reasons: string[] = [];
+  const spawnBreath = findBreath(rows, "spawn");
+  for (const walk of rows.filter(isWalkRow)) {
+    if (isWalkSpawnRow(walk) && spawnBreath) {
+      if (!stillKey(walk.stillStart) || !stillKey(spawnBreath.stillStart)) reasons.push("still-pair-required");
+      else if (!stillApprox(walk.stillStart, spawnBreath.stillStart)) reasons.push("still-pair-spawn");
+    }
+    const dest = walkDest(walk);
+    const breath = dest ? findBreath(rows, dest) : undefined;
+    if (breath) {
+      if (!stillKey(walk.stillEnd) || !stillKey(breath.stillStart)) reasons.push("still-pair-required");
+      else if (!stillApprox(walk.stillEnd, breath.stillStart)) reasons.push("still-pair-dest");
+    }
+  }
+  return [...new Set(reasons)];
+}
+
+function lintStillPairSubject(subject: SmokeSubject): string[] {
+  const authoring = Boolean(subject.authoring || subject.when === "hang" || subject.when === "cook");
+  if (subject.library?.length) return lintStillPair(subject.library, { authoring });
+  const pair = subject.pair;
+  if (!pair) return [];
+  const reasons: string[] = [];
+  if (pair.walkEnd || pair.breathDestStart) {
+    if (!stillKey(pair.walkEnd) || !stillKey(pair.breathDestStart)) reasons.push("still-pair-required");
+    else if (!stillApprox(pair.walkEnd, pair.breathDestStart)) reasons.push("still-pair-dest");
+  }
+  if (pair.walkSpawnStart || pair.breathSpawnStart || pair.breathSpawnFrame0) {
+    const spawn0 = pair.breathSpawnStart || pair.breathSpawnFrame0;
+    if (!stillKey(pair.walkSpawnStart) || !stillKey(spawn0)) reasons.push("still-pair-required");
+    else if (!stillApprox(pair.walkSpawnStart, spawn0)) reasons.push("still-pair-spawn");
+  }
+  if (pair.walkEnd && pair.breathAtAFrame0 && !stillApprox(pair.walkEnd, pair.breathAtAFrame0)) {
+    reasons.push("still-pair-dest");
+  }
+  if (pair.walkEnd && pair.breathAtBFrame0 && !stillApprox(pair.walkEnd, pair.breathAtBFrame0)) {
+    reasons.push("still-pair-dest");
+  }
+  return reasons;
+}
+
+function relJump(a: number, b: number): number {
+  const base = Math.max(Math.abs(a), 1e-6);
+  return Math.abs(b - a) / base;
+}
+
+function lintTaille(subject: SmokeSubject): string[] {
+  const reasons: string[] = [];
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && TAILLE_BAN.test(rest)) reasons.push("taille-ban");
+  const t = subject.taille;
+  const pair = subject.pair;
+  const spawnH = t?.spawnH ?? (isSpawnBreathAct(subject) ? t?.bboxH : undefined);
+  const doorH = t?.doorH;
+  const withers = t?.withersH;
+  const stillEndH = t?.stillEndH ?? pair?.tailleStillEnd;
+  const stillStartH = t?.stillStartH ?? pair?.tailleStillStart;
+  if (t?.band === "tiny-cathedral" || t?.band === "upper" || t?.band === "mid" || t?.band === "full") {
+    reasons.push("taille-band");
+  }
+  if (typeof withers === "number" && Number.isFinite(withers)) {
+    if (Math.abs(withers - TAILLE_WITHERS) > TAILLE_WITHERS_SLACK) reasons.push("taille-withers");
+  }
+  if (typeof spawnH === "number" && Number.isFinite(spawnH)) {
+    if (spawnH < TAILLE_SPAWN_MIN || spawnH > TAILLE_SPAWN_MAX) reasons.push("taille-spawn");
+  }
+  if (typeof doorH === "number" && Number.isFinite(doorH)) {
+    if (
+      doorH < TAILLE_WALK_DOOR_MIN - 0.02 ||
+      doorH >= TAILLE_WALK_HERO - 0.02 ||
+      doorH > TAILLE_WALK_DOOR_MAX + 0.02
+    ) {
+      reasons.push("taille-walk");
+    }
+  }
+  if (typeof t?.bboxH === "number" && Number.isFinite(t.bboxH) && t.bboxH >= TAILLE_WALK_HERO - 0.02) {
+    reasons.push("taille-walk");
+  }
+  const samples = Array.isArray(t?.samples) ? t.samples.filter((n) => typeof n === "number" && Number.isFinite(n)) : [];
+  if (samples.length >= 2) {
+    for (let i = 1; i < samples.length; i++) {
+      if (relJump(samples[i - 1]!, samples[i]!) > TAILLE_JUMP) {
+        reasons.push("taille-breath");
+        break;
+      }
+    }
+  }
+  if (typeof stillEndH === "number" && typeof stillStartH === "number" && Number.isFinite(stillEndH) && Number.isFinite(stillStartH)) {
+    if (relJump(stillEndH, stillStartH) > TAILLE_JUMP) reasons.push("taille-pair");
+  }
+  const lens = String(t?.lens || "").trim();
+  const lastLens = String(t?.lastLens || "").trim();
+  const height = String(t?.height || "").trim();
+  const lastHeight = String(t?.lastHeight || "").trim();
+  const distance = String(t?.distance || "").trim();
+  const lastDistance = String(t?.lastDistance || "").trim();
+  if ((lens && lastLens && lens !== lastLens) || (height && lastHeight && height !== lastHeight) || (distance && lastDistance && distance !== lastDistance)) {
+    reasons.push("taille-lens");
+  }
+  return [...new Set(reasons)];
+}
+
+function lintVoidFrames(subject: SmokeSubject): string[] {
+  if (subject.emptySrc === true) return ["void-frame", "void-src"];
+  if (subject.holdStill === false) return ["void-frame", "void-hold"];
+  if (subject.blackTail === true) return ["void-frame", "void-tail"];
+  if (typeof subject.lumaTail === "number" && Number.isFinite(subject.lumaTail) && subject.lumaTail <= VOID_LUMA) {
+    return ["void-frame", "void-tail"];
+  }
+  if (subject.blackHole === true || subject.voidFrames === true) return ["void-frame"];
+  const rest = withoutRails(String(subject.prompt || ""));
+  if (rest && BLACK_HOLE_BAN.test(rest)) return ["void-frame"];
+  const frames = Array.isArray(subject.voidFrames) ? subject.voidFrames : [];
+  const dur = num(subject.duration);
+  for (const frame of frames) {
+    const t = num(frame.t);
+    const mid = dur > 0 ? t > 0.05 && t < dur - 0.05 : t > 0;
+    const dark = frame.luma == null || num(frame.luma) <= VOID_LUMA;
+    if (mid && dark) return ["void-frame"];
+  }
+  return [];
+}
+
+/** Hang / play library accept. FAIL closed when still fields are present or authoring. */
+export function acceptPlayLibrary(library: StillPairRow[], opts: { authoring?: boolean } = {}): SmokeGateOut {
+  const reasons = lintStillPair(library, { authoring: opts.authoring !== false });
+  if (reasons.length) return failSmoke(reasons);
+  return { smoke: "PASS", reasons: [], attach: attachSmokePass({ kind: "walk", clip: "library" }) };
 }
 
 function lintCues(subject: SmokeSubject): string[] {
@@ -417,10 +996,17 @@ const BATTERY: Array<(s: SmokeSubject) => string[]> = [
   lintCamera,
   lintBody,
   lintDoors,
+  lintDoorArch,
   lintChrome,
   lintPath,
   lintCues,
   lintContinuity,
+  lintStillPairSubject,
+  lintTaille,
+  lintLight,
+  lintGrade,
+  lintRig,
+  lintVoidFrames,
   lintPromptResidue,
 ];
 

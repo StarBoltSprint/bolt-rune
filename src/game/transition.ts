@@ -18,6 +18,10 @@
  * Prefetch arrival breath during walk (set breath-A src as soon as the walk tap commits).
  * prepare(url) tries pre.take(plateId) first — steal a ready preload buffer into B.
  * Breath ALWAYS loops. Dissolve cannot fix a bad encode. Asteroid HOLD. Picture-time only.
+ *
+ * BLACK HOLE ILLEGAL: on ended/gap immediately show stillEnd, prepare next, cut or ≤280ms dissolve.
+ * NEVER clear <video> to empty. NEVER pause opacity 0 with no still. NEVER video.src="" to reset.
+ * If next not ready: decay stock or freeze last frame. No spinner, no void.
  */
 
 import { actLoops, type CitadelPose, type PoseMode } from "./pcg-pose.ts";
@@ -97,12 +101,43 @@ export type DomTransitionPlayer = {
   showStill: (src: string) => void;
   hideStill: () => void;
   stillOnScreen: (src: string) => boolean;
+  incomingReady: () => boolean;
+  holdEnded: (still: string) => void;
   abort: () => void;
   signal: AbortSignal;
 };
 
 function text(v?: string | null) {
   return String(v || "").trim();
+}
+
+/** Never legal. Tests lock this. */
+export function mayClearVideoSrc(): false {
+  return false;
+}
+
+export function assignLiveSrc(el?: HTMLVideoElement | null, url?: string | null, loop?: boolean): boolean {
+  const src = text(url);
+  if (!el || !src) return false;
+  if (loop != null) el.loop = loop;
+  if ((el.getAttribute("src") || "").trim() !== src) el.src = src;
+  return true;
+}
+
+export function keepVideoSrc(prev?: string | null, next?: string | null): string {
+  return text(next) || text(prev);
+}
+
+export function incomingPainted(el?: HTMLVideoElement | null): boolean {
+  return Boolean(el && ((el.readyState ?? 0) >= 2 || (el.videoWidth || 0) > 8));
+}
+
+export function mayHideStill(incomingReady: boolean): boolean {
+  return incomingReady;
+}
+
+export function mayPauseHidden(stillOnScreen: boolean): boolean {
+  return stillOnScreen;
 }
 
 function stillEnd(plate?: TransitionPlate | null) {
@@ -341,7 +376,7 @@ export function createDomTransitionPlayer(els: DomTransitionEls): DomTransitionP
     el.loop = loop;
     el.style.willChange = "opacity";
     if (els.assignSrc) els.assignSrc(el, url, loop);
-    else if (el.getAttribute("src") !== url) el.src = url;
+    else assignLiveSrc(el, url, loop);
   };
 
   const player: DomTransitionPlayer = {
@@ -367,8 +402,16 @@ export function createDomTransitionPlayer(els: DomTransitionEls): DomTransitionP
       still.style.opacity = "1";
       still.style.willChange = "opacity";
     },
+    incomingReady() {
+      return incomingPainted(incoming);
+    },
+    holdEnded(src: string) {
+      if (src) player.showStill(src);
+      if (outgoing) outgoing.style.opacity = "1";
+    },
     hideStill() {
       if (!still) return;
+      if (!mayHideStill(incomingPainted(incoming))) return;
       still.style.opacity = "0";
     },
     async prepare(url: string, loop = false, plateId?: string) {
@@ -383,31 +426,36 @@ export function createDomTransitionPlayer(els: DomTransitionEls): DomTransitionP
       await waitCanPlay(incoming, ctl.signal);
     },
     prefetchArrival(url: string) {
-      if (!url) return;
-      const slot = incoming || outgoing;
-      if (!slot) return;
-      slot.loop = true;
-      arm(slot, url, true);
+      if (!url || !incoming) return;
+      incoming.loop = true;
+      arm(incoming, url, true);
     },
     commitIncoming() {
+      const ready = incomingPainted(incoming);
       if (incoming) {
         incoming.style.opacity = "1";
         incoming.style.pointerEvents = "auto";
         incoming.style.willChange = "opacity";
       }
       if (outgoing) {
-        outgoing.style.opacity = "0";
+        outgoing.style.opacity = ready ? "0" : "1";
         outgoing.style.pointerEvents = "none";
       }
-      els.onCommit?.();
-      const swap = outgoing;
-      outgoing = incoming;
-      incoming = swap;
+      if (ready) {
+        els.onCommit?.();
+        const swap = outgoing;
+        outgoing = incoming;
+        incoming = swap;
+      }
     },
     async fade(ms: number, signal?: AbortSignal) {
       const sig = signal || ctl.signal;
       const dur = dissolveDuration(ms);
       if (dur <= 0 || sig.aborted) return;
+      if (!incomingPainted(incoming)) {
+        if (outgoing) outgoing.style.opacity = "1";
+        return;
+      }
       if (outgoing) outgoing.style.willChange = "opacity";
       if (incoming) incoming.style.willChange = "opacity";
       await Promise.all([
@@ -447,24 +495,26 @@ async function runTransitionDom(player: DomTransitionPlayer, plan: TransitionPla
     opts.resetPlateTime?.();
     return plan;
   }
+  if (plan.fromStill) player.holdEnded(plan.fromStill);
   if (plan.kind === "decay" && !src) {
     opts.resetPlateTime?.();
     return plan;
   }
-  if (plan.fade && plan.fromStill && !player.stillOnScreen(plan.fromStill)) player.showStill(plan.fromStill);
   if (src) await player.prepare(src, loop, opts.plateId);
   if (sig.aborted) {
     opts.resetPlateTime?.();
     return plan;
   }
-  player.hideStill();
-  if (plan.fade) await player.fade(plan.ms, sig);
-  else if (plan.kind === "hold" || plan.kind === "decay") await player.hold(plan.ms, sig);
+  const ready = player.incomingReady();
+  if (ready) player.hideStill();
+  else if (plan.fromStill) player.holdEnded(plan.fromStill);
+  if (ready && plan.fade) await player.fade(plan.ms, sig);
+  else if (ready && (plan.kind === "hold" || plan.kind === "decay")) await player.hold(plan.ms, sig);
   if (sig.aborted) {
     opts.resetPlateTime?.();
     return plan;
   }
-  if (src) player.commitIncoming();
+  if (src && ready) player.commitIncoming();
   if (opts.prefetch) player.prefetchArrival(opts.prefetch);
   opts.resetPlateTime?.();
   if (plan.play && opts.play) await opts.play();

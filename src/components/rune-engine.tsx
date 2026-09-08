@@ -127,7 +127,8 @@ import {
   resolveEnterHotPath,
   reuseClipBeforeRecook,
 } from "@/game/pcg-rail";
-import { lintEnterClip, smokeForgeFrost } from "@/game/smoke-gate";
+import { lintEnterClip, recallSmokePass, smokeForgeFrost } from "@/game/smoke-gate";
+import { playDoorAt, playHitRects, playPaintsChrome, playPaintsDoorBox } from "@/game/play-chrome";
 import { isDeadEndPin, pinsForCitadel, rewriteOnEnter } from "@/game/pcg-grammar";
 import { placeHallChunks, resolveChunkEnter } from "@/game/pcg-chunk";
 import { BootScreen } from "@/components/citadel-hub";
@@ -150,6 +151,7 @@ import {
   isStockHallClip,
   keepHeldBreath,
   livingPlayFrame,
+  mayPlaySpawnBreath,
   mergeBankClips,
   packIdentityStill,
   playCoverStill,
@@ -183,6 +185,7 @@ import {
 } from "@/game/pcg-pose";
 import { applyEnterPassMomentum } from "@/game/pcg-play";
 import {
+  assignLiveSrc,
   createDomTransitionPlayer,
   planTransition,
   runTransition,
@@ -210,11 +213,7 @@ function armFilm(el: HTMLVideoElement, url: string, _loop = false) {
   el.loop = Boolean(_loop);
   const now = (el.getAttribute("src") || el.currentSrc || "").trim();
   if (now === src) return;
-  try {
-    el.src = src;
-  } catch {
-    /* */
-  }
+  assignLiveSrc(el, src);
 }
 
 function durableStill(u?: string | null) {
@@ -779,6 +778,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   const [forgeAutoOn, setForgeAutoOn] = useState(false);
   const [playFrameKind, setPlayFrameKind] = useState<PlayFrameKind | "">("");
   const [playWalksOn, setPlayWalksOn] = useState(false);
+  const [seatChrome, setSeatChrome] = useState(false);
   const hallStyleOnly = useRef(false);
   const [lookRes, setLookRes] = useState<"720" | "1080">("720");
   const lookResRef = useRef<"720" | "1080">("720");
@@ -1900,9 +1900,19 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       /* set breath-A src as soon as walk tap — hidden buffer decodes arrival while walk plays */
       armSlot(hid, url, true);
     }
+    const here = hereRef.current;
+    if (here && here !== dest) {
+      const cur = idleFor(here);
+      const curUrl =
+        (doorBreathPlayable(cur) ? cur!.url : "") ||
+        (here === "m1" || here === "A" ? shelf["breath-A"] : here === "m2" || here === "B" ? shelf["breath-B"] : shelf["breath-spawn"]) ||
+        "";
+      if (curUrl) warmUrl(curUrl);
+    }
   }
 
   function doorAt(nx: number, ny: number): string | null {
+    if (phaseRef.current === "play") return playDoorAt(nx, ny);
     return doorAtPoint(nx, ny, doorHitRef.current || STOCK_HITS, SPAWN);
   }
 
@@ -2010,7 +2020,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   function idleTrusted(clip?: { url: string; end: string } | null) {
     if (!clip?.url) return null;
     if (isBoltSilhouette(clip.url) || isBoltSilhouette(clip.end)) return null;
-    if (isHallFilm(clip.url) || isHallFilm(clip.end)) return clip;
+    if (isHallFilm(clip.url) || isHallFilm(clip.end)) {
+      return mayPlaySpawnBreath(clip, recallSmokePass(clip.url)) ? clip : null;
+    }
     if (isStockArt(clip.end) || isStockArt(clip.url)) return null;
     const hall = startHold.current || plateRef.current || "";
     if (hall && clip.end && isStockArt(clip.end)) return null;
@@ -2051,12 +2063,37 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     );
   }
 
+  function holdEndedPicture(still?: string | null) {
+    const hold =
+      walkLastFrameSeed(still, lastLive.current, lastPose.current, plateRef.current, coverHold.current) ||
+      lastLive.current ||
+      lastPose.current ||
+      plateRef.current ||
+      "";
+    if (hold && stickCover(hold)) {
+      setCoverFade(false);
+    } else {
+      const fallback = hallKeep.current || plateRef.current || HALL_FALLBACK;
+      setLockCover(fallback);
+      setCoverFade(false);
+      if (fallback) coverHold.current = fallback;
+    }
+    const vis = visFilm();
+    if (vis) {
+      vis.loop = false;
+      try {
+        vis.pause();
+      } catch {
+        /* */
+      }
+    }
+  }
+
   function stopFilm() {
     abortPlateFade();
     loadGen.current += 1;
     filmLoop.current = false;
-    setFilmOn(false);
-    setCoverFade(false);
+    holdEndedPicture();
     const vis = visFilm();
     if (vis) {
       vis.loop = false;
@@ -2222,7 +2259,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     notePaint(el);
     if (el !== visFilm()) return;
     if (!filmLoop.current) {
-      /* Walk ended — enterDoorBreath / holdIdle owns the picture. Never freeze still. */
+      /* Walk ended — IMMEDIATELY show stillEnd. Never black hole / empty src. */
+      holdEndedPicture(lastLive.current || lastPose.current || plateRef.current);
       return;
     }
     /* Breath lap: same clip / same pose. Never recook, arm, raise m, or advance WFC. */
@@ -2484,6 +2522,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   function livingNow(): LivingPlayFrame {
+    const spawn = bank.current.get("idle-spawn");
     return livingPlayFrame({
       bank: bank.current,
       hall: lookHall.current || refsMap.current.get("hall") || hallKeep.current,
@@ -2493,6 +2532,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       placed: refsMap.current.get("placed"),
       seed: refsMap.current.get("seed"),
       room: refsMap.current.get("room"),
+      smoke: spawn?.url ? recallSmokePass(spawn.url) : undefined,
     });
   }
 
@@ -2570,6 +2610,26 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       if ((hereRef.current === "m1" || hereRef.current === "m2") && hungDoorReady(hereRef.current)) {
         warmHungBiome(hereRef.current);
       }
+      return;
+    }
+    /* Missing next — IMMEDIATELY hold stillEnd; decay or freeze last frame. Never a void. */
+    holdEndedPicture(lastLive.current || plateRef.current || frame.still);
+    const decayUrl = poseShelf().decay;
+    if (decayUrl) {
+      const decayPlan = planTransition(
+        currentTransitionPlate(),
+        {
+          clip: decayUrl,
+          stillStart: lastLive.current || plateRef.current,
+          stillEnd: lastLive.current || plateRef.current,
+          pose: poseOfNode(hereRef.current),
+          act: "decay",
+        },
+        { decayUrl },
+      );
+      void runTransition(decayPlan, plateTransitionIO(() => {
+        kickPlay(decayUrl, true, true);
+      }));
       return;
     }
     setPlayFrameKind(frame.playFrame === "fail" ? "hall" : frame.playFrame || "breath");
@@ -6866,8 +6926,9 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           onDone={() => {
             /* stay on biome — Leave calls onExit */
           }}
+          onPaused={setSeatChrome}
         />
-        <DoorChatLine where="play" />
+        <DoorChatLine where="play" chrome={seatChrome} />
       </div>
     );
   }
@@ -7643,8 +7704,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           draggable={false}
           onError={(e) => {
             const cur = e.currentTarget.src;
-            if (isStockArt(cur) || cur.endsWith("empty")) return;
-            e.currentTarget.removeAttribute("src");
+            if (isStockArt(cur) || cur.includes("citadel-tour")) return;
+            e.currentTarget.src = HALL_FALLBACK;
           }}
           onLoad={() => {
             const el = canvas.current;
@@ -7707,7 +7768,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
             alt=""
             draggable={false}
             onError={(e) => {
-              e.currentTarget.removeAttribute("src");
+              if (e.currentTarget.getAttribute("src") === HALL_FALLBACK) return;
+              e.currentTarget.src = HALL_FALLBACK;
             }}
             className={`pointer-events-none absolute inset-0 z-[26] h-full w-full object-contain object-center ${coverFade && filmOn && (paintA || paintB) ? "opacity-0" : "opacity-100"}`}
           />
@@ -7880,9 +7942,56 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           Reset
         </button>
       ) : null}
-      {phase === "play" ? <DoorChatLine where="hall" box={picBox} /> : null}
+      <DoorChatLine where="hall" box={picBox} chrome={playPaintsChrome(phase)} />
       {phase === "play" ? (
-        <div className="pointer-events-none absolute inset-0 z-[80]" data-doors="1">
+        <div className="pointer-events-none absolute inset-0 z-[80]" data-doors="1" data-play-chrome="off" data-play-hit="video-layout">
+          {(() => {
+            const layerRect = layer.current?.getBoundingClientRect();
+            const box =
+              picBox ||
+              (layerRect
+                ? filmBox(layerRect, 9 / 16)
+                : typeof window !== "undefined"
+                  ? filmBox({ width: window.innerWidth, height: window.innerHeight, left: 0, top: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON() {} }, 9 / 16)
+                  : null);
+            if (!box) return null;
+            return playHitRects(box).map((hit) => (
+              <button
+                key={hit.door}
+                type="button"
+                aria-label={hit.door}
+                data-door={hit.door}
+                data-play-hit={hit.side}
+                className="pointer-events-auto absolute bg-transparent"
+                style={{
+                  left: hit.box.x,
+                  top: hit.box.y,
+                  width: hit.box.w,
+                  height: hit.box.h,
+                  border: "none",
+                  outline: "none",
+                  boxShadow: "none",
+                  background: "transparent",
+                  touchAction: "manipulation",
+                  WebkitTapHighlightColor: "transparent",
+                }}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  goTo(hit.door);
+                }}
+                onPointerUp={(e) => {
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+              />
+            ));
+          })()}
+        </div>
+      ) : playPaintsDoorBox(phase) ? (
+        <div className="pointer-events-none absolute inset-0 z-[80]" data-doors="forge">
           {(["m1", "m2"] as const).map((id) => {
             const hit = (doorHit || STOCK_HITS)[id];
             const glow = id === "m1" ? glowA : glowB;
@@ -7947,7 +8056,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         {status}
       </p>
       )}
-      {clipsUI.length && (phase === "forge" || phase === "play") ? (
+      {clipsUI.length && playPaintsChrome(phase) ? (
         <>
           {reelOn ? null : (
           <button
@@ -8105,7 +8214,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           ) : null}
         </>
       ) : null}
-      {phase === "forge" || phase === "play" ? (
+      {playPaintsChrome(phase) ? (
         <>
           {hallsOn ? null : (
             <button
@@ -8514,7 +8623,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           </div>
         </div>
       ) : null}
-      {refs.length > 0 ? (
+      {refs.length > 0 && playPaintsChrome(phase) ? (
         stripOn ? (
         <div
           className="absolute inset-x-0 bottom-0 z-50 overflow-visible"

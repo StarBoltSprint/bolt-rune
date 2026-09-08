@@ -25,6 +25,7 @@ import {
   swipeSideOf,
   videoLayoutRect,
   zoneOfX,
+  playSideHitRect,
 } from "./pcg-input.ts";
 import { fireGradeHaptic, hapticForGrade, hapticForSide, hapticPattern, mayHaptic } from "./pcg-haptics.ts";
 
@@ -59,6 +60,9 @@ describe("PCG input — video layout hit math", () => {
     assert.equal(zoneOfX(0.2), "A");
     assert.equal(zoneOfX(0.5), "center");
     assert.equal(zoneOfX(0.8), "B");
+    const band = playSideHitRect("A", videoLayoutRect(390, 844));
+    assert.ok(band.w > 0);
+    assert.ok(band.w < videoLayoutRect(390, 844).w * 0.45);
     assert.equal(zoneOfX(0.45, true), "A");
     assert.equal(zoneOfX(0.55, true), "B");
     assert.equal(inResonanceBar(0.5, 0.99), true);

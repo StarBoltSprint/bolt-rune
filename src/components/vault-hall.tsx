@@ -67,6 +67,7 @@ export function VaultHall() {
   const [hangCitadels, setHangCitadels] = useState<HangCitadelPick[]>([]);
   const [hangAsk, setHangAsk] = useState<{ a: HungArtifact; door: "A" | "B"; rooms: HangRoomPick[] } | null>(null);
   const [vaultAt, setVaultAt] = useState(0);
+  const [seatChrome, setSeatChrome] = useState(false);
   const lock = useRef(false);
   const abort = useRef(false);
   const hungRef = useRef(hung);
@@ -618,8 +619,9 @@ export function VaultHall() {
           onDone={() => {
             /* stay on biome — Leave calls onExit */
           }}
+          onPaused={setSeatChrome}
         />
-        <DoorChatLine where="play" />
+        <DoorChatLine where="play" chrome={seatChrome} />
       </div>
     );
   }

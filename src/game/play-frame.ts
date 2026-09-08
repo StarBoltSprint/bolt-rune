@@ -1,6 +1,6 @@
 import { playableClipSrc, sameClipSrc } from "./play-clip.ts";
 import { BOLT_BODY, TOUR_PLATE } from "./rune.ts";
-import { HALL_STILL, isHallFilm } from "./stock-room.ts";
+import { HALL_STILL, isHallFilm, isLivingHallLoop } from "./stock-room.ts";
 
 export type PlayClip = { url: string; end?: string; start?: string };
 export type PlayBank = Map<string, PlayClip> | Iterable<[string, PlayClip]> | Record<string, PlayClip>;
@@ -147,6 +147,27 @@ function clipUrl(v?: PlayClip | BankRow | null): string {
   return url;
 }
 
+const MOOD_PROFILE =
+  /\b(mood(?:[-_\s]?(?:loop|film))?|profile(?:-hero)?|face-on|side-profile|side[-_\s]?hero)\b/i;
+
+/** Hall mood / profile / face-on loops are Vault refs — not legal spawn without Smoke PASS. */
+export function looksMoodProfileSpawn(clip?: { url?: string | null; end?: string | null; start?: string | null } | null): boolean {
+  const url = String(clip?.url || "").trim();
+  if (!url) return false;
+  if (isHallFilm(url) || isLivingHallLoop(url)) return true;
+  const blob = `${url} ${clip?.end || ""} ${clip?.start || ""}`;
+  return MOOD_PROFILE.test(blob);
+}
+
+export function mayPlaySpawnBreath(
+  clip?: { url?: string | null; end?: string | null; start?: string | null } | null,
+  smoke?: { smoke?: string } | null,
+): boolean {
+  if (!clip?.url) return false;
+  if (!looksMoodProfileSpawn(clip)) return true;
+  return smoke?.smoke === "PASS";
+}
+
 /**
  * Living breath to loop at spawn / A / B after a walk (or on Load play).
  * Cooked idle-* for THIS node wins. Never returns the walk.
@@ -175,7 +196,7 @@ export function arrivalBreathUrl(
   if (node === "spawn") {
     for (const hit of [keyed, direct, any]) {
       const url = ok(hit);
-      if (url) return url;
+      if (url && mayPlaySpawnBreath(hit, null)) return url;
     }
   }
   return "";
@@ -318,7 +339,7 @@ export function holdBreathUrl(
   const atDoor = id === "m1" || id === "m2";
   const local =
     arrivalBreathUrl(bank, id, via, walk) || (doorBreathPlayable(idle, walk) ? clipUrl(idle) : "");
-  if (local) return local;
+  if (local && (id !== "spawn" || mayPlaySpawnBreath({ url: local }, null))) return local;
   if (atDoor) return "";
   const vis = (visUrl || "").trim();
   if (vis && isNodeArrivalBreath(bank, id, vis, walk)) return vis;
@@ -461,6 +482,7 @@ export function livingPlayFrame(input: {
   placed?: string | null;
   seed?: string | null;
   room?: string | null;
+  smoke?: { smoke?: string } | null;
 }): LivingPlayFrame {
   const still = playCoverStill(input);
   const walks = walkClips(input.bank);
@@ -474,7 +496,7 @@ export function livingPlayFrame(input: {
       playFrame: "fail",
     };
   }
-  const breath = breathClips(input.bank)[0];
+  const breath = breathClips(input.bank).find((row) => mayPlaySpawnBreath(row, input.smoke));
   if (breath) {
     return {
       kind: "breath",

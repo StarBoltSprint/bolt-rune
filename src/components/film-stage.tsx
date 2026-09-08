@@ -109,7 +109,7 @@ import {
   type DoorSide,
   type PoseState,
 } from "@/game/pcg-pose";
-import { createDomTransitionPlayer, planTransition, runTransition } from "@/game/transition";
+import { assignLiveSrc, createDomTransitionPlayer, keepVideoSrc, planTransition, runTransition } from "@/game/transition";
 import { createPreloadPool, syncPreload } from "@/game/preload";
 
 export type RunResult = {
@@ -148,6 +148,8 @@ type Props = {
   holdDoor?: "A" | "B";
   /** Bound living hall — title is Room N • Door A, never only the biome name. */
   holdHall?: number;
+  /** Pause / forge chrome (SEATS) — never over living play. */
+  onPaused?: (paused: boolean) => void;
 };
 
 type G = {
@@ -218,7 +220,7 @@ function liveSpot(beat: Beat, t: number): Spot {
   return { x: pr.x, y: pr.y };
 }
 
-export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit, onDone, onHallDoor, holdDoor, holdHall }: Props) {
+export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit, onDone, onHallDoor, holdDoor, holdHall, onPaused }: Props) {
   const film = custom ?? FILM_BY_ID[id];
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const aRef = useRef<HTMLVideoElement | null>(null);
@@ -310,6 +312,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     if (isClip(film.portrait)) return film.portrait;
     return "";
   });
+  const heldSrc = useRef(src);
   const [poster, setPoster] = useState(() => {
     const s = custom?.still || custom?.portraitStill || "";
     if (s.includes("citadel-tour")) return s;
@@ -357,19 +360,21 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
     el.defaultMuted = true;
     el.playsInline = true;
     el.preload = "auto";
-    const src = playableClipSrc(url) || url;
-    /* warmClip is HTTP cache only — always load() the visible stage plate. */
-    const changed = el.getAttribute("src") !== src;
-    if (changed) el.src = src;
+    const next = playableClipSrc(url) || url;
+    if (!next) return;
+    /* warmClip is HTTP cache only — always load() the visible stage plate. NEVER src="". */
+    const changed = el.getAttribute("src") !== next;
+    if (changed) assignLiveSrc(el, next);
+    heldSrc.current = keepVideoSrc(heldSrc.current, next);
     if (stagePlateMustLoad(changed, el.readyState)) {
       el.load();
       recoverAt.current = typeof performance !== "undefined" ? performance.now() : Date.now();
     }
-    prefetchStockAudio(src);
+    prefetchStockAudio(next);
     el.onerror = () => {
       if (holdDoorRef.current) {
         const fallback = stockBiomeLoop();
-        if (el.getAttribute("src") !== fallback && src !== fallback) {
+        if (el.getAttribute("src") !== fallback && next !== fallback) {
           el.setAttribute("data-url", fallback);
           el.src = fallback;
           el.loop = true;
@@ -529,6 +534,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       releasePictureAudio();
       void v?.play().catch(() => {});
       setHud((h) => ({ ...h, paused: false }));
+      onPaused?.(false);
       return;
     }
     playPausedRef.current = true;
@@ -541,6 +547,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
       /* */
     }
     setHud((h) => ({ ...h, paused: true, resonance: gRef.current.resonance }));
+    onPaused?.(true);
   }
 
   function pausePlay() {
@@ -1854,7 +1861,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
             }
           }}
           className="pointer-events-none absolute inset-0 h-full w-full object-contain"
-          src={lane === 0 && (isClip(src) || playableClipSrc(src)) ? playableClipSrc(src) || src : undefined}
+          src={keepVideoSrc(heldSrc.current, lane === 0 && (isClip(src) || playableClipSrc(src)) ? playableClipSrc(src) || src : heldSrc.current) || undefined}
           poster={poster || undefined}
           playsInline
           muted
@@ -1875,6 +1882,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           }}
           onEnded={() => {
             if (laneRef.current !== 0) return;
+            setUsingStill(true);
             if (holdDoorLoops(holdDoorRef.current)) {
               keepHoldLoop(aRef.current);
               return;
@@ -1935,6 +1943,7 @@ export function FilmStage({ id, original, echoSrc, custom, ramp = false, onExit,
           onStalled={() => recoverHoldPlate(bRef.current, "stalled")}
           onEnded={() => {
             if (laneRef.current !== 1) return;
+            setUsingStill(true);
             if (holdDoorLoops(holdDoorRef.current)) {
               keepHoldLoop(bRef.current);
               return;

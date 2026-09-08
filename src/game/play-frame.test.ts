@@ -16,6 +16,8 @@ import {
   filmTrayStillKeep,
   hallStillOf,
   holdBreathUrl,
+  looksMoodProfileSpawn,
+  mayPlaySpawnBreath,
   isBoltSilhouette,
   isHallPlayStill,
   isNodeArrivalBreath,
@@ -371,6 +373,7 @@ describe("A↔B last-frame seed chain", () => {
     assert.doesNotMatch(holdIdle, /atDoor \? "" :[\s\S]*\|\|\s*frame\.url \|\|\s*visSrc\(\) \|\|\s*""\s*\|\|/);
     assert.doesNotMatch(holdIdle, /freezeVis\(/);
     assert.doesNotMatch(holdIdle, /stickCover\(arrival\)/);
+    assert.match(holdIdle, /holdEndedPicture/);
     const playFilm = src.slice(src.indexOf("function playFilm("), src.indexOf("async function cookFilm"));
     assert.doesNotMatch(playFilm, /freezeVis\(/);
     assert.match(playFilm, /addEventListener\("ended"/);
@@ -512,7 +515,35 @@ describe("hold arrival breath — no idle-spawn / m1 / m2 teleport", () => {
     assert.equal(holdBreathUrl({ "idle-spawn": bank["idle-spawn"] }, "m1", "spawn", WALK), "");
     const stock = { url: HALL_LOOP, end: HALL_STILL };
     assert.equal(holdBreathUrl({ "idle-m1": stock, "idle-spawn": stock }, "m1", "spawn", WALK), "");
-    assert.equal(holdBreathUrl({ "idle-spawn": stock }, "spawn", "start", ""), HALL_LOOP);
+    assert.equal(mayPlaySpawnBreath(stock, null), false);
+    assert.equal(looksMoodProfileSpawn(stock), true);
+    assert.equal(holdBreathUrl({ "idle-spawn": stock }, "spawn", "start", ""), "");
+  });
+
+  it("profile mood loop is not legal spawn without Smoke PASS", () => {
+    const mood = { url: HALL_LOOP, end: HALL_STILL };
+    assert.equal(mayPlaySpawnBreath(mood, null), false);
+    assert.equal(mayPlaySpawnBreath(mood, { smoke: "FAIL" }), false);
+    assert.equal(mayPlaySpawnBreath(mood, { smoke: "PASS" }), true);
+    const frame = livingPlayFrame({
+      bank: {
+        "idle-spawn": mood,
+        "spawn→m1": { url: WALK, end: COOKED_HALL },
+      },
+      hall: HALL_STILL,
+    });
+    assert.notEqual(frame.playFrame, "breath");
+    assert.equal(frame.url, PLAY_WALK);
+    const passed = livingPlayFrame({
+      bank: {
+        "idle-spawn": mood,
+        "spawn→m1": { url: WALK, end: COOKED_HALL },
+      },
+      hall: HALL_STILL,
+      smoke: { smoke: "PASS" },
+    });
+    assert.equal(passed.playFrame, "breath");
+    assert.equal(passed.url, HALL_LOOP);
   });
 
   it("breathSeamSameClip rejects a prefetched walk or other idle", () => {
@@ -667,10 +698,10 @@ describe("picture never stops — Play / Load / forge-complete", () => {
     assert.match(src, /applyHall\(slice, false, "hydrate"\)/);
     assert.match(src, /start: b\.start/);
     assert.match(src, /setStripOn\(true\)/);
-    assert.match(src, /clipsUI\.length && \(phase === "forge" \|\| phase === "play"\)/);
-    assert.match(src, /phase === "forge" \|\| phase === "play" \? \(/);
-    assert.match(src, /\{refs\.length > 0 \? \(/);
-    assert.doesNotMatch(src, /refs\.length > 0 && phase !== "play"/);
+    assert.match(src, /clipsUI\.length && playPaintsChrome\(phase\)/);
+    assert.match(src, /playPaintsChrome\(phase\) \? \(/);
+    assert.match(src, /refs\.length > 0 && playPaintsChrome\(phase\)/);
+    assert.doesNotMatch(src, /clipsUI\.length && \(phase === "forge" \|\| phase === "play"\)/);
     const open = src.slice(src.indexOf("async function openSession"), src.indexOf("function wipeSession"));
     assert.match(open, /holdIdle\(\)/);
     assert.match(open, /if \(bank\.current\.size\) rememberSlice\(snapHall\(\)\)/);
