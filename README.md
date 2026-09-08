@@ -88,6 +88,20 @@ PCG chooses only: which chunk on A/B, `walkSecs` by phase, whether a bridge is n
 
 **Bridge stitch** — Imagine only when two chunks must touch and poses mismatch. Start last frame of A, end still of B, act `enter` | `walk-across`, 6–8s, rails locked. Enter is illegal without a bridge clip or a named stock pair. Cook on confirm / Forge / ticket only. Cache key `H(s, fromId, toId, act)` hooks rail 2 (`lookupEnterClip` / `replaceStockEnter`). No bridge → breath on door. Credits: stock walk 0, remix hang 0, first stitch 1 ticket, replay cache 0. Lint chunks with the prompt rails linter. Asteroid HOLD. No Pack seats expansion.
 
+## PCG play-loop / cue sheet
+
+The play loop is a rhythm game whose chart is the film. Grade taps on the cue sheet in picture-time — never `Date.now()`, never buttons on Bolt.
+
+A **plate** is `{ clip, duration (from file), cues[], stillStart, stillEnd }`. A **cue** is `{ side: A|B|none, on, off, kind: walk|enter-arm|breath }` with `on`/`off` in media seconds (`video.currentTime`).
+
+`gradeTap(t, cue, coyote)` → early / hit / late / miss. Optional ≤80ms pre-on is still a Hit. Coyote is 180–280ms after `off`, cut at the next cue `on`. Wrong side is a miss. One grade per cue. Enter-arm only after a walk Hit on that door. Decoder skip over a window is not a miss.
+
+Picture-time advances only while playing — not paused, hidden, or waiting on cook. On plate end: add time actually played. Phase / peak reuse `pictureTimeMs` / `mayPeak` from `pcg-rail`. Grades feed online WFC `applyTapObserve` (miss bans peak; idle bans peak+fork; empty domain → decay stock, never a spinner).
+
+Resonance is the bottom crystal: fill is momentum `m` only, never when-to-tap. Howl = breath act $0. Recall = last committed still of the node (not undo Keep enter). Pause freezes picture-time, CA, WFC, and prefetch.
+
+Smoke glow helper fails unreadable sheets (`on≥off`, `off>duration`, window `<0.35s`). Human Smoke stays visual. Asteroid HOLD. No Pack seats.
+
 ## Hall seats (SmiR pack)
 
 SmiR's own film-team bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Door, Smoke, Cook, Continuity. Not a side chat, not Connect Wallet, not freebots.lol, not a permanent bottom row. Asteroid HOLD.
