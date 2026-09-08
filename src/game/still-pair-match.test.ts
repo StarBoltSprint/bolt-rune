@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  NCC_SCALES,
   SMIR_STILL_PAIR_MATCH,
   STILL_PAIR_CLIP,
   edgeKindOf,
@@ -84,7 +85,7 @@ function hallStill(opts: HallOpts = {}): PixelBuf {
       const dw = w * (opts.dogW ?? 0.2);
       const dh = h * (opts.dogH ?? 0.26);
       const x0 = cx - dw / 2;
-      const y0 = h * 0.92 - dh;
+      const y0 = h * 0.94 - dh;
       fillRect(set, x0, y0, x0 + dw, y0 + dh, 238, 238, 242);
       if (opts.wash === "teal") {
         fillRect(set, x0 + dw * 0.2, y0, x0 + dw * 0.8, y0 + dh * 0.3, 20, 170, 180);
@@ -106,6 +107,7 @@ describe("SmiR still-pair matcher — cheap rig + back-silhouette", () => {
     assert.ok(got.measures?.backA);
     assert.ok(got.measures?.backB);
     assert.ok((got.measures?.hallSsim || 0) > 0.85);
+    assert.ok(Math.abs((got.measures?.nccScale ?? 0) - 1) <= 0.05);
     for (const line of SMIR_STILL_PAIR_MATCH) {
       assert.match(line, /rig \+ back-silhouette|not skeletal dog/i);
     }
@@ -164,6 +166,28 @@ describe("SmiR still-pair matcher — cheap rig + back-silhouette", () => {
     assert.ok(profileEnter.why.includes("spawn-profile") || profileEnter.why.includes("not-back"));
   });
 
+  it("multi-scale NCC: breath prefers ~1.0; size jump FAIL taille; walk dest still drifts", () => {
+    assert.deepEqual([...NCC_SCALES], [0.9, 1.0, 1.1]);
+    const spawn = hallStill({ dogX: 0.5, dogH: 0.26 });
+    const tight = matchPose(spawn, hallStill({ dogX: 0.5, dogH: 0.26 }), "breath");
+    assert.equal(tight.ok, true, tight.why.join(","));
+    assert.ok(Math.abs((tight.measures?.nccScale ?? 0) - 1) <= 0.05);
+
+    const big = matchPose(spawn, hallStill({ dogX: 0.5, dogH: 0.36 }), "breath");
+    assert.equal(big.ok, false);
+    assert.ok(big.why.includes("taille-pair"), big.why.join(","));
+    assert.ok(Math.abs((big.measures?.nccScale ?? 1) - 1) > 0.05, `nccScale=${big.measures?.nccScale}`);
+
+    const small = matchPose(spawn, hallStill({ dogX: 0.5, dogH: 0.18 }), "breath");
+    assert.equal(small.ok, false);
+    assert.ok(small.why.includes("taille-pair"), small.why.join(","));
+    assert.ok(Math.abs((small.measures?.nccScale ?? 1) - 1) > 0.05, `nccScale=${small.measures?.nccScale}`);
+
+    const dest = matchPose(spawn, hallStill({ dogX: 0.36, dogH: 0.34 }), "walk-breath");
+    assert.equal(dest.ok, true, dest.why.join(","));
+    assert.ok((dest.measures?.dPlace || 0) > 0.08);
+  });
+
   it("does not live on the play thread; docs cite the one-liner", () => {
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     const match = readFileSync(join(here, "./still-pair-match.ts"), "utf8");
@@ -174,7 +198,8 @@ describe("SmiR still-pair matcher — cheap rig + back-silhouette", () => {
     const arts = readFileSync(join(here, "./artifacts.ts"), "utf8");
     assert.doesNotMatch(engine, /matchPose|still-pair-match/);
     assert.match(match, /match rig \+ back-silhouette, not skeletal dog/);
-    assert.doesNotMatch(match, /function opticalFlow|computeSMPL|autoFlipProfile|flipProfileToBack/);
+    assert.match(match, /NCC_SCALES = \[0\.9, 1\.0, 1\.1\]/);
+    assert.doesNotMatch(match, /function opticalFlow|computeSMPL|autoFlipProfile|flipProfileToBack|function sobel/i);
     assert.match(gate, /matchPose|lintStillPairPixels|stillPair/);
     assert.match(studio, /stillPair/);
     assert.match(arts, /stillPair/);

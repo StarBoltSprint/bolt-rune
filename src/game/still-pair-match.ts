@@ -5,6 +5,7 @@
  * Compares stillEnd(A) vs stillStart(B). Not artwork identity. No skeletal dog,
  * T-pose, SMPL, optical-flow-as-turn, face landmarks, or auto-flip profile→back.
  * Play must not call this per frame.
+ * NCC searches back-thumb scales {0.9, 1.0, 1.1} (spawn taille ~0.25 frame). No CLIP / warp.
  */
 
 /** Local copies — do not import smoke-gate (ingest cycle). */
@@ -20,7 +21,7 @@ export const SMIR_STILL_PAIR_MATCH = [
 export const STILL_PAIR_CLIP = false;
 
 export const HALL_FRAC = 0.55;
-export const DOG_BAND_Y0 = 0.62;
+export const DOG_BAND_Y0 = 0.58;
 export const TAILLE_DELTA = 0.08;
 export const TAILLE_DELTA_WALK = 0.12;
 export const YAW_DELTA_DEG = 25;
@@ -32,6 +33,11 @@ export const HALL_SSIM_HIGH = 0.7;
 export const HALL_SSIM_MED = 0.5;
 export const NCC_LOCK = 0.38;
 export const NCC_SIDE = 0.22;
+/** Back-thumb search scales. 1.0 = current mask height (spawn taille ~0.25 frame). */
+export const NCC_SCALES = [0.9, 1.0, 1.1] as const;
+export const SPAWN_TAILLE_EXPECT = 0.25;
+export const NCC_SCALE_TIGHT = 0.05;
+export const NCC_SCALE_WALK = 0.12;
 
 export type EdgeKind = "breath" | "breath-walk" | "walk-breath" | "enter" | "decay";
 
@@ -82,6 +88,7 @@ export type PoseMeasures = {
   dPlace: number;
   nccPeak: number;
   nccX: number;
+  nccScale: number;
   rigL1: number;
   withersLuma: number;
   withersSat: number;
@@ -110,6 +117,7 @@ export type EdgeTol = {
   taille: number;
   yaw: number;
   place: number;
+  scale: number;
   skipHall: boolean;
   skipRig: boolean;
 };
@@ -144,15 +152,15 @@ export function edgeKindOf(act?: string | null, from?: string | null): EdgeKind 
 
 export function edgeTol(edge: EdgeKind): EdgeTol {
   if (edge === "enter") {
-    return { hallSsim: 0, taille: TAILLE_DELTA_WALK, yaw: YAW_DELTA_DEG, place: PLACE_DELTA_ENTER, skipHall: true, skipRig: true };
+    return { hallSsim: 0, taille: TAILLE_DELTA_WALK, yaw: YAW_DELTA_DEG, place: PLACE_DELTA_ENTER, scale: NCC_SCALE_WALK, skipHall: true, skipRig: true };
   }
   if (edge === "walk-breath") {
-    return { hallSsim: HALL_SSIM_HIGH, taille: TAILLE_DELTA_WALK, yaw: YAW_DELTA_DEG, place: PLACE_DELTA_WALK, skipHall: false, skipRig: false };
+    return { hallSsim: HALL_SSIM_HIGH, taille: TAILLE_DELTA_WALK, yaw: YAW_DELTA_DEG, place: PLACE_DELTA_WALK, scale: NCC_SCALE_WALK, skipHall: false, skipRig: false };
   }
   if (edge === "decay") {
-    return { hallSsim: HALL_SSIM_MED, taille: TAILLE_DELTA, yaw: YAW_DELTA_DEG, place: PLACE_DELTA, skipHall: false, skipRig: false };
+    return { hallSsim: HALL_SSIM_MED, taille: TAILLE_DELTA, yaw: YAW_DELTA_DEG, place: PLACE_DELTA, scale: NCC_SCALE_TIGHT, skipHall: false, skipRig: false };
   }
-  return { hallSsim: HALL_SSIM_HIGH, taille: TAILLE_DELTA, yaw: YAW_DELTA_DEG, place: PLACE_DELTA, skipHall: false, skipRig: false };
+  return { hallSsim: HALL_SSIM_HIGH, taille: TAILLE_DELTA, yaw: YAW_DELTA_DEG, place: PLACE_DELTA, scale: NCC_SCALE_TIGHT, skipHall: false, skipRig: false };
 }
 
 export function stillPairOrUndef(
@@ -598,62 +606,129 @@ function withersSample(work: Work, mask: Mask): { luma: number; sat: number; tea
   return { luma: luma / n, sat: sat / n, teal: teal / n > 0.35, gold: gold / n > 0.35 };
 }
 
-function nccSearch(templ: Work, mask: Mask, ib: Work): { peak: number; x: number; y: number } {
-  const tw = Math.max(4, mask.x1 - mask.x0);
-  const th = Math.max(4, mask.y1 - mask.y0);
-  if (mask.count < 8) return { peak: 0, x: 0.5 * ib.w, y: 0.82 * ib.h };
-  const t: number[] = [];
-  let mt = 0;
-  for (let y = mask.y0; y < mask.y1; y++) {
-    for (let x = mask.x0; x < mask.x1; x++) {
-      const v = templ.gray[y * templ.w + x] || 0;
-      t.push(v);
-      mt += v;
+function thumbGray(work: Work, x0: number, y0: number, x1: number, y1: number): { g: Float64Array; w: number; h: number } {
+  const w = Math.max(1, x1 - x0);
+  const h = Math.max(1, y1 - y0);
+  const g = new Float64Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      g[y * w + x] = work.gray[(y0 + y) * work.w + (x0 + x)] || 0;
     }
   }
-  const tn = t.length;
-  mt /= tn;
+  return { g, w, h };
+}
+
+function nccMoments(g: Float64Array) {
+  const n = g.length || 1;
+  let mt = 0;
+  for (let i = 0; i < n; i++) mt += g[i] || 0;
+  mt /= n;
   let vt = 0;
-  for (const v of t) vt += (v - mt) * (v - mt);
-  vt = Math.sqrt(vt / tn) || 1e-6;
+  for (let i = 0; i < n; i++) {
+    const d = (g[i] || 0) - mt;
+    vt += d * d;
+  }
+  return { mt, vt: Math.sqrt(vt / n) || 1e-6, n };
+}
+
+function nccAt(thumb: Float64Array, tw: number, th: number, mt: number, vt: number, ib: Work, x: number, y: number): number {
+  const tn = tw * th;
+  let mi = 0;
+  const patch = new Float64Array(tn);
+  let i = 0;
+  for (let yy = 0; yy < th; yy++) {
+    const row = (y + yy) * ib.w + x;
+    for (let xx = 0; xx < tw; xx++, i++) {
+      const v = ib.gray[row + xx] || 0;
+      patch[i] = v;
+      mi += v;
+    }
+  }
+  mi /= tn;
+  let vi = 0;
+  let c = 0;
+  for (let k = 0; k < tn; k++) {
+    const dt = (thumb[k] || 0) - mt;
+    const di = (patch[k] || 0) - mi;
+    vi += di * di;
+    c += dt * di;
+  }
+  vi = Math.sqrt(vi / tn) || 1e-6;
+  return c / tn / (vt * vi);
+}
+
+function nccBetter(ncc: number, scale: number, best: { peak: number; scale: number }, prefer: number) {
+  if (ncc > best.peak + 0.04) return true;
+  if (ncc < best.peak - 0.04) return false;
+  const dNew = Math.abs(scale - prefer);
+  const dOld = Math.abs(best.scale - prefer);
+  if (dNew + 1e-6 < dOld) return true;
+  if (dNew > dOld + 1e-6) return false;
+  return Math.abs(scale - 1) < Math.abs(best.scale - 1);
+}
+
+/**
+ * Multi-scale NCC of the identity back-thumb over Ib's lower band.
+ * Scales {0.9, 1.0, 1.1} relative to current mask height (spawn ~0.25 frame).
+ * Align = global argmax (x*, y*, s*). No runtime warp.
+ */
+function nccSearch(
+  templ: Work,
+  mask: Mask,
+  ib: Work,
+  preferScale = 1,
+): { peak: number; x: number; y: number; scale: number } {
+  const pad = 2;
+  const x0 = Math.max(0, mask.x0 - pad);
+  const y0 = Math.max(0, mask.y0 - pad);
+  const x1 = Math.min(templ.w, mask.x1 + pad);
+  const y1 = Math.min(templ.h, mask.y1 + pad);
+  const tw0 = Math.max(4, x1 - x0);
+  const th0 = Math.max(4, y1 - y0);
+  const fallback = { peak: 0, x: 0.5 * ib.w, y: 0.82 * ib.h, scale: 1 };
+  if (mask.count < 8) return fallback;
+  const raw = thumbGray(templ, x0, y0, x0 + tw0, y0 + th0);
   const yBand0 = Math.floor(ib.h * DOG_BAND_Y0);
-  const maxX = ib.w - tw;
-  const maxY = ib.h - th;
-  let best = -2;
-  let bx = ib.w * 0.5;
-  let by = ib.h * 0.82;
-  if (maxX < 0 || maxY < yBand0) return { peak: 0, x: bx, y: by };
-  const step = tw > 18 || th > 28 ? 2 : 1;
-  for (let y = yBand0; y <= maxY; y += step) {
-    for (let x = 0; x <= maxX; x += step) {
-      let mi = 0;
-      const patch: number[] = [];
-      for (let yy = 0; yy < th; yy++) {
-        for (let xx = 0; xx < tw; xx++) {
-          const v = ib.gray[(y + yy) * ib.w + (x + xx)] || 0;
-          patch.push(v);
-          mi += v;
+  let best = { peak: -2, x: fallback.x, y: fallback.y, scale: 1 };
+  const perScale: Record<number, { peak: number; x: number; y: number }> = {};
+  for (const s of [1.0, 0.9, 1.1] as const) {
+    const tw = Math.max(4, Math.round(raw.w * s));
+    const th = Math.max(4, Math.round(raw.h * s));
+    const thumb = s === 1 && tw === raw.w && th === raw.h ? raw.g : resizeGray(raw.g, raw.w, raw.h, tw, th);
+    const { mt, vt } = nccMoments(thumb);
+    const maxX = ib.w - tw;
+    const maxY = ib.h - th;
+    if (maxX < 0 || maxY < yBand0) continue;
+    let local = { peak: -2, x: fallback.x, y: fallback.y };
+    for (let y = yBand0; y <= maxY; y += 1) {
+      for (let x = 0; x <= maxX; x += 1) {
+        const ncc = nccAt(thumb, tw, th, mt, vt, ib, x, y);
+        if (ncc > local.peak) local = { peak: ncc, x: x + tw / 2, y: y + th / 2 };
+        if (nccBetter(ncc, s, best, preferScale)) {
+          best = { peak: ncc, x: x + tw / 2, y: y + th / 2, scale: s };
         }
       }
-      mi /= tn;
-      let vi = 0;
-      let c = 0;
-      for (let i = 0; i < tn; i++) {
-        const dt = (t[i] || 0) - mt;
-        const di = (patch[i] || 0) - mi;
-        vi += di * di;
-        c += dt * di;
-      }
-      vi = Math.sqrt(vi / tn) || 1e-6;
-      const ncc = c / tn / (vt * vi);
-      if (ncc > best) {
-        best = ncc;
-        bx = x + tw / 2;
-        by = y + th / 2;
-      }
     }
+    perScale[s] = local;
   }
-  return { peak: best, x: bx, y: by };
+  if (best.peak < -1) return fallback;
+  const locked = (NCC_SCALES as readonly number[]).filter((s) => (perScale[s]?.peak ?? -2) >= NCC_LOCK);
+  const pool = locked.length ? locked : (NCC_SCALES as readonly number[]).filter((s) => perScale[s]);
+  if (pool.length) {
+    let pick = pool[0]!;
+    for (const s of pool) {
+      if (Math.abs(s - preferScale) + 1e-6 < Math.abs(pick - preferScale)) pick = s;
+    }
+    const at = perScale[pick];
+    if (at) best = { peak: Math.max(best.peak, at.peak), x: at.x, y: at.y, scale: pick };
+  }
+  return best;
+}
+
+function nccLegalSlot(nccX: number, edge: EdgeKind): boolean {
+  if (nccX < NCC_SIDE || nccX > 1 - NCC_SIDE) return false;
+  if (edge === "walk-breath" || edge === "enter") return true;
+  return Math.abs(nccX - 0.5) <= PLACE_DELTA_WALK;
 }
 
 function hallStats(a: Work, b: Work): { ssim: number; l2: number } {
@@ -709,8 +784,10 @@ export function matchPose(a: StillSource, b: StillSource, edge: EdgeKind, opts: 
   const rigB = surveyRig(wb, mb, opts.marksB);
   const dRig = rigL1(rigA, rigB);
   const hall = hallStats(wa, wb);
-  const ncc = dogA ? nccSearch(wa, ma, wb) : { peak: 0, x: wb.w * 0.5, y: wb.h * 0.82 };
+  const preferScale = dogA && dogB && tailleA > 1e-6 ? tailleB / tailleA : 1;
+  const ncc = dogA ? nccSearch(wa, ma, wb, preferScale) : { peak: 0, x: wb.w * 0.5, y: wb.h * 0.82, scale: 1 };
   const nccX = ncc.x / wb.w;
+  const nccScale = ncc.scale;
   const withA = withersSample(wa, ma);
   const withB = withersSample(wb, mb);
   const withersLuma = Math.min(withA.luma, withB.luma);
@@ -724,13 +801,19 @@ export function matchPose(a: StillSource, b: StillSource, edge: EdgeKind, opts: 
   }
   if (dYaw > tol.yaw) why.push("spawn-profile");
   if (dTaille > tol.taille) why.push("taille-pair");
+  if (Math.abs(nccScale - 1) > tol.scale) why.push("taille-pair");
   if (dPlace > tol.place) why.push("still-pair-dest");
   if (!tol.skipRig && dRig > Math.max(RIG_JUMP, 0.055)) why.push("rig-jump");
   if (!tol.skipHall && hall.ssim < tol.hallSsim) why.push("hall-drift");
 
-  const sidePeak = ncc.peak >= NCC_LOCK * 0.72 && (nccX < NCC_SIDE || nccX > 1 - NCC_SIDE);
-  if (dogA && ncc.peak < NCC_LOCK) why.push("no-dog");
-  if (sidePeak) why.push("spawn-profile");
+  const aligned = ncc.peak >= NCC_LOCK;
+  const legal = nccLegalSlot(nccX, edge);
+  const sidePeak = aligned && (nccX < NCC_SIDE || nccX > 1 - NCC_SIDE);
+  if (dogA && !aligned) why.push("no-dog");
+  if (aligned && !legal) {
+    if (sidePeak) why.push("spawn-profile");
+    else why.push("still-pair-dest");
+  }
 
   if (withersLuma <= VOID_LUMA * 2 && (dogA || dogB)) why.push("void-frame");
   if (withA.teal || withA.gold || withB.teal || withB.gold) why.push("grade-withers");
@@ -762,6 +845,7 @@ export function matchPose(a: StillSource, b: StillSource, edge: EdgeKind, opts: 
     dPlace,
     nccPeak: ncc.peak,
     nccX,
+    nccScale,
     rigL1: dRig,
     withersLuma,
     withersSat,

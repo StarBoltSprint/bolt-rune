@@ -171,7 +171,7 @@ Local lint always runs first (even if `SMOKE_WAKE_URL` is down): container (~9:1
 
 **SmiR lock-off RIG SURVEY** (`SMIR_RIG_LOCK` in `src/game/smoke-gate.ts`): SmiR lock-off RIG SURVEY: frame0 constants door-pair width/frame, paws Y, withers Y, mid-pillar X must match across breath/walk siblings.
 
-**SmiR still-pair matcher** (`SMIR_STILL_PAIR_MATCH` in `src/game/still-pair-match.ts`): SmiR still-pair: match rig + back-silhouette, not skeletal dog.
+**SmiR still-pair matcher** (`SMIR_STILL_PAIR_MATCH` in `src/game/still-pair-match.ts`): SmiR still-pair: match rig + back-silhouette, not skeletal dog. Ingest-only `matchPose` adds multi-scale NCC of the back-thumb at `{0.9, 1.0, 1.1}` (spawn taille ~0.25 frame); winning scale stays near 1.0 on breath, walk dest may drift. No Sobel, no CLIP unless flagged, no runtime warp.
 
 ## PCG audio bus
 
