@@ -1,0 +1,9 @@
+{
+  "seat": "continuity",
+  "role": "continuity",
+  "label": "Continuity",
+  "botId": "efba9930-f946-4caf-a7a7-b50580047c51",
+  "wakeEnv": "CONTINUITY_WAKE_URL",
+  "hop": "/api/door-chat",
+  "brief": "hold the cut"
+}

@@ -3,10 +3,15 @@ import {
   DOOR_CHAT_HOP,
   HALL_SEAT_IDS,
   HALL_SEATS,
+  PACK_SKILL,
+  DIRECTOR_FALLBACK,
+  emptySeatFlags,
   hopDoorChat,
+  isHallSeat,
   isHttpWakeUrl,
   publicRoster,
   readOwnerWakeUrl,
+  unwiredFrost,
   writeOwnerWakeUrl,
   type BoltSeatHook,
   type HallSeatId,
@@ -20,10 +25,20 @@ declare global {
   }
 }
 
-const HINT: Record<HallSeatId, string> = {
-  door: "say",
-  smoke: "walk / breath / biome",
-};
+function seatTone(id: HallSeatId) {
+  if (id === "door") return "text-[#9ef0e4]";
+  if (id === "cook") return "text-[#f4c4a0]";
+  if (id === "continuity") return "text-[#d8c6ff]";
+  return "text-[#f0d48a]";
+}
+
+function seatRing(id: HallSeatId, on: boolean) {
+  if (!on) return "border-white/20";
+  if (id === "door") return "border-[#9ef0e4]/70";
+  if (id === "cook") return "border-[#f4c4a0]/70";
+  if (id === "continuity") return "border-[#d8c6ff]/70";
+  return "border-[#f0d48a]/70";
+}
 
 export function DoorChatLine({
   where = "hall",
@@ -40,12 +55,13 @@ export function DoorChatLine({
   const [frost, setFrost] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
   const [serverWired, setServerWired] = useState<Partial<Record<HallSeatId, boolean>> | null>(null);
-  const [held, setHeld] = useState<Record<HallSeatId, boolean>>({ door: false, smoke: false });
+  const [held, setHeld] = useState<Record<HallSeatId, boolean>>(emptySeatFlags);
 
   useEffect(() => {
     const api: BoltSeatHook = {
       roster: publicRoster(),
-      wake: (seat, text) => hopDoorChat(seat, text, "director"),
+      pack: PACK_SKILL,
+      wake: (seat, text) => hopDoorChat(seat, text || HALL_SEATS[seat].brief, "director"),
     };
     window.__boltSeats = api;
     return () => {
@@ -55,10 +71,9 @@ export function DoorChatLine({
 
   useEffect(() => {
     if (!sheet) return;
-    setHeld({
-      door: Boolean(readOwnerWakeUrl("door")),
-      smoke: Boolean(readOwnerWakeUrl("smoke")),
-    });
+    const nextHeld = emptySeatFlags();
+    for (const id of HALL_SEAT_IDS) nextHeld[id] = Boolean(readOwnerWakeUrl(id));
+    setHeld(nextHeld);
     let dead = false;
     void fetch(DOOR_CHAT_HOP)
       .then((r) => r.json())
@@ -69,12 +84,12 @@ export function DoorChatLine({
         for (const row of seats) {
           if (!row || typeof row !== "object") continue;
           const id = (row as { id?: unknown }).id;
-          if (id === "door" || id === "smoke") next[id] = (row as { wired?: unknown }).wired === true;
+          if (isHallSeat(id)) next[id] = (row as { wired?: unknown }).wired === true;
         }
         setServerWired(next);
       })
       .catch(() => {
-        if (!dead) setServerWired({ door: false, smoke: false });
+        if (!dead) setServerWired(emptySeatFlags());
       });
     return () => {
       dead = true;
@@ -87,16 +102,16 @@ export function DoorChatLine({
     setFrost("");
   }
 
-  async function say(seat: HallSeatId, text: string) {
-    const line = text.trim();
+  async function say(seat: HallSeatId, text: string, source?: string) {
+    const line = text.trim() || HALL_SEATS[seat].brief;
     if (!line || busy) return;
     setBusy(true);
     setFrost("");
     setLines((cur) => [...cur.slice(-4), { seat, who: "you", text: line }]);
-    const got = await hopDoorChat(seat, line, where === "play" ? "play" : "hall");
+    const got = await hopDoorChat(seat, line, source || (where === "play" ? "play" : "hall"));
     setBusy(false);
     if (!got.ok) {
-      setFrost(got.error === "wake-unwired" ? `${HALL_SEATS[seat].label} · point wake URL` : got.error);
+      setFrost(got.error === "wake-unwired" ? unwiredFrost(seat) : got.error);
       return;
     }
     if (got.reply) setLines((cur) => [...cur.slice(-4), { seat, who: "seat", text: got.reply }]);
@@ -106,14 +121,13 @@ export function DoorChatLine({
     return serverWired?.[id] !== true;
   }
 
-  const pasteFor: HallSeatId | null =
-    open && seatNeedsPaste(open) ? open : !open && seatNeedsPaste("smoke") ? "smoke" : !open && seatNeedsPaste("door") ? "door" : null;
+  const pasteFor: HallSeatId | null = open && seatNeedsPaste(open) ? open : null;
 
   function holdPaste(id: HallSeatId, raw: string, clear = true) {
     const url = writeOwnerWakeUrl(id, raw);
     setHeld((cur) => ({ ...cur, [id]: Boolean(url) }));
     if (clear) setPaste("");
-    setFrost(url ? `${HALL_SEATS[id].label} · held` : `${HALL_SEATS[id].label} · https webhook`);
+    setFrost(url ? `${HALL_SEATS[id].label} · held` : `${HALL_SEATS[id].label} · optional https`);
     return url;
   }
 
@@ -128,6 +142,7 @@ export function DoorChatLine({
       data-seat-where={where}
       data-seat-sheet={sheet ? "open" : "closed"}
       data-seat-open={open || ""}
+      data-seat-pack={PACK_SKILL}
       style={{
         left: left != null ? left : "8%",
         width: width != null ? width : "84%",
@@ -217,7 +232,11 @@ export function DoorChatLine({
             <p className="pointer-events-none px-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[#f0d48a]" data-seat-frost="1">
               {frost}
             </p>
-          ) : null}
+          ) : (
+            <p className="pointer-events-none px-1 font-mono text-[10px] uppercase tracking-[0.14em] text-white/40" data-seat-director-hint="1">
+              tap seat · {HALL_SEATS.smoke.label} · {DIRECTOR_FALLBACK}
+            </p>
+          )}
           {pasteFor ? (
             <form
               className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/20 bg-black/50 px-3 py-1.5"
@@ -243,12 +262,12 @@ export function DoorChatLine({
                     setHeld((cur) => ({ ...cur, [pasteFor]: true }));
                   }
                 }}
-                placeholder="https webhook"
+                placeholder="optional https"
                 inputMode="url"
                 autoComplete="off"
                 autoCorrect="off"
                 spellCheck={false}
-                aria-label={`${HALL_SEATS[pasteFor].label} https webhook`}
+                aria-label={`${HALL_SEATS[pasteFor].label} optional https webhook`}
                 className="min-w-0 flex-1 bg-transparent font-mono text-[11px] tracking-[0.08em] text-white/85 outline-none placeholder:text-white/30"
               />
               <button
@@ -260,11 +279,9 @@ export function DoorChatLine({
               </button>
             </form>
           ) : null}
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-1.5" data-seat-roster="1">
             {HALL_SEAT_IDS.map((id) => {
               const on = open === id;
-              const tone = id === "door" ? "text-[#9ef0e4]" : "text-[#f0d48a]";
-              const ring = on ? (id === "door" ? "border-[#9ef0e4]/70" : "border-[#f0d48a]/70") : "border-white/20";
               return (
                 <button
                   key={id}
@@ -272,7 +289,7 @@ export function DoorChatLine({
                   data-seat={id}
                   data-seat-role={HALL_SEATS[id].role}
                   data-seat-bot={HALL_SEATS[id].botId}
-                  className={`pointer-events-auto flex h-9 items-center rounded-full border bg-black/45 px-3 font-mono text-[10px] uppercase tracking-[0.22em] ${tone} ${ring}`}
+                  className={`pointer-events-auto flex h-9 items-center rounded-full border bg-black/45 px-2.5 font-mono text-[10px] uppercase tracking-[0.18em] ${seatTone(id)} ${seatRing(id, on)}`}
                   style={{ touchAction: "manipulation" }}
                   onPointerDown={(e) => {
                     e.stopPropagation();
@@ -280,14 +297,35 @@ export function DoorChatLine({
                   onPointerUp={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
-                    setOpen(on ? null : id);
+                    const next = on ? null : id;
+                    setOpen(next);
                     setFrost("");
+                    if (next) void say(next, HALL_SEATS[next].brief, where === "play" ? "play" : "hall");
                   }}
                 >
                   {HALL_SEATS[id].label}
                 </button>
               );
             })}
+          </div>
+          <div className="flex items-center justify-center gap-2">
+            <button
+              type="button"
+              data-seat-director="1"
+              data-seat-director-target={open || "smoke"}
+              className="pointer-events-auto flex h-8 items-center rounded-full border border-white/20 bg-black/45 px-3 font-mono text-[10px] uppercase tracking-[0.18em] text-[#9ef0e4]"
+              style={{ touchAction: "manipulation" }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerUp={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const seat = open || "smoke";
+                setOpen(seat);
+                void say(seat, HALL_SEATS[seat].brief, "director");
+              }}
+            >
+              director
+            </button>
           </div>
           {open ? (
             <form
@@ -297,7 +335,7 @@ export function DoorChatLine({
               onPointerUp={(e) => e.stopPropagation()}
               onSubmit={(e) => {
                 e.preventDefault();
-                const text = draft;
+                const text = draft.trim() || HALL_SEATS[open].brief;
                 setDraft("");
                 void say(open, text);
               }}
@@ -305,7 +343,7 @@ export function DoorChatLine({
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                placeholder={HINT[open]}
+                placeholder={HALL_SEATS[open].brief}
                 maxLength={400}
                 autoComplete="off"
                 autoCorrect="off"
@@ -314,7 +352,7 @@ export function DoorChatLine({
               />
               <button
                 type="submit"
-                disabled={busy || !draft.trim()}
+                disabled={busy}
                 className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#9ef0e4] disabled:text-white/25"
                 style={{ touchAction: "manipulation" }}
               >

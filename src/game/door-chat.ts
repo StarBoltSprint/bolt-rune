@@ -1,12 +1,16 @@
-/** In-picture hall seats. One hop. Wake URLs stay server-side. */
+/** In-picture hall seats. One hop. Wake URLs stay server-side. SmiR pack only. */
 
 export const DOOR_CHAT_HOP = "/api/door-chat";
+export const PACK_SKILL = "/pack/skill.md";
+export const DIRECTOR_FALLBACK = "Exécution de test / Director SendToAgent";
 
 export const DOOR_BOT_ID = "002bcd41-29f7-4cf0-9eba-d67fad9fa3f6";
 export const SMOKE_BOT_ID = "0d69dbc8-a28a-4bb6-b53b-2d50d0329af9";
+export const COOK_BOT_ID = "2a8e88a2-3c88-41c3-b489-1c4a4a7c43d8";
+export const CONTINUITY_BOT_ID = "efba9930-f946-4caf-a7a7-b50580047c51";
 
-export type HallSeatId = "door" | "smoke";
-export type HallSeatRole = "say" | "gate";
+export type HallSeatId = "door" | "smoke" | "cook" | "continuity";
+export type HallSeatRole = "say" | "gate" | "cook" | "continuity";
 
 export type HallSeatSpec = {
   id: HallSeatId;
@@ -16,6 +20,7 @@ export type HallSeatSpec = {
   wakeEnv: string;
   botEnv: string;
   wakeFile: string;
+  brief: string;
 };
 
 export const HALL_SEATS: Record<HallSeatId, HallSeatSpec> = {
@@ -27,6 +32,7 @@ export const HALL_SEATS: Record<HallSeatId, HallSeatSpec> = {
     wakeEnv: "DOOR_WAKE_URL",
     botEnv: "DOOR_BOT_ID",
     wakeFile: "/seats/door.wake.json",
+    brief: "say",
   },
   smoke: {
     id: "smoke",
@@ -36,13 +42,38 @@ export const HALL_SEATS: Record<HallSeatId, HallSeatSpec> = {
     wakeEnv: "SMOKE_WAKE_URL",
     botEnv: "SMOKE_BOT_ID",
     wakeFile: "/seats/smoke.wake.json",
+    brief: "walk / breath / biome",
+  },
+  cook: {
+    id: "cook",
+    label: "Cook",
+    role: "cook",
+    botId: COOK_BOT_ID,
+    wakeEnv: "COOK_WAKE_URL",
+    botEnv: "COOK_BOT_ID",
+    wakeFile: "/seats/cook.wake.json",
+    brief: "hall stills · classic",
+  },
+  continuity: {
+    id: "continuity",
+    label: "Continuity",
+    role: "continuity",
+    botId: CONTINUITY_BOT_ID,
+    wakeEnv: "CONTINUITY_WAKE_URL",
+    botEnv: "CONTINUITY_BOT_ID",
+    wakeFile: "/seats/continuity.wake.json",
+    brief: "hold the cut",
   },
 };
 
 export const HALL_SEAT_IDS = Object.keys(HALL_SEATS) as HallSeatId[];
 
 export function isHallSeat(raw: unknown): raw is HallSeatId {
-  return raw === "door" || raw === "smoke";
+  return typeof raw === "string" && raw in HALL_SEATS;
+}
+
+export function emptySeatFlags(): Record<HallSeatId, boolean> {
+  return { door: false, smoke: false, cook: false, continuity: false };
 }
 
 export type PublicHallSeat = {
@@ -52,6 +83,7 @@ export type PublicHallSeat = {
   botId: string;
   hop: typeof DOOR_CHAT_HOP;
   wakeFile: string;
+  brief: string;
 };
 
 export function publicSeat(id: HallSeatId, botId = HALL_SEATS[id].botId): PublicHallSeat {
@@ -63,15 +95,22 @@ export function publicSeat(id: HallSeatId, botId = HALL_SEATS[id].botId): Public
     botId,
     hop: DOOR_CHAT_HOP,
     wakeFile: spec.wakeFile,
+    brief: spec.brief,
   };
 }
 
 export function publicRoster(botIds?: Partial<Record<HallSeatId, string>>): {
   hop: typeof DOOR_CHAT_HOP;
+  pack: typeof PACK_SKILL;
+  owner: "smir";
+  mesh: false;
   seats: PublicHallSeat[];
 } {
   return {
     hop: DOOR_CHAT_HOP,
+    pack: PACK_SKILL,
+    owner: "smir",
+    mesh: false,
     seats: HALL_SEAT_IDS.map((id) => publicSeat(id, botIds?.[id])),
   };
 }
@@ -252,9 +291,31 @@ export function readWakeReply(raw: unknown): string {
   return "";
 }
 
-export type DoorChatHopOk = { ok: true; seat: HallSeatId; wired: boolean; reply: string; status?: string };
-export type DoorChatHopErr = { ok: false; seat?: HallSeatId; error: string; wired?: boolean };
+export type DoorChatHopOk = {
+  ok: true;
+  seat: HallSeatId;
+  wired: boolean;
+  reply: string;
+  status?: string;
+  fallback?: string;
+};
+export type DoorChatHopErr = { ok: false; seat?: HallSeatId; error: string; wired?: boolean; fallback?: string };
 export type DoorChatHopResult = DoorChatHopOk | DoorChatHopErr;
+
+/** Unwired hop: do not demand a paste. Director SendToAgent is the zero-URL path. */
+export function unwiredDirectorFallback(seat: HallSeatId): DoorChatHopErr {
+  return {
+    ok: false,
+    seat,
+    error: "wake-unwired",
+    wired: false,
+    fallback: DIRECTOR_FALLBACK,
+  };
+}
+
+export function unwiredFrost(seat: HallSeatId): string {
+  return `${HALL_SEATS[seat].label} · ${DIRECTOR_FALLBACK}`;
+}
 
 export async function hopDoorChat(
   seat: HallSeatId,
@@ -276,7 +337,15 @@ export async function hopDoorChat(
     if (raw && typeof raw === "object") {
       const body = raw as DoorChatHopResult;
       if (body.ok === true && isHallSeat(body.seat)) return body;
-      if (body.ok === false) return { ok: false, seat, error: body.error || "hop", wired: body.wired };
+      if (body.ok === false) {
+        return {
+          ok: false,
+          seat,
+          error: body.error || "hop",
+          wired: body.wired,
+          fallback: body.fallback || (body.error === "wake-unwired" ? DIRECTOR_FALLBACK : undefined),
+        };
+      }
     }
     return { ok: false, seat, error: r.ok ? "empty-reply" : `hop-${r.status}` };
   } catch {
@@ -285,8 +354,9 @@ export async function hopDoorChat(
 }
 
 export type BoltSeatHook = {
-  wake: (seat: HallSeatId, text: string) => Promise<DoorChatHopResult>;
+  wake: (seat: HallSeatId, text?: string) => Promise<DoorChatHopResult>;
   roster: ReturnType<typeof publicRoster>;
+  pack: typeof PACK_SKILL;
 };
 
 export type WakeFile = {
@@ -296,6 +366,7 @@ export type WakeFile = {
   wakeEnv: string;
   hop: typeof DOOR_CHAT_HOP;
   label: string;
+  brief: string;
 };
 
 export function wakeFileOf(id: HallSeatId): WakeFile {
@@ -307,5 +378,6 @@ export function wakeFileOf(id: HallSeatId): WakeFile {
     wakeEnv: spec.wakeEnv,
     hop: DOOR_CHAT_HOP,
     label: spec.label,
+    brief: spec.brief,
   };
 }
