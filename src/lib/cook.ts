@@ -8,6 +8,7 @@ import { type BiomeId, ACTS } from "@/game/cook";
 import { playableClipSrc } from "@/game/play-clip";
 import { clipImaginePrompt, runeFilmVariants, runeStillJobs } from "@/game/imagine-payload";
 import { applyImagineAvoid, assembleCookPlate, fewShotRefs, isSprintGrammarPrompt, lintPrompt } from "@/game/pcg-prompt";
+import type { TapObserve } from "@/game/pcg-wfc";
 import { CAM_LOCK, citadelPrompt, dropTaintedBolt } from "@/game/rune";
 import { bindCookSlot, classifyImagineRaw, emptyCookSlot, freeCookSlot, releaseCookSlot, slotStatus, sweepStale, takeCookSlot, type CookSlot } from "@/lib/cook-slot";
 import { imagineVideoOverCap, readImaginePoll } from "@/lib/cook-progress";
@@ -254,9 +255,20 @@ export const startCookPlate = createServerFn({ method: "POST" })
     seed?: string;
     duration?: 6 | 10 | 15;
     res?: "720" | "1080";
+    runSeed?: string;
+    i?: number;
+    momentum?: number;
+    miss?: boolean;
+    idle?: boolean;
+    tapObserve?: TapObserve;
+    taps?: TapObserve[];
+    pictureTime?: number;
+    pictureTimes?: number[];
   }) => input)
   .handler(async ({ data }): Promise<StartOk | StartErr> => {
-    const act = ACTS[Math.max(0, Math.min(ACTS.length - 1, data.act | 0))];
+    const actI = Math.max(0, Math.min(ACTS.length - 1, data.act | 0));
+    const act = ACTS[actI];
+    const cellI = Number.isFinite(Number(data.i)) ? Math.max(0, data.i | 0) : actI;
     const cooked = assembleCookPlate({
       biome: data.biome,
       playerVoice: data.prompt || data.world,
@@ -265,10 +277,22 @@ export const startCookPlate = createServerFn({ method: "POST" })
       still: data.stillUrl || data.still,
       destStill: data.destStill,
       seed: data.seed,
+      runSeed: data.runSeed,
+      i: cellI,
+      momentum: data.momentum,
+      miss: data.miss,
+      idle: data.idle,
+      tapObserve: data.tapObserve,
+      taps: data.taps,
+      pictureTime: data.pictureTime,
+      pictureTimes: data.pictureTimes,
     });
     const lint = cooked.lint.ok ? lintPrompt(cooked.prompt, cooked.slots) : cooked.lint;
     if (!lint.ok) {
       return { ok: false, error: "lint-stock", reason: lint.issue, stock: cooked.stock.clip };
+    }
+    if (cooked.wfc?.stock) {
+      return { ok: false, error: "lint-stock", reason: "wfc-stock", stock: cooked.stock.clip };
     }
     const headers = auth();
     if (!headers) return { ok: false, error: "echo-off" };
