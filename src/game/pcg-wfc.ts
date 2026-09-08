@@ -1,5 +1,5 @@
 /**
- * PCG role-WFC — 1D time-strip of plate-roles (not a 2D map, not STWFC T×Y×X).
+ * PCG role-WFC — 1D time-strip of plate-roles (not a 2D map, not a spacetime volume).
  * Neighbors are TIME, not floor tiles. Each cell is one plate in the ~60s bone.
  * Collapsed roles unlock prompt slots only — never free-text Imagine.
  * Online + tap-as-observe: miss/idle can kill a peak already in the future domain.
@@ -10,6 +10,7 @@
 import { pcgHash } from "./pcg-rail.ts";
 import { RELIC_MOMENTUM_TAU } from "./pcg-grammar.ts";
 import type { ActSlot, FloorSlot, ForkSlot, TrailSlot } from "./pcg-prompt.ts";
+import { fillCookSlots } from "./pcg-density.ts";
 
 export const PLATE_ROLES = [
   "calm",
@@ -499,12 +500,23 @@ export function propagateTrail(wave: TrailWave, start = 0): { wave: TrailWave; c
   return { wave: next, contradiction: false };
 }
 
-function observeTrail(wave: TrailWave, s: string): { wave: TrailWave; cell: number; trail: TrailSlot | null } {
+function observeTrail(
+  wave: TrailWave,
+  s: string,
+  cook: { momentum: number; miss: boolean; idle: boolean; plateSecs: number },
+): { wave: TrailWave; cell: number; trail: TrailSlot | null } {
   const i = pickObserveCell(wave.domains, wave.collapsed);
   if (i < 0) return { wave, cell: -1, trail: null };
   const domain = wave.domains[i]!;
-  const u = hash01(s, i, wave.observeN);
-  const trail = domain[Math.min(domain.length - 1, Math.floor(u * domain.length))]!;
+  const filled = fillCookSlots({
+    m: cook.momentum,
+    runSeed: s,
+    pictureTimeMs: cellTime(i, cook.plateSecs) * 1000,
+    miss: cook.miss,
+    idle: cook.idle,
+    legalTrail: domain,
+  });
+  const trail = filled.trail;
   const next = cloneTrail(wave);
   next.collapsed[i] = trail;
   next.domains[i] = [trail];
@@ -524,7 +536,12 @@ function forceTrailThin(wave: TrailWave): TrailSlot[] {
   return out;
 }
 
-function collapseTrails(roles: PlateRole[], s: string, observeN: number): { trails: TrailSlot[]; observeN: number; stock: boolean } {
+function collapseTrails(
+  roles: PlateRole[],
+  s: string,
+  observeN: number,
+  cook: { momentum: number; miss: boolean; idle: boolean; plateSecs: number },
+): { trails: TrailSlot[]; observeN: number; stock: boolean } {
   let wave = initTrailWave(roles, observeN);
   const boot = propagateTrail(wave, 0);
   if (boot.contradiction) return { trails: forceTrailThin(wave), observeN: wave.observeN, stock: true };
@@ -532,7 +549,7 @@ function collapseTrails(roles: PlateRole[], s: string, observeN: number): { trai
   let steps = 0;
   while (wave.collapsed.some((c) => c == null)) {
     if (steps++ > MAX_STEPS) return { trails: forceTrailThin(wave), observeN: wave.observeN, stock: true };
-    const shot = observeTrail(wave, s);
+    const shot = observeTrail(wave, s, cook);
     if (shot.cell < 0 || !shot.trail) return { trails: forceTrailThin(shot.wave), observeN: shot.wave.observeN, stock: true };
     const prop = propagateTrail(shot.wave, shot.cell);
     if (prop.contradiction) return { trails: forceTrailThin(shot.wave), observeN: shot.wave.observeN, stock: true };
@@ -541,18 +558,30 @@ function collapseTrails(roles: PlateRole[], s: string, observeN: number): { trai
   return { trails: wave.collapsed as TrailSlot[], observeN: wave.observeN, stock: false };
 }
 
-function sampleFloor(role: PlateRole, s: string, i: number, observe: number): FloorSlot {
+function sampleFloor(role: PlateRole, s: string, i: number, plateSecs: number, cook: { momentum: number; miss: boolean; idle: boolean }): FloorSlot {
   const opts = roleFloors(role);
   if (opts.length === 1) return opts[0]!;
-  const u = hash01(s, i, observe);
-  return opts[Math.min(opts.length - 1, Math.floor(u * opts.length))]!;
+  return fillCookSlots({
+    m: cook.momentum,
+    runSeed: s,
+    pictureTimeMs: cellTime(i, plateSecs) * 1000,
+    miss: cook.miss,
+    idle: cook.idle,
+    legalFloor: opts,
+  }).floor;
 }
 
-function sampleFork(role: PlateRole, s: string, i: number, observe: number): ForkSlot {
+function sampleFork(role: PlateRole, s: string, i: number, plateSecs: number, cook: { momentum: number; miss: boolean; idle: boolean }): ForkSlot {
   const opts = roleForks(role);
   if (opts.length === 1) return opts[0]!;
-  const u = hash01(s, i, observe);
-  return opts[Math.min(opts.length - 1, Math.floor(u * opts.length))]!;
+  return fillCookSlots({
+    m: cook.momentum,
+    runSeed: s,
+    pictureTimeMs: cellTime(i, plateSecs) * 1000,
+    miss: cook.miss,
+    idle: cook.idle,
+    legalFork: opts,
+  }).fork;
 }
 
 function relicSlot(role: PlateRole, s: string, i: number, momentum: number): boolean {
@@ -568,12 +597,18 @@ export function collapseStrip(opts: CollapseOpts): WfcStrip {
   const plateSecs = roles.wave.plateSecs;
   const n = roles.wave.n;
   const list = roles.wave.collapsed.map((r) => r || "decay");
-  const trails = collapseTrails(list, s, roles.wave.observeN);
+  const cook = {
+    momentum: roles.wave.momentum,
+    miss: roles.wave.miss,
+    idle: roles.wave.idle,
+    plateSecs,
+  };
+  const trails = collapseTrails(list, s, roles.wave.observeN, cook);
   let observeN = trails.observeN;
   const cells: WfcCell[] = list.map((role, i) => {
-    const fork = sampleFork(role, s, i, observeN);
+    const fork = sampleFork(role, s, i, plateSecs, cook);
     observeN += 1;
-    const floor = sampleFloor(role, s, i, observeN);
+    const floor = sampleFloor(role, s, i, plateSecs, cook);
     observeN += 1;
     return {
       i,
@@ -668,20 +703,32 @@ function rescueLive(wave: RoleWave, i: number): { wave: RoleWave; stock: boolean
   return { wave, stock: true };
 }
 
-function sampleTrail(role: PlateRole, prev: TrailSlot | null, s: string, i: number, observeN: number): TrailSlot {
+function sampleTrail(
+  role: PlateRole,
+  prev: TrailSlot | null,
+  s: string,
+  i: number,
+  wave: RoleWave,
+): TrailSlot {
   const opts = roleTrails(role);
   const legal = prev ? trailAfter(prev, role).filter((tr) => opts.includes(tr)) : opts;
   const bag = legal.length ? legal : opts;
   if (bag.length === 1) return bag[0]!;
-  const u = hash01(s, i, observeN);
-  return bag[Math.min(bag.length - 1, Math.floor(u * bag.length))]!;
+  return fillCookSlots({
+    m: wave.momentum,
+    runSeed: s,
+    pictureTimeMs: cellTime(i, wave.plateSecs) * 1000,
+    miss: wave.miss,
+    idle: wave.idle,
+    legalTrail: bag,
+  }).trail;
 }
 
 function materializeCell(wave: RoleWave, s: string, i: number, observeN: number, prev: WfcCell | null): WfcCell {
   const role = wave.collapsed[i] || wave.domains[i]![0] || "decay";
-  const fork = sampleFork(role, s, i, observeN);
-  const floor = sampleFloor(role, s, i, observeN + 1);
-  const trail = sampleTrail(role, prev?.trail ?? null, s, i, observeN + 2);
+  const fork = sampleFork(role, s, i, wave.plateSecs, wave);
+  const floor = sampleFloor(role, s, i, wave.plateSecs, wave);
+  const trail = sampleTrail(role, prev?.trail ?? null, s, i, wave);
   return {
     i,
     t: cellTime(i, wave.plateSecs),
