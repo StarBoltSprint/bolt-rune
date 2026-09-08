@@ -700,7 +700,7 @@ export function CookStudio({
       let landed = false;
       let failLine = "";
       for (let pass = 0; pass < 4 && !landed; pass++) {
-        let started: { ok: true; requestId: string } | { ok: false; error: string } | null = null;
+        let started: { ok: true; requestId: string } | { ok: false; error: string; stock?: string } | null = null;
         let sizeAtStart = false;
         for (let tryN = 0; tryN < 10; tryN++) {
           try {
@@ -713,6 +713,7 @@ export function CookStudio({
                 prevUrl: got[got.length - 1],
                 world: worldLine,
                 stillUrl: stillUrl && !stillUrl.includes("/films/cook-") ? stillUrl : undefined,
+                seed: plateKey,
                 duration: spec.secs,
                 res: spec.res,
               },
@@ -721,6 +722,27 @@ export function CookStudio({
             started = { ok: false, error: err instanceof Error ? err.message : "net" };
           }
           if (started.ok) break;
+          if (!started.ok && started.error === "lint-stock") {
+            const playable = biomeReadySrc([started.stock || stockBiomeLoop(cookBiome)], cookBiome);
+            got.push(playable);
+            mark(0, { status: "ready", url: playable });
+            hangNow(got);
+            watchI.current = 0;
+            setWatch(playable);
+            pace.n = 100;
+            setPct(100);
+            setFrameHint("");
+            setFrost("MP4 ready · touch the path to enter");
+            writeCookReady({
+              biome: cookBiome,
+              urls: got,
+              watch: playable,
+              still: stillUrl || still,
+              frost: "MP4 ready · touch the path to enter",
+            });
+            landed = true;
+            break;
+          }
           if (started.error === "echo-off") {
             setPct(0);
             setFrameHint("");
@@ -753,6 +775,7 @@ export function CookStudio({
           bump(Math.max(18, pace.n), 32, clipRetryFrost(next));
           return true;
         }
+        if (landed) break;
         if (sizeAtStart) {
           if (stepDownSize()) continue;
           mark(0, { status: "fail" });
