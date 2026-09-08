@@ -28,6 +28,10 @@ New citadel / Play mint a run seed `s` and Keep persists it with the citadel. Pl
 
 Door glow in the picture: **walk-ready** (tap to walk) vs **enter-ready** (second, faster pulse) only when `s_enter` is a cache hit or a stock bridge exists for that from→to pair. No enter-ready pulse → double-tap stays idle/breath and never calls Imagine. Double-tap / enter plays the cached clip or stock only. Graph commits Hall′ only after that clip exists (PASS). Paid enter cook is an explicit Forge / ticket confirm — never walk-toward-door. Stock enter mp4s are not shipped; `registerStockBridge` is the library hook (play stock or refuse, never spin). Asteroid HOLD. No Pack seats expansion.
 
+## PCG rail 3
+
+Citadel is a graph, not a map. A grammar grows **pins** from run seed `s` + momentum; `compileCitadel` still realizes the walks. Hall → Door A + Door B (never one gate). Room —enter→ Hall′ only after a rail-2 clip, and the biome tag may change only on that enter. Dead-end → breath/idle, no rewrite. Legendary relic pin only when momentum ≥ τ — an extra pin, not a third front door. Manual Hang / Load pins win. Asteroid HOLD. No unpaid Imagine. No Pack seats expansion.
+
 ## Hall seats (SmiR pack)
 
 SmiR's own film-team bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Door, Smoke, Cook, Continuity. Not a side chat, not Connect Wallet, not freebots.lol, not a permanent bottom row. Asteroid HOLD.

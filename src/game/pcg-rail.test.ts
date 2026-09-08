@@ -33,6 +33,22 @@ import {
   reuseClipBeforeRecook,
   stockBridge,
 } from "./pcg-rail.ts";
+import {
+  deadEndHold,
+  growPins,
+  hallDoorPins,
+  illegalReasons,
+  isDeadEndPin,
+  isFrontDoorPin,
+  isLegalPins,
+  isRelicPin,
+  legendaryRelicPin,
+  pinsForCitadel,
+  realizeCitadel,
+  RELIC_MOMENTUM_TAU,
+  rewriteOnEnter,
+} from "./pcg-grammar.ts";
+import { compileCitadel } from "./rune.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -313,5 +329,178 @@ describe("PCG rail 2 — double-tap never Imagines when unwired / uncached", () 
     assert.deepEqual(asteroid, [7.0, 12.3, 16.3, 21.6, 25.6, 30.9, 34.9, 40.2, 44.2, 49.5, 53.5]);
     const seats = readFileSync(join(here, "../components/door-chat-line.tsx"), "utf8");
     assert.doesNotMatch(seats, /registerStockBridge|enter-ready|pcg-rail/);
+  });
+});
+
+describe("PCG rail 3 — graph grammar pins", () => {
+  it("Hall → Door A + Door B — never one gate; same s is stable", () => {
+    const s = "sgrammarhall01";
+    const a = hallDoorPins(s, 1);
+    const b = growPins(s, 0, 1);
+    assert.equal(a.length, 2);
+    assert.equal(b.length, 2);
+    assert.deepEqual(a.map((p) => p.id), ["m1", "m2"]);
+    assert.equal(a[0]?.kind, "door-a");
+    assert.equal(a[1]?.kind, "door-b");
+    assert.equal(a[0]?.morph, false);
+    assert.equal(a[1]?.morph, false);
+    assert.ok(a[0]!.x < 0.34 && a[1]!.x > 0.66);
+    assert.deepEqual(growPins(s, 0, 1), b);
+    assert.equal(isLegalPins(b, { momentum: 0 }), true);
+    assert.deepEqual(illegalReasons([{ id: "m1", name: "teal door", x: 0.22, y: 0.48 }], { momentum: 0 }), ["one-gate"]);
+  });
+
+  it("legendary relic pin only when momentum ≥ τ — extra pin, not a third front door", () => {
+    const s = "srelicgate01";
+    assert.ok(RELIC_MOMENTUM_TAU > 0);
+    assert.equal(legendaryRelicPin(s, 0, 0), null);
+    assert.equal(legendaryRelicPin(s, 0, RELIC_MOMENTUM_TAU - 0.01), null);
+    assert.equal(growPins(s, 0, 2).some(isRelicPin), false);
+    assert.equal(growPins(s, 0.3, 2).some(isRelicPin), false);
+    const low = growPins(s, RELIC_MOMENTUM_TAU - 0.2, 2);
+    assert.equal(low.some(isRelicPin), false);
+    assert.equal(low.length, 2);
+    assert.ok(!illegalReasons(low, { momentum: 0 }).includes("relic-without-momentum"));
+    const high = growPins(s, RELIC_MOMENTUM_TAU, 2);
+    const over = growPins(s, 1.4, 2);
+    assert.equal(high.some(isRelicPin), true);
+    assert.equal(over.some(isRelicPin), true);
+    assert.equal(high.length, 3);
+    const relic = high.find(isRelicPin)!;
+    assert.equal(relic.id, "relic");
+    assert.equal(relic.kind, "relic");
+    assert.equal(relic.morph, false);
+    assert.equal(isFrontDoorPin(relic), false);
+    assert.ok(relic.x > 0.38 && relic.x < 0.62);
+    assert.equal(high.some((p) => p.id === "m3"), false);
+    assert.equal(high.filter(isFrontDoorPin).length, 2);
+    assert.deepEqual(illegalReasons(high, { momentum: 0 }), ["relic-without-momentum"]);
+    assert.equal(isLegalPins(high, { momentum: RELIC_MOMENTUM_TAU }), true);
+    assert.deepEqual(growPins(s, 1, 2), growPins(s, 1, 2));
+    assert.notDeepEqual(growPins(s, 1, 2).find(isRelicPin), growPins("srelicgate99", 1, 2).find(isRelicPin));
+  });
+
+  it("Hang/Load pins win — grammar fills a missing door and never drops a hung A/B", () => {
+    const hung = [
+      { id: "m1", name: "hung A", x: 0.2, y: 0.5 },
+      { id: "m2", name: "hung B", x: 0.8, y: 0.5 },
+    ];
+    const kept = pinsForCitadel({ s: "shungkeep01", i: 1, momentum: 1, existing: hung, hung: true });
+    assert.equal(kept.find((p) => p.id === "m1")?.name, "hung A");
+    assert.equal(kept.find((p) => p.id === "m2")?.name, "hung B");
+    assert.equal(kept.find((p) => p.id === "m1")?.x, 0.2);
+    assert.equal(kept.find((p) => p.id === "m2")?.x, 0.8);
+    const relic = kept.find(isRelicPin);
+    assert.ok(relic, "high momentum may add relic without moving hung doors");
+    assert.equal(relic?.id, "relic");
+    const one = pinsForCitadel({
+      s: "sfilldoor01",
+      i: 1,
+      momentum: 0,
+      existing: [{ id: "m1", name: "only A", x: 0.21, y: 0.47 }],
+      hung: true,
+    });
+    assert.ok(one.some((p) => p.id === "m1"));
+    assert.ok(one.some((p) => p.id === "m2"));
+    assert.equal(one.filter(isFrontDoorPin).length, 2);
+    const fresh = pinsForCitadel({ s: "sfreshhall01", i: 3, momentum: 0 });
+    assert.deepEqual(fresh.map((p) => p.id), ["m1", "m2"]);
+  });
+
+  it("Room —enter→ Hall′ needs a clip; biome changes only on enter; dead-end does not rewrite", () => {
+    const bare = rewriteOnEnter({ entered: true, fromBiome: "forest", toBiome: "canyon" });
+    assert.equal(bare.act, "idle");
+    assert.equal(bare.rewrite, "hold");
+    assert.equal(bare.commit, "hold");
+    assert.equal(bare.imagine, false);
+    assert.equal(bare.biome, "forest");
+    const noEnter = rewriteOnEnter({
+      clip: "/films/enter-a.mp4",
+      entered: false,
+      fromBiome: "forest",
+      toBiome: "canyon",
+    });
+    assert.equal(noEnter.biome, "forest");
+    assert.equal(noEnter.rewrite, "hold");
+    assert.deepEqual(illegalReasons(growPins("sbiome01", 0), { biomeChanged: true, entered: false }), ["biome-without-enter"]);
+    assert.equal(isLegalPins(growPins("sbiome01", 0), { biomeChanged: true, entered: true }), true);
+    const pass = rewriteOnEnter({
+      clip: "/films/enter-a.mp4",
+      entered: true,
+      fromBiome: "forest",
+      toBiome: "canyon",
+    });
+    assert.equal(pass.act, "enter");
+    assert.equal(pass.rewrite, "rewrite");
+    assert.equal(pass.commit, "pass");
+    assert.equal(pass.biome, "canyon");
+    assert.equal(pass.imagine, false);
+    const dead = rewriteOnEnter({
+      clip: "/films/enter-a.mp4",
+      entered: true,
+      deadEnd: true,
+      fromBiome: "forest",
+      toBiome: "canyon",
+    });
+    assert.deepEqual(dead, deadEndHold("forest"));
+    assert.equal(dead.act, "idle");
+    assert.equal(dead.rewrite, "hold");
+    assert.equal(isDeadEndPin("relic"), true);
+    assert.equal(isDeadEndPin("spawn"), true);
+    assert.equal(isDeadEndPin("m1"), false);
+    assert.equal(mayImagine("walk-toward-door"), false);
+    assert.equal(mayImagine("speculate"), false);
+  });
+
+  it("compileCitadel still realizes walks — no morph nodes", () => {
+    const s = "srealize01";
+    const pins = growPins(s, 1, 0);
+    const graph = realizeCitadel("/films/citadel-tour.jpg", pins, 10);
+    const raw = compileCitadel("/films/citadel-tour.jpg", pins, 10);
+    assert.equal(graph.walks.length, raw.walks.length);
+    assert.ok(graph.nodes.some((n) => n.id === "spawn"));
+    assert.ok(graph.nodes.some((n) => n.id === "m1"));
+    assert.ok(graph.nodes.some((n) => n.id === "m2"));
+    assert.ok(graph.nodes.some((n) => n.id === "relic"));
+    assert.ok(graph.walks.every((w) => w.morph === false));
+    assert.ok(graph.idles.every((c) => c.morph === false));
+    assert.ok(graph.laws.includes("always two doors, never one gate"));
+    assert.ok(graph.walks.some((w) => w.from === "m1" && w.to === "m2"));
+    assert.equal(isLegalPins(pins, { momentum: 1 }), true);
+    assert.ok(illegalReasons([{ id: "m1", name: "x", x: 0.2, y: 0.5, morph: true } as never], { momentum: 0 }).includes("morph-nodes"));
+  });
+
+  it("engine Hang/Load + enter still use grammar pins and rail-2 clip before Hall′", () => {
+    const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    const goEnter = engine.slice(engine.indexOf("async function goEnter"), engine.indexOf("function enterNext"));
+    const applyHall = engine.slice(engine.indexOf("function applyHall"), engine.indexOf("async function switchHall"));
+    const living = engine.slice(engine.indexOf("function enterLivingRoom"), engine.indexOf("begin.current"));
+    assert.match(engine, /from "@\/game\/pcg-grammar"/);
+    assert.match(engine, /pinsForCitadel\(/);
+    assert.match(engine, /rewriteOnEnter\(/);
+    assert.match(engine, /compileCitadel\(/);
+    assert.match(goEnter, /commitHallPrime\(/);
+    assert.match(goEnter, /rewriteOnEnter\(/);
+    assert.match(goEnter, /lookupEnterClip\(/);
+    assert.doesNotMatch(goEnter, /cookFilm\(|startRuneFilm\(|forgeWalkNow\(/);
+    assert.match(applyHall, /pinsForCitadel\(/);
+    assert.match(applyHall, /hung: incomingPins\.length >= 2/);
+    assert.match(living, /pinsForCitadel\(/);
+    assert.match(engine, /hung: \(s\.pins\?\.length \|\| 0\) >= 2/);
+    assert.match(engine, /isDeadEndPin\(/);
+    const rail = readFileSync(join(here, "./pcg-rail.ts"), "utf8");
+    const grammar = readFileSync(join(here, "./pcg-grammar.ts"), "utf8");
+    assert.match(rail, /pcg-grammar/);
+    assert.match(grammar, /Asteroid HOLD/);
+    assert.match(grammar, /compileCitadel/);
+    assert.doesNotMatch(grammar, /prepareHoldBeats/);
+    assert.doesNotMatch(grammar, /mayImagine\("plate"\)|cookFilm\(/);
+    const asteroid = FILM_BY_ID.asteroid.beats.map((beat) => beat.at);
+    assert.deepEqual(asteroid, [7.0, 12.3, 16.3, 21.6, 25.6, 30.9, 34.9, 40.2, 44.2, 49.5, 53.5]);
+    const seats = readFileSync(join(here, "../components/door-chat-line.tsx"), "utf8");
+    assert.doesNotMatch(seats, /pcg-grammar|growPins|relic pin/);
+    const readme = readFileSync(join(here, "../../README.md"), "utf8");
+    assert.match(readme, /PCG rail 3/);
+    assert.match(readme, /graph, not a map/);
   });
 });
