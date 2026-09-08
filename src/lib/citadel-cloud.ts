@@ -3,6 +3,7 @@ import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { citadelRoomCount } from "@/game/rooms";
 import type { HallSlice, RiftGate, RuneSession, RuneSessionMeta } from "@/game/rune-session";
+import { isRunSeed, packClipCache } from "@/game/pcg-rail";
 
 type Row = {
   id: string;
@@ -34,6 +35,10 @@ function safeId(id: string) {
 
 function ownerKey(userId: string) {
   return String(userId || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+}
+
+function keepSeed(seed?: string) {
+  return isRunSeed(seed) ? seed : undefined;
 }
 
 function hallHints(halls?: HallSlice[]): RuneSessionMeta["hallHints"] {
@@ -251,6 +256,8 @@ function pack(session: RuneSession): { meta: RuneSessionMeta; body: string; sess
       return { ...(m1 ? { m1 } : {}), ...(m2 ? { m2 } : {}) };
     })(),
     halls: keepHalls(session.halls),
+    seed: keepSeed(session.seed),
+    clips: packClipCache(session.clips),
   };
   const body = JSON.stringify(light);
   return {

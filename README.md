@@ -20,6 +20,10 @@ Open `http://localhost:8080`.
 
 Stock sprint mp4s are not in this tree (too heavy). Stills, UI, and Imagine CDN clips are.
 
+## PCG rail 1
+
+New citadel / Play mint a run seed `s` and Keep persists it with the citadel. Plate clips key as `s_i = H(s, i, act, biome)`. Enter clips key as `s_enter = H(s, i, enter, from, to, door)`. The clip cache reuses those keys before any Imagine recook. Walk-toward-door speculation never calls Imagine. Asteroid HOLD.
+
 ## Hall seats (SmiR pack)
 
 SmiR's own film-team bots sit in a **top collapsible panel** on the Hang/play hall — closed until the small `seats` tab is tapped. Door, Smoke, Cook, Continuity. Not a side chat, not Connect Wallet, not freebots.lol, not a permanent bottom row. Asteroid HOLD.

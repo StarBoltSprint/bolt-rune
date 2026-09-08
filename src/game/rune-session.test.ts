@@ -11,6 +11,7 @@ describe("Load hydrate keeps cooked bank start", () => {
     const session = readFileSync(join(here, "./rune-session.ts"), "utf8");
     const cloud = readFileSync(join(here, "../lib/citadel-cloud.ts"), "utf8");
     const engine = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
+    assert.match(session, /packed\.seed \|\| kept\.seed/);
     assert.match(session, /export function packBankClips/);
     assert.match(session, /start \? \{ start \}/);
     assert.match(session, /preferHalls\(packed\.halls, kept\.halls\)/);
