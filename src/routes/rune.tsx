@@ -18,9 +18,9 @@ export const Route = createFileRoute("/rune")({
       art: typeof s.art === "string" && s.art ? s.art : undefined,
       do: s.do === "more" ? ("more" as const) : s.do === "room" ? ("room" as const) : s.do === "reset" ? ("reset" as const) : ("play" as const),
       stills:
-        s.stills === "1" || s.stills === 1 || s.stills === true
+        s.stills === "1" || s.stills === 1 || s.stills === true || s.stills === "true"
           ? true
-          : s.stills === "0" || s.stills === 0 || s.stills === false
+          : s.stills === "0" || s.stills === 0 || s.stills === false || s.stills === "false"
             ? false
             : undefined,
       rooms: roomsN >= 1 && roomsN <= 8 ? roomsN : undefined,

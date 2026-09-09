@@ -54,7 +54,7 @@ let RAM: HungArtifact[] = [];
 
 function keepArt(u?: string) {
   if (!u) return "";
-  if (u.startsWith("blob:") || (u.startsWith("data:video") && u.length < 12_000_000)) return u;
+  if (u.startsWith("hangblob:") || u.startsWith("blob:") || (u.startsWith("data:video") && u.length < 12_000_000)) return u;
   if (u.startsWith("http") || u.startsWith("/films/") || u.startsWith("/refs/") || u.startsWith("/ui/") || u.startsWith("/api/clip")) return u;
   if (u.startsWith("data:image/") && u.length < 900000) return u;
   return "";
@@ -170,7 +170,7 @@ export function localizeClip(u: string) {
 export function isClip(u?: string) {
   if (!u) return false;
   if (u.startsWith("data:image") || (/\.(jpe?g|png|webp|gif)(\?|$)/i.test(u) && !u.includes(".mp4"))) return false;
-  if (u.startsWith("blob:") || u.startsWith("data:video")) return true;
+  if (u.startsWith("hangblob:") || u.startsWith("blob:") || u.startsWith("data:video")) return true;
   if (/^https:\/\/(?:www\.)?grok\.com\/imagine\/post\//i.test(u)) return true;
   return /\.mp4(\?|$)/i.test(u) || u.includes("xai-vidgen") || u.startsWith("/api/clip") || u.includes("/films/clips/") || u.includes("/films/") || u.includes("/ui/");
 }

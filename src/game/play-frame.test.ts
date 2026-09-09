@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { BOLT_BODY, BOLT_FACE, TOUR_PLATE } from "./rune.ts";
 import { HALL_LOOP, HALL_STILL } from "./stock-room.ts";
 import { clipWarmSrc, playableClipSrc, sameClipSrc, warmClip, warmedClip } from "./play-clip.ts";
+import { rememberHangFile, resetHangBlobs } from "./hang-blob.ts";
 import {
   arrivalBreathUrl,
   arrivalEndStill,
@@ -16,6 +17,8 @@ import {
   filmTrayStillKeep,
   hallStillOf,
   holdBreathUrl,
+  hungHallPlayable,
+  isHungPlayUrl,
   looksMoodProfileSpawn,
   mayPlaySpawnBreath,
   isBoltSilhouette,
@@ -60,6 +63,14 @@ describe("play frame after cook", () => {
     assert.equal(sameClipSrc(WALK, BREATH), false);
     assert.equal(warmClip(""), null);
     assert.equal(warmedClip(WALK), null);
+    resetHangBlobs();
+    const blobUrl = "blob:http://localhost/hang-play-clip";
+    const key = rememberHangFile(blobUrl, new Blob(["mp4-bytes"], { type: "video/mp4" }));
+    assert.equal(playableClipSrc(key), blobUrl);
+    assert.equal(isHungPlayUrl(blobUrl), true);
+    assert.equal(isHungPlayUrl(key), true);
+    assert.equal(isHungPlayUrl(HALL_LOOP), false);
+    resetHangBlobs();
   });
 
   it("warmClip keeps one hidden preload=auto video and HTTP-caches /api/clip", async () => {
@@ -210,6 +221,31 @@ describe("play frame after cook", () => {
     assert.equal(isHallPlayStill(frame.still), true);
   });
 
+  it("hung breath-spawn alone loops in play — not Retry", () => {
+    const hung = "blob:http://localhost/breath-spawn";
+    const frame = livingPlayFrame({
+      bank: { "idle-spawn": { url: hung } },
+      hall: HALL_STILL,
+    });
+    assert.equal(frame.phase, "play");
+    assert.equal(frame.playFrame, "breath");
+    assert.equal(frame.url, hung);
+    assert.equal(hungHallPlayable({ "idle-spawn": { url: hung } }), true);
+    assert.equal(isHungPlayUrl(WALK), false);
+  });
+
+  it("hung walk alone plays the hall — not Retry", () => {
+    const hung = "blob:http://localhost/walk-a";
+    const frame = livingPlayFrame({
+      bank: { "spawn→m1": { url: hung } },
+      hall: HALL_STILL,
+    });
+    assert.equal(frame.phase, "play");
+    assert.equal(frame.playFrame, "walk");
+    assert.equal(frame.url, hung);
+    assert.equal(hungHallPlayable({ "spawn→m1": { url: hung } }), true);
+  });
+
   it("cook with only sealed refs / seed does not mark play done", () => {
     const frame = livingPlayFrame({
       bank: {},
@@ -260,6 +296,13 @@ describe("play frame after cook", () => {
     const src = readFileSync(join(here, "../components/rune-engine.tsx"), "utf8");
     assert.match(src, /livingPlayFrame\(/);
     assert.match(src, /packIdentityStill\(/);
+    const living = src.slice(src.indexOf("function enterLivingRoom"), src.indexOf("begin.current"));
+    assert.match(living, /await hydrateHungArtifacts/);
+    assert.match(living, /applyHungRefBank/);
+    assert.ok(living.indexOf("hydrateHungArtifacts") < living.indexOf("holdIdle()"));
+    assert.ok(living.indexOf("applyHungRefBank") < living.indexOf("holdIdle()"));
+    assert.match(src, /!cookHasWalks\(bank\.current\) && !hungHallPlayable/);
+    assert.match(src, /playFrame === "fail" && !hungHallPlayable/);
     assert.match(src, /data-play-frame=/);
     assert.match(src, /data-play-still=/);
     assert.match(src, /data-play-walks=/);

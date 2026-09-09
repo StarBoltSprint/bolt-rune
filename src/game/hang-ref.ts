@@ -6,6 +6,7 @@
 
 import type { HungArtifact, HungRoom } from "./artifacts.ts";
 import type { CitadelPose, PoseClipId, PoseClipShelf } from "./pcg-pose.ts";
+import { hangBlobSrc, isHangBlobKey } from "./hang-blob.ts";
 import { playableClipSrc } from "./play-clip.ts";
 type HangSmoke = { smoke?: string; reasons?: string[] } | null | undefined;
 
@@ -13,7 +14,7 @@ function firstHungUrl(art: Pick<HungArtifact, "playlist" | "still" | "room">): s
   for (const raw of [...(art.playlist || []), art.room?.trans, art.still]) {
     const u = String(raw || "").trim();
     if (!u) continue;
-    if (u.startsWith("blob:") || u.startsWith("data:video")) return u;
+    if (u.startsWith("hangblob:") || u.startsWith("blob:") || u.startsWith("data:video")) return u;
     const play = hangMediaSrc(u);
     if (play) return play;
     if (isImaginePostUrl(u)) return u;
@@ -159,7 +160,7 @@ export function slotsFromHung(arts: HungArtifact[] = [], hall = HANG_REF_GRAPH_H
     const art = hungOnRole(arts, role, hall, citadel);
     if (!art) continue;
     const url = firstHungUrl(art);
-    if (url) out[role] = url;
+    if (url) out[role] = hangMediaSrc(url) || url;
   }
   return out;
 }
@@ -295,7 +296,7 @@ export function isImaginePostUrl(raw?: string | null): boolean {
 export function isHangMediaUrl(raw?: string | null): boolean {
   const u = String(raw || "").trim();
   if (!u) return false;
-  if (u.startsWith("blob:") || u.startsWith("data:video")) return true;
+  if (u.startsWith("hangblob:") || u.startsWith("blob:") || u.startsWith("data:video")) return true;
   if (isImaginePostUrl(u)) return true;
   if (playableClipSrc(u)) return true;
   return IMAGINE_CLIP.test(u) || /\.mp4(\?|$)/i.test(u) || u.startsWith("/api/clip") || u.startsWith("/films/");
@@ -303,7 +304,7 @@ export function isHangMediaUrl(raw?: string | null): boolean {
 
 export function hangRefSourceOf(raw?: string | null): HangRefSource {
   const u = String(raw || "").trim();
-  if (u.startsWith("blob:") || u.startsWith("data:video")) return "file";
+  if (isHangBlobKey(u) || u.startsWith("blob:") || u.startsWith("data:video")) return "file";
   if (isImaginePostUrl(u)) return "imagine-post";
   if (IMAGINE_CLIP.test(u) || playableClipSrc(u)) return "imagine-clip";
   return "url";
@@ -313,6 +314,7 @@ export function hangRefSourceOf(raw?: string | null): HangRefSource {
 export function hangMediaSrc(raw?: string | null): string {
   const u = String(raw || "").trim();
   if (!u) return "";
+  if (isHangBlobKey(u)) return hangBlobSrc(u);
   if (u.startsWith("blob:") || u.startsWith("data:video")) return u;
   const play = playableClipSrc(u);
   if (play) return play;
@@ -393,7 +395,8 @@ export function hungRefsForHall(
   for (const role of HANG_REF_ALL) {
     const art = hungOnRole(arts, role, hall, citadel);
     if (!art) continue;
-    const url = hangMediaSrc(firstHungUrl(art));
+    const raw = firstHungUrl(art);
+    const url = hangMediaSrc(raw);
     if (!url) continue;
     out[role] = {
       role,

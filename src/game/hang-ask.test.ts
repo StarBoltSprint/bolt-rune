@@ -51,6 +51,7 @@ describe("hang still carousel", () => {
     assert.match(walkHangHallHref("cit-8", 4), /session=cit-8/);
     assert.match(walkHangHallHref("cit-8", 4), /hall=4/);
     assert.ok(!walkHangHallHref("cit-8", 4).includes("first="));
+    assert.match(walkHangHallHref(undefined, 1, 1), /first=m1/);
     assert.equal(walkHangHallHref("cit-8", 0), "");
     writeHangPending({ id: "art-1", citadel: "cit-2", hall: 3 });
     dropHangPending("cit-2", 3);
@@ -263,6 +264,7 @@ describe("hang ask leftover tap", () => {
     assert.match(vault, /citadels=\{hangCitadels\}/);
     assert.match(vault, /writeHangPending/);
     assert.match(vault, /walkHangHallHref/);
+    assert.match(vault, /walkHungHref\(live\.room/);
     assert.match(vault, /hangActEnters/);
     assert.match(vault, /hangDoorAct\(act\)/);
     assert.match(vault, /data-hang-bound/);

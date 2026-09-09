@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { dropClipAt, dropRoom, familiesOf, familyHead, filmOf, hangArtifact, hangOnRoom, lastClip, mergeHall, readArtifacts, setPlaylist, uniqueClips, type HungArtifact } from "@/game/artifacts";
+import { useRouter } from "@tanstack/react-router";
+import { dropClipAt, dropRoom, familiesOf, familyHead, filmOf, hangArtifact, hangOnRoom, lastClip, mergeHall, readArtifacts, replaceAll, setPlaylist, uniqueClips, type HungArtifact } from "@/game/artifacts";
 import { continuePrompt, cookFilm, readClipSpec, shiftPrompt, stockBiomeFilm, SHIFTS } from "@/game/cook";
 import { bindHungRoom, doorLetterOf, hangThumbStill, hungPlayChrome, vaultHangCaption, walkHangHallHref, walkHungHref } from "@/game/enter-graph";
 import {
@@ -40,6 +41,7 @@ import { FilmStage } from "@/components/film-stage";
 import { DoorChatLine } from "@/components/door-chat-line";
 import { sfxForge } from "@/game/audio";
 import { press } from "@/lib/press";
+import { hydrateHungArtifacts, persistAndRewriteHung, persistHangUrl, rememberHangFile } from "@/game/hang-blob";
 
 function readHangFloorPicks(): HangRoomPick[] {
   try {
@@ -74,6 +76,7 @@ function when(ms: number) {
 }
 
 export function VaultHall() {
+  const router = useRouter();
   const [hung, setHung] = useState<HungArtifact[]>([]);
   const [ready, setReady] = useState(false);
   const [play, setPlay] = useState<HungArtifact | null>(null);
@@ -116,6 +119,11 @@ export function VaultHall() {
     const local = readArtifacts();
     if (local.length) setHung(local);
     setReady(true);
+    void hydrateHungArtifacts(local).then(() => {
+      const live = readArtifacts();
+      if (live.length) setHung(live);
+      setRefSlots((prev) => ({ ...slotsFromHung(live, HANG_REF_GRAPH_HALL), ...prev }));
+    });
     void listHall()
       .then((hall) => {
         const next = mergeHall(hall || [], readArtifacts()).map((a) => ({
@@ -347,7 +355,10 @@ export function VaultHall() {
         /* */
       }
     }
-    setRefSlots((cur) => ({ ...cur, [role]: URL.createObjectURL(file) }));
+    const url = URL.createObjectURL(file);
+    rememberHangFile(url, file);
+    void persistHangUrl(url);
+    setRefSlots((cur) => ({ ...cur, [role]: url }));
     setRefFlag("9:16 preferred");
   }
 
@@ -380,7 +391,17 @@ export function VaultHall() {
     const href = walkHangHallHref(undefined, HANG_REF_GRAPH_HALL, 1);
     if (!href) return;
     sfxForge("enter");
-    window.location.assign(href);
+    void (async () => {
+      const arts = hungRef.current.length ? hungRef.current : readArtifacts();
+      const next = await persistAndRewriteHung(arts);
+      if (next !== arts) {
+        replaceAll(next);
+        hungRef.current = next;
+        setHung(next);
+      }
+      await hydrateHungArtifacts(next);
+      router.history.push(href);
+    })();
   }
 
   function askHangGraph(door: "A" | "B") {
@@ -495,6 +516,7 @@ export function VaultHall() {
     const bundle = hallGraphArt(arts);
     if (bundle) persistArt(bundle);
     setHung(arts);
+    hungRef.current = arts;
     hangHallRef.current = bindHall;
     setHangHallN(bindHall);
     setRefHung(true);
@@ -503,6 +525,12 @@ export function VaultHall() {
     if (blocked.length) setRefFlag(blocked[0]);
     setFrost(blocked.length ? `hall hung · ${blocked[0]}` : "hall hung · Play to walk");
     window.setTimeout(() => setFrost(""), 2400);
+    void persistAndRewriteHung(arts).then((next) => {
+      if (next === arts) return;
+      replaceAll(next);
+      hungRef.current = next;
+      setHung(next);
+    });
   }
 
   function playArt(a: HungArtifact) {

@@ -132,6 +132,7 @@ import { playDoorAt, playHitRects, playPaintsChrome, playPaintsDoorBox } from "@
 import { isDeadEndPin, pinsForCitadel, rewriteOnEnter } from "@/game/pcg-grammar";
 import { placeHallChunks, resolveChunkEnter } from "@/game/pcg-chunk";
 import { bankPatchesFromHung, overlayHungShelf } from "@/game/hang-ref";
+import { hydrateHungArtifacts } from "@/game/hang-blob";
 import { BootScreen } from "@/components/citadel-hub";
 import { HangAskSheet, HangCitadelStrip, HangRoomStrip } from "@/components/hang-ask";
 import { HANG_LEFTOVER_SWALLOW_MS, hangActEnters, hangBindHall, hangDoorAct, readHangPending, swallowOpeningTap, takeHangPending, writeHangPending } from "@/game/hang-ask";
@@ -144,6 +145,8 @@ import {
   arrivalEndStill,
   breathSeamSameClip,
   cookHasWalks,
+  hungHallPlayable,
+  isHungPlayUrl,
   doorArrivalNeedsCook,
   hallStillOf,
   holdBreathUrl,
@@ -1126,6 +1129,8 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }, []);
 
   function failStay(msg: string) {
+    applyHungRefBank();
+    if (hungHallPlayable(bank.current) || livingNow().phase === "play") return;
     setFrost(msg);
     setLoadPct(0);
     setBeat("idle");
@@ -1328,7 +1333,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         setPose(null);
         setBeat("idle");
         beatRef.current = "idle";
-        if (!cookHasWalks(bank.current)) {
+        if (!cookHasWalks(bank.current) && !hungHallPlayable(bank.current)) {
           setPhase("forge");
           phaseRef.current = "forge";
           setPlayFrameKind("fail");
@@ -1434,7 +1439,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
           plateShot.current = false;
           const first = forgeQueue(g)[0];
           if (first) startClip(first);
-          else if (!cookHasWalks(bank.current)) {
+          else if (!cookHasWalks(bank.current) && !hungHallPlayable(bank.current)) {
             setPhase("forge");
             phaseRef.current = "forge";
             setPlayFrameKind("fail");
@@ -1454,7 +1459,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         setNowClip(null);
         setBeat("idle");
         beatRef.current = "idle";
-        if (!cookHasWalks(bank.current)) {
+        if (!cookHasWalks(bank.current) && !hungHallPlayable(bank.current)) {
           setPhase("forge");
           phaseRef.current = "forge";
           setPlayFrameKind("fail");
@@ -1812,7 +1817,15 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     for (const patch of bankPatchesFromHung(arts, n, sid.current)) {
       if (!patch.url) continue;
       const have = bank.current.get(patch.key);
-      bank.current.set(patch.key, { url: patch.url, end: have?.end || still, start: have?.start });
+      const hung = isHungPlayUrl(patch.url);
+      const end = hung
+        ? have?.end && !isHallFilm(have.end)
+          ? have.end
+          : still && !isHallFilm(still)
+            ? still
+            : ""
+        : have?.end || still;
+      bank.current.set(patch.key, { url: patch.url, end, start: have?.start });
     }
   }
 
@@ -4697,7 +4710,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (!liveForge.current) return;
     liveForge.current = false;
     const frame = livingNow();
-    if (frame.playFrame === "fail") {
+    if (frame.playFrame === "fail" && !hungHallPlayable(bank.current)) {
       setPhase("forge");
       phaseRef.current = "forge";
       setBeat("idle");
@@ -5656,6 +5669,13 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   function refreshHung() {
     const local = readArtifacts();
     setHungArts(local);
+    applyHungRefBank();
+    void hydrateHungArtifacts(local).then(() => {
+      const live = readArtifacts();
+      if (live.length) setHungArts(live);
+      applyHungRefBank();
+      if (phaseRef.current === "play") startHall();
+    });
     void listHall()
       .then((hall) => setHungArts(mergeHall(hall || [], readArtifacts())))
       .catch(() => setHungArts(readArtifacts()));
@@ -6341,8 +6361,10 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
         markLivePlay(s.id, hereRef.current, TOUR_PLATE);
         return;
       }
+      await hydrateHungArtifacts(readArtifacts());
+      applyHungRefBank();
       const frame = livingNow();
-      if (frame.playFrame === "fail") {
+      if (frame.playFrame === "fail" && !hungHallPlayable(bank.current)) {
         lockHall(frame.still);
         setPhase("forge");
         phaseRef.current = "forge";
@@ -6469,7 +6491,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   }
 
   /** New citadel play: locked hall camera, living breath/walks inside that frame. */
-  function enterLivingRoom(first: "m1" | "m2") {
+  async function enterLivingRoom(first: "m1" | "m2") {
     pathFirst.current = first;
     roomsHold.current = Math.max(1, roomsHold.current || 1);
     hallHold.current = Math.max(1, hallHold.current || 1);
@@ -6503,6 +6525,11 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setPlate(HALL_STILL);
     rememberHall(sid.current, HALL_STILL);
     bank.current = new Map(stockRoomBank(first).map((b) => [b.key, { url: b.url, end: b.end }]));
+    await hydrateHungArtifacts(readArtifacts());
+    if (dead.current) return;
+    const hungLiveArts = readArtifacts();
+    if (hungLiveArts.length) setHungArts(hungLiveArts);
+    applyHungRefBank();
     refsMap.current.set("hall", HALL_STILL);
     refsMap.current.set("seed", HALL_STILL);
     refsMap.current.set("room", HALL_STILL);
