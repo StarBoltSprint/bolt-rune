@@ -395,7 +395,8 @@ export function hungRefsForHall(
   for (const role of HANG_REF_ALL) {
     const art = hungOnRole(arts, role, hall, citadel);
     if (!art) continue;
-    const url = hangMediaSrc(firstHungUrl(art));
+    const raw = firstHungUrl(art);
+    const url = hangMediaSrc(raw);
     if (!url) continue;
     out[role] = {
       role,

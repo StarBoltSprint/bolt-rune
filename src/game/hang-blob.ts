@@ -49,8 +49,15 @@ export function rememberHangFile(blobUrl: string, file: Blob): string {
 export function hangBlobSrc(u?: string | null): string {
   const raw = String(u || "").trim();
   if (!raw) return "";
-  if (raw.startsWith(HANG_BLOB_PREFIX)) return live.get(raw) || "";
-  return raw;
+  if (!raw.startsWith(HANG_BLOB_PREFIX)) return raw;
+  const have = live.get(raw);
+  if (have) return have;
+  const blob = files.get(raw);
+  if (!blob || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return "";
+  const url = URL.createObjectURL(blob);
+  live.set(raw, url);
+  fromBlob.set(url, raw);
+  return url;
 }
 
 export function hangBlobKeyOf(u?: string | null): string {

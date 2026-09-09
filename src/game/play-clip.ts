@@ -1,3 +1,4 @@
+import { hangBlobSrc, isHangBlobKey } from "./hang-blob.ts";
 import { prefetchStockAudio } from "./pcg-audio.ts";
 
 /** Same-origin / blob / proxy clip URLs the <video> element can actually play. */
@@ -62,6 +63,7 @@ export function unwrapClipProxy(url: string): string {
  */
 export function playableClipSrc(u?: string | null): string {
   if (!u) return "";
+  if (isHangBlobKey(u)) return playableClipSrc(hangBlobSrc(u));
   if (/\.(jpe?g|png|webp|gif)(\?|$)/i.test(u) && !u.includes(".mp4")) return "";
   if (isSameOriginClip(u)) return u;
   if (!isRemoteHttp(u)) {

@@ -320,6 +320,10 @@ describe("Hang ref — UI + engine wire + README", () => {
     assert.match(engine, /overlayHungShelf/);
     assert.match(engine, /applyHungRefBank/);
     assert.match(engine, /hydrateHungArtifacts/);
+    const living = engine.slice(engine.indexOf("function enterLivingRoom"), engine.indexOf("begin.current"));
+    assert.match(living, /await hydrateHungArtifacts/);
+    assert.ok(living.indexOf("hydrateHungArtifacts") < living.indexOf("holdIdle()"));
+    assert.ok(living.indexOf("applyHungRefBank") < living.indexOf("holdIdle()"));
     const rune = readFileSync(join(here, "../routes/rune.tsx"), "utf8");
     assert.match(rune, /s\.stills === "false"/);
     assert.match(rune, /first && \(!tour \|\| plan\)/);

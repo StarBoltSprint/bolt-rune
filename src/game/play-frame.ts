@@ -427,6 +427,27 @@ export function cookHasWalks(bank: PlayBank): boolean {
   return walkClips(bank).length > 0;
 }
 
+/** Human Hang local mp4 (blob / hangblob / data:video) — not stock citadel / hall loops. */
+export function isHungPlayUrl(url?: string | null): boolean {
+  const raw = String(url || "").trim();
+  if (!raw) return false;
+  const play = playableClipSrc(raw);
+  const local =
+    raw.startsWith("blob:") ||
+    raw.startsWith("hangblob:") ||
+    raw.startsWith("data:video") ||
+    Boolean(play && (play.startsWith("blob:") || play.startsWith("data:video")));
+  if (!local) return false;
+  const src = play || raw;
+  return !isHallFilm(src) && !isLivingHallLoop(src) && !isHallFilm(raw) && !isLivingHallLoop(raw);
+}
+
+/** Hung breath-spawn or hung walk is enough to stay in play — no Retry. */
+export function hungHallPlayable(bank: PlayBank, _smoke?: { smoke?: string } | null): boolean {
+  if (breathClips(bank).some((row) => isHungPlayUrl(row.url))) return true;
+  return walkClips(bank).some((row) => isHungPlayUrl(row.url));
+}
+
 export function hallStillOf(input: {
   hall?: string | null;
   empty?: string | null;
@@ -486,6 +507,29 @@ export function livingPlayFrame(input: {
 }): LivingPlayFrame {
   const still = playCoverStill(input);
   const walks = walkClips(input.bank);
+  const breath = breathClips(input.bank).find((row) => mayPlaySpawnBreath(row, input.smoke));
+  const hungBreath = breathClips(input.bank).find((row) => isHungPlayUrl(row.url));
+  const hungWalk = walks.find((row) => isHungPlayUrl(row.url));
+  if (hungBreath) {
+    return {
+      kind: "breath",
+      url: hungBreath.url,
+      still: isHallPlayStill(hungBreath.end) ? (hungBreath.end as string) : still,
+      phase: "play",
+      frost: "",
+      playFrame: "breath",
+    };
+  }
+  if (hungWalk) {
+    return {
+      kind: "walk",
+      url: hungWalk.url,
+      still: isHallPlayStill(hungWalk.end) ? (hungWalk.end as string) : still,
+      phase: "play",
+      frost: "",
+      playFrame: "walk",
+    };
+  }
   if (!walks.length) {
     return {
       kind: "hall",
@@ -496,7 +540,6 @@ export function livingPlayFrame(input: {
       playFrame: "fail",
     };
   }
-  const breath = breathClips(input.bank).find((row) => mayPlaySpawnBreath(row, input.smoke));
   if (breath) {
     return {
       kind: "breath",
