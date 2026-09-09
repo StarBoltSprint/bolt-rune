@@ -15,7 +15,7 @@ npm run dev
 Open `http://localhost:8080`.
 
 - **Runes** — citadel. Play / Load / New citadel.
-- **Vault** — coffre. Continue, Shift, pick a room, Hang A / Hang B. **Hang ref** imports your own walk/breath mp4 (or a `grok.com/imagine/post/…` URL).
+- **Hang / Vault** — paste walk/breath/spawn mp4 or `grok.com/imagine/post/…` URLs into pose slots. One Hang writes one hall graph. Then Hang A / Hang B binds that room to a biome the usual way.
 - **Keep** — sign in so the hall is yours.
 
 Stock sprint mp4s are not in this tree (too heavy). Stills, UI, and Imagine CDN clips are.
@@ -29,11 +29,10 @@ Breaths loop at poses; walks are edges. Human Hang wins stock on the pose SM / p
 
 Player-owned Imagine videos become hall **room refs** — not a second engine.
 
-1. **Vault → Hang ref** (empty coffre or under Hang A/B). Fullscreen picture. ≤3 beats: Citadel → Room → role.
-2. Attach a local **mp4** and/or paste a **grok.com/imagine/post/…** URL. Roles: `breath-spawn`, `breath-A`, `breath-B`, `walk-A`, `walk-B`, `walk-A-B`, `walk-B-A`. 9:16 preferred.
-3. **Hang** keys the clip into that hall’s pose graph (`spawn | atA | atB`). Breaths loop at a pose; walks are edges. Human Hang wins stock on the pose SM / plate graph.
-4. **Play / Load** the citadel. Hung breaths and walks play when present — spawn, sill A/B, and A↔B crosses.
-5. Continuity FAIL on land does **not** block Hang if you **KEEP** — flag only. SmiR Hang wins. Other Smoke FAIL (wide 16:9, zero-byte) still holds.
+1. **Slots** — Hang opens a slot form, not a pile of rooms. Paste a local **mp4** and/or a **grok.com/imagine/post/…** URL into `breath-spawn`, `walk-A`, `walk-B`, `breath-A`, `breath-B` (`walk-A-B` / `walk-B-A` optional empty). One Hang writes **one** hall pose graph (`spawn | atA | atB`). Empty slots stay stock.
+2. **Hang to biome** — Hang A / Hang B on the finished room is the usual door → room pick → Hang / Hang & enter path. Pose refs follow the hall you bind. Play Sprint stays.
+3. Continuity FAIL on land does **not** block Hang if you **KEEP** — flag only. Other Smoke FAIL (wide 16:9, zero-byte, illegal spawn) still holds.
+4. Old Door A biome hangs (Continue / Shift / Unhang) stay on the vault card after you leave the slot form — they do not replace the import sheet.
 
 No wallet. No player API keys. Spec stays free; paid cook only on confirm. Valley play URL unchanged.
 

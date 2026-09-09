@@ -14,21 +14,33 @@ import {
   clipIdOfHangRole,
   continuityReasons,
   doorOfHangRole,
+  filledHangSlots,
   hangMediaSrc,
   hangRefKind,
   hangRefLabel,
   hangRefRole,
   hangRoleOwnsDoor,
+  hangSlotPreview,
+  hallGraphArt,
   hungOnRole,
   hungRefsForHall,
   isContinuityOnlyFail,
+  isHangGraphArt,
   isHangMediaUrl,
   isImaginePostUrl,
+  isLegacyDoorHang,
   mayHangPlayerRef,
   overlayHungShelf,
+  parseHangSlot,
   parseImaginePostUrl,
   poseOfHangRole,
+  rehomeHungGraph,
+  slotsFromHung,
+  slotWrites,
+  HANG_GRAPH_PROMPT,
+  HANG_REF_GRAPH_HALL,
   HANG_REF_LAW,
+  HANG_REF_PRIMARY,
   HANG_REF_ROLES,
 } from "./hang-ref.ts";
 
@@ -91,6 +103,16 @@ describe("Hang ref import — roles + Imagine URLs", () => {
     assert.equal(hangRoleOwnsDoor(undefined, "A"), true);
     assert.ok(bankKeysOfHangRole("walk-A-B").includes("m1→m2"));
     assert.ok(bankKeysOfHangRole("walk-B-A").includes("m2←m1→m1"));
+    assert.deepEqual([...HANG_REF_PRIMARY], ["breath-spawn", "walk-A", "walk-B", "breath-A", "breath-B"]);
+    assert.equal(HANG_REF_GRAPH_HALL, 1);
+    assert.equal(parseHangSlot("https://grok.com/imagine/post/abc123xyz").ok, true);
+    assert.equal(parseHangSlot("/films/walk-a.mp4").ok, true);
+    assert.equal(parseHangSlot("not-a-clip").ok, false);
+    assert.deepEqual(slotWrites({ "walk-A": "/films/walk-a.mp4", "walk-B": "" }), [{ role: "walk-A", url: "/films/walk-a.mp4" }]);
+    assert.equal(hangSlotPreview({ "breath-spawn": "/films/breath-mine.mp4" }), "/films/breath-mine.mp4");
+    assert.deepEqual(filledHangSlots({ "walk-A": "  ", "breath-A": "https://grok.com/imagine/post/abc123xyz" }), {
+      "breath-A": "https://grok.com/imagine/post/abc123xyz",
+    });
   });
 
   it("accepts grok.com/imagine/post URLs and local/Imagine mp4s", () => {
@@ -212,6 +234,20 @@ describe("Hang ref — Human Hang wins stock shelf", () => {
     assert.ok(patches.some((p) => p.key === "m1→m2" && p.url === "/films/walk-ab-mine.mp4"));
     assert.ok(patches.some((p) => p.key === "m2→m1" && p.url === "/films/walk-ba-mine.mp4"));
     assert.ok(patches.some((p) => p.key === "m1←spawn→m2" && p.url === "/films/walk-ab-mine.mp4"));
+    const slots = slotsFromHung(hung, 2, "cit-1");
+    assert.equal(slots["breath-spawn"], "/films/breath-mine.mp4");
+    assert.equal(slots["walk-A"], "/films/walk-mine.mp4");
+    assert.equal(slots["walk-A-B"], "/films/walk-ab-mine.mp4");
+    assert.equal(isLegacyDoorHang({ room: { door: "A", still: "/films/forest.jpg", hall: 1 } }, 1), true);
+    assert.equal(isLegacyDoorHang(hung[0], 2), false);
+    const bundle = art({ id: "art-hall", prompt: HANG_GRAPH_PROMPT, playlist: ["/films/walk-mine.mp4"] });
+    assert.equal(isHangGraphArt(bundle), true);
+    assert.equal(hallGraphArt([...hung, bundle])?.id, "art-hall");
+    const moved = rehomeHungGraph(hung, 2, 1, "cit-2");
+    assert.equal(moved.find((a) => a.id === "art-walk-a")?.room?.hall, 1);
+    assert.equal(moved.find((a) => a.id === "art-walk-a")?.room?.citadel, "cit-2");
+    assert.equal(moved.find((a) => a.id === "art-walk-a")?.room?.role, "walk-A");
+    assert.equal(overlayHungShelf(stock, moved, 1, "cit-2")["walk-spawn-A"], "/films/walk-mine.mp4");
   });
 });
 
@@ -224,14 +260,32 @@ describe("Hang ref — UI + engine wire + README", () => {
     assert.match(ask, /export function HangRefSheet/);
     assert.match(ask, /data-hang-ref/);
     assert.match(ask, /data-hang-role=\{id\}/);
+    assert.match(ask, /data-hang-slot=\{id\}/);
     assert.match(ask, /data-hang-role-row="breath"/);
     assert.match(ask, /data-hang-role-row="walk"/);
     assert.match(ask, /breath-A/);
     assert.match(ask, /walk-A-B/);
     assert.match(ask, /walk-B-A/);
+    const sheet = ask.slice(ask.indexOf("export function HangRefSheet"));
+    assert.match(sheet, /data-hang-slots/);
+    assert.doesNotMatch(sheet, /HangCitadelStrip/);
+    assert.doesNotMatch(sheet, /HangRoomStrip/);
+    assert.doesNotMatch(sheet, /Room \$\{picked\}/);
+    assert.match(sheet, /onHangDoor/);
+    assert.match(sheet, /Hang A/);
+    assert.match(sheet, /Hang B/);
+    assert.match(sheet, /to biome/);
     assert.match(vault, /HangRefSheet/);
     assert.match(vault, /hangPlayerRef/);
     assert.match(vault, /data-hang-ref-open/);
+    assert.match(vault, /const \[hangRef, setHangRef\] = useState\(true\)/);
+    assert.match(vault, /slotWrites\(refSlots\)/);
+    assert.match(vault, /HANG_REF_GRAPH_HALL/);
+    assert.match(vault, /playHungGraph/);
+    assert.match(vault, /askHangGraph/);
+    assert.match(vault, /rehomeHungGraph/);
+    assert.match(vault, /HANG_GRAPH_PROMPT/);
+    assert.match(vault, /isLegacyDoorHang/);
     assert.match(engine, /overlayHungShelf/);
     assert.match(engine, /applyHungRefBank/);
     assert.match(engine, /Human Hang wins stock/);

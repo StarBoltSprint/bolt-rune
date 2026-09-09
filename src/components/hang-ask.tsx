@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
-import { vaultHangRoom } from "@/game/path-entry";
+import { vaultHangRoom, vaultHangStart } from "@/game/path-entry";
 import {
   HANG_CONFIRM_ARM_MS,
   HANG_LEFTOVER_SWALLOW_MS,
@@ -14,7 +14,16 @@ import {
   swallowOpeningTap,
   type HangDoorAct,
 } from "@/game/hang-ask";
-import { hangRefLabel, hangRefRole, poseOfHangRole, type HangRefRole, HANG_REF_BREATH, HANG_REF_WALK } from "@/game/hang-ref";
+import {
+  hangMediaSrc,
+  hangRefLabel,
+  hangSlotPreview,
+  type HangRefRole,
+  type HangRefSlots,
+  HANG_REF_BREATH,
+  HANG_REF_OPTIONAL,
+  HANG_REF_PRIMARY,
+} from "@/game/hang-ref";
 import { type HangCitadelPick, type HangRoomPick } from "@/game/rooms";
 import { press } from "@/lib/press";
 
@@ -638,90 +647,62 @@ export function HangAskSheet({
   );
 }
 
-const ROLE_CHIP: Record<HangRefRole, string> = {
-  "breath-spawn": "spawn",
-  "breath-A": "A",
-  "breath-B": "B",
-  "walk-A": "A",
-  "walk-B": "B",
-  "walk-A-B": "A→B",
-  "walk-B-A": "B→A",
-};
-
-/** Import player mp4 / Imagine post as a room ref. Citadel → Room → role (≤3 beats). */
+/** Import player mp4 / Imagine posts as one hall pose graph — slots, not rooms. */
 export function HangRefSheet({
-  rooms,
-  hall,
-  onHall,
-  onClose,
-  citadels = [],
-  citadel = "",
-  onCitadel,
-  media,
-  role,
+  slots,
+  still = "",
   keep,
   flag,
-  onMedia,
+  hung,
+  advanced,
+  onSlot,
   onFile,
-  onRole,
   onKeep,
   onHang,
+  onPlay,
+  onHangDoor,
+  onAdvanced,
+  onClose,
 }: {
-  rooms: HangRoomPick[];
-  hall: number;
-  onHall: (n: number) => void;
-  onClose: () => void;
-  citadels?: HangCitadelPick[];
-  citadel?: string;
-  onCitadel?: (id: string) => void;
-  media: string;
-  role: HangRefRole;
+  slots: HangRefSlots;
+  still?: string;
   keep?: boolean;
   flag?: string;
-  onMedia: (url: string) => void;
-  onFile: (file: File) => void;
-  onRole: (role: HangRefRole) => void;
+  hung?: boolean;
+  advanced?: boolean;
+  onSlot: (role: HangRefRole, url: string) => void;
+  onFile: (role: HangRefRole, file: File) => void;
   onKeep?: () => void;
-  onHang: (hall: number) => void;
+  onHang: () => void;
+  onPlay?: () => void;
+  onHangDoor?: (door: "A" | "B") => void;
+  onAdvanced?: () => void;
+  onClose: () => void;
 }) {
   const [armed, setArmed] = useState(false);
-  const [step, setStep] = useState<"citadel" | "room">(citadels.length > 1 ? "citadel" : "room");
-  const [picked, setPicked] = useState(() => hangCardHall(hall) || 1);
+  const [cross, setCross] = useState(() => Boolean(slots["walk-A-B"] || slots["walk-B-A"]));
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const lockedCitadel = useRef(citadels.length <= 1);
+  const fileRole = useRef<HangRefRole>("breath-spawn");
   useEffect(() => {
     swallowOpeningTap(HANG_LEFTOVER_SWALLOW_MS);
     const t = window.setTimeout(() => setArmed(true), HANG_CONFIRM_ARM_MS);
     return () => window.clearTimeout(t);
   }, []);
-  useEffect(() => {
-    if (citadels.length > 1 && !lockedCitadel.current) setStep("citadel");
-    if (citadels.length <= 1) {
-      lockedCitadel.current = true;
-      setStep("room");
-    }
-  }, [citadels.length]);
-  const r = rooms.find((x) => hangCardHall(x.hall) === hangCardHall(picked)) || rooms[0];
-  const still = media && !/\.mp4(\?|$)|blob:|data:video|xai-vidgen/i.test(media) ? media : r?.still || "";
-  const vid = media && hangMediaPreview(media);
-  function pickHall(n: number) {
-    const next = hangCardHall(n) || 1;
-    setPicked(next);
-    onHall(next);
-  }
-  function lockCitadel(id: string) {
-    lockedCitadel.current = true;
-    onCitadel?.(id);
-    setStep("room");
+  const vid = hangSlotPreview(slots);
+  const pic = still && !hangMediaSrc(still) ? still : "";
+  const filled = HANG_REF_PRIMARY.some((id) => slots[id]) || HANG_REF_OPTIONAL.some((id) => slots[id]);
+  function pickFile(role: HangRefRole) {
+    fileRole.current = role;
+    fileRef.current?.click();
   }
   return (
     <div
       className="fixed inset-0 z-[90] bg-[#07080c]"
       data-hang-ref="1"
       data-hang-sheet="1"
-      data-hang-step={step}
-      data-hang-role={role}
+      data-hang-slots="1"
       data-hang-keep={keep ? "1" : "0"}
+      data-hang-slot-roles="breath-spawn,breath-A,breath-B,walk-A,walk-B,walk-A-B,walk-B-A"
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
@@ -734,167 +715,189 @@ export function HangRefSheet({
         data-hang-file=""
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) onFile(f);
+          if (f) onFile(fileRole.current, f);
           e.target.value = "";
         }}
       />
-      {step === "citadel" && citadels.length > 1 ? (
-        <HangCitadelStrip citadels={citadels} citadel={citadel} onCitadel={lockCitadel} onBack={onClose} />
-      ) : (
-        <StillStage
-          kind="room"
-          still={still}
-          video={vid || undefined}
-          index={Math.max(0, rooms.findIndex((x) => hangCardHall(x.hall) === hangCardHall(picked)))}
-          count={Math.max(1, rooms.length)}
-          title={r?.name || `Room ${picked}`}
-          lockAttr={{ "data-hang-pick": picked, "data-hang-ref-role": role }}
-          actions={
-            armed ? (
-              <div className="flex w-full flex-col items-center gap-1.5" data-hang-ref-actions="">
-                {vid ? <span className="sr-only" data-hang-ref-media={vid} /> : null}
-                <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/40">
-                  {flag || (media ? "9:16 preferred · Hang wins stock" : "mp4 or grok.com/imagine/post")}
-                </p>
-                <div className="flex flex-col items-center gap-1.5" data-hang-roles="">
-                  <div className="flex flex-wrap items-center justify-center gap-1.5" data-hang-role-row="breath">
-                    <span className="font-mono text-[8px] uppercase tracking-[0.16em] text-white/35">breath</span>
-                    {HANG_REF_BREATH.map((id) => (
-                      <StillChip
-                        key={id}
-                        tone={role === id ? (poseOfHangRole(id) === "atB" ? "gold" : "ice") : "quiet"}
-                        data-hang-role={id}
-                        className="min-h-9 px-3"
-                        onPointerDown={(e) => e.stopPropagation()}
-                        {...press(() => onRole(hangRefRole(id)))}
-                      >
-                        {ROLE_CHIP[id]}
-                      </StillChip>
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap items-center justify-center gap-1.5" data-hang-role-row="walk">
-                    <span className="font-mono text-[8px] uppercase tracking-[0.16em] text-white/35">walk</span>
-                    {HANG_REF_WALK.map((id) => (
-                      <StillChip
-                        key={id}
-                        tone={role === id ? (poseOfHangRole(id) === "atB" ? "gold" : "ice") : "quiet"}
-                        data-hang-role={id}
-                        className="min-h-9 px-3"
-                        onPointerDown={(e) => e.stopPropagation()}
-                        {...press(() => onRole(hangRefRole(id)))}
-                      >
-                        {ROLE_CHIP[id]}
-                      </StillChip>
-                    ))}
-                  </div>
+      <StillStage
+        kind="vault"
+        still={pic}
+        video={vid || undefined}
+        index={0}
+        count={1}
+        title="Hang"
+        lockAttr={{ "data-hang-ref-role": "slots" }}
+        actions={
+          armed ? (
+            <div className="flex w-full flex-col items-center gap-1.5" data-hang-ref-actions="">
+              {vid ? <span className="sr-only" data-hang-ref-media={vid} /> : null}
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/40">
+                {flag || "mp4 or grok.com/imagine/post · one hall graph"}
+              </p>
+              <div className="flex max-h-[46vh] w-full max-w-sm flex-col gap-1.5 overflow-y-auto" data-hang-roles="">
+                <div className="flex flex-col gap-1.5" data-hang-role-row="breath">
+                  {HANG_REF_BREATH.map((id) => (
+                    <HangRefSlot
+                      key={id}
+                      id={id}
+                      value={slots[id] || ""}
+                      onSlot={onSlot}
+                      onFile={() => pickFile(id)}
+                    />
+                  ))}
                 </div>
-                <div className="flex flex-wrap justify-center gap-2">
-                  <StillChip
-                    tone="quiet"
-                    data-hang-upload=""
-                    onPointerDown={(e) => e.stopPropagation()}
-                    {...press(() => fileRef.current?.click())}
-                  >
-                    mp4
-                  </StillChip>
-                  <HangRefUrl onMedia={onMedia} media={media} />
-                  {onKeep ? (
-                    <StillChip
-                      tone={keep ? "gold" : "quiet"}
-                      data-hang-keep=""
-                      onPointerDown={(e) => e.stopPropagation()}
-                      {...press(onKeep)}
-                    >
-                      KEEP
-                    </StillChip>
-                  ) : null}
-                  <StillChip
-                    tone="ice"
-                    data-hang-confirm="ref"
-                    data-hang-act="bind"
-                    disabled={!media}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    {...press(() => {
-                      if (!media) return;
-                      onHang(hangBindHall(picked) || picked);
-                    })}
-                  >
-                    Hang
-                    <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/45">
-                      {hangRefLabel(role)} · room {picked}
-                    </span>
-                  </StillChip>
+                <div className="flex flex-col gap-1.5" data-hang-role-row="walk">
+                  {HANG_REF_PRIMARY.filter((id) => id.startsWith("walk")).map((id) => (
+                    <HangRefSlot
+                      key={id}
+                      id={id}
+                      value={slots[id] || ""}
+                      onSlot={onSlot}
+                      onFile={() => pickFile(id)}
+                    />
+                  ))}
+                  {cross
+                    ? HANG_REF_OPTIONAL.map((id) => (
+                        <HangRefSlot
+                          key={id}
+                          id={id}
+                          value={slots[id] || ""}
+                          onSlot={onSlot}
+                          onFile={() => pickFile(id)}
+                        />
+                      ))
+                    : (
+                      <StillChip
+                        tone="quiet"
+                        data-hang-cross=""
+                        className="self-center"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        {...press(() => setCross(true))}
+                      >
+                        A↔B walks
+                      </StillChip>
+                    )}
                 </div>
               </div>
-            ) : (
-              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/45">room · role · Hang</p>
-            )
-          }
-          onNext={() => {
-            const i = rooms.findIndex((x) => hangCardHall(x.hall) === hangCardHall(picked));
-            const next = rooms[hangStillWrap(rooms.length, Math.max(0, i), 1)];
-            if (next) pickHall(hangCardHall(next.hall));
-          }}
-          onPrev={() => {
-            const i = rooms.findIndex((x) => hangCardHall(x.hall) === hangCardHall(picked));
-            const next = rooms[hangStillWrap(rooms.length, Math.max(0, i), -1)];
-            if (next) pickHall(hangCardHall(next.hall));
-          }}
-          onLock={() => pickHall(picked)}
-          onBack={() => {
-            if (citadels.length > 1) {
-              lockedCitadel.current = false;
-              setStep("citadel");
-              return;
-            }
-            onClose();
-          }}
-        />
-      )}
+              <div className="flex flex-wrap justify-center gap-2">
+                {onKeep && (keep || /continuity/i.test(flag || "")) ? (
+                  <StillChip
+                    tone={keep ? "gold" : "quiet"}
+                    data-hang-keep=""
+                    onPointerDown={(e) => e.stopPropagation()}
+                    {...press(onKeep)}
+                  >
+                    KEEP
+                  </StillChip>
+                ) : null}
+                <StillChip
+                  tone="ice"
+                  data-hang-confirm="ref"
+                  data-hang-act="bind"
+                  data-hang-upload=""
+                  disabled={!filled}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  {...press(() => {
+                    if (!filled) return;
+                    onHang();
+                  })}
+                >
+                  Hang
+                  <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/45">
+                    one hall · breath / walk
+                  </span>
+                </StillChip>
+                {hung && onPlay ? (
+                  <StillChip
+                    tone="gold"
+                    data-hang-play=""
+                    onPointerDown={(e) => e.stopPropagation()}
+                    {...press(onPlay)}
+                  >
+                    Play
+                  </StillChip>
+                ) : null}
+                {hung && onHangDoor ? (
+                  <>
+                    <StillChip
+                      tone="ice"
+                      data-hang={vaultHangStart("A").dataHang}
+                      data-hang-biome="A"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      {...press(() => onHangDoor("A"))}
+                    >
+                      Hang A
+                      <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/40">to biome</span>
+                    </StillChip>
+                    <StillChip
+                      tone="gold"
+                      data-hang={vaultHangStart("B").dataHang}
+                      data-hang-biome="B"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      {...press(() => onHangDoor("B"))}
+                    >
+                      Hang B
+                      <span className="mt-0.5 block text-[8px] tracking-[0.12em] text-white/40">to biome</span>
+                    </StillChip>
+                  </>
+                ) : null}
+                {advanced && onAdvanced ? (
+                  <StillChip
+                    tone="quiet"
+                    data-hang-advanced=""
+                    onPointerDown={(e) => e.stopPropagation()}
+                    {...press(onAdvanced)}
+                  >
+                    Unhang hung rooms
+                  </StillChip>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/45">paste clips · then Hang</p>
+          )
+        }
+        onNext={() => {}}
+        onPrev={() => {}}
+        onLock={() => {}}
+        onBack={onClose}
+      />
     </div>
   );
 }
 
-function hangMediaPreview(u: string): string {
-  if (u.startsWith("blob:") || u.startsWith("data:video") || /\.mp4(\?|$)/i.test(u) || u.includes("xai-vidgen") || u.startsWith("/api/clip")) return u;
-  return "";
-}
-
-function HangRefUrl({ media, onMedia }: { media: string; onMedia: (url: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(media);
-  if (!open) {
-    return (
-      <StillChip
-        tone={media ? "ice" : "quiet"}
-        data-hang-url=""
-        onPointerDown={(e) => e.stopPropagation()}
-        {...press(() => setOpen(true))}
-      >
-        URL
-      </StillChip>
-    );
-  }
+function HangRefSlot({
+  id,
+  value,
+  onSlot,
+  onFile,
+}: {
+  id: HangRefRole;
+  value: string;
+  onSlot: (role: HangRefRole, url: string) => void;
+  onFile: () => void;
+}) {
   return (
-    <form
-      className="flex w-full max-w-xs items-center gap-1"
-      data-hang-url-form=""
-      onSubmit={(e) => {
-        e.preventDefault();
-        onMedia(draft.trim());
-        setOpen(false);
-      }}
-    >
+    <div className="flex w-full items-center gap-1" data-hang-role={id} data-hang-slot={id}>
+      <span className="w-[5.6rem] shrink-0 font-mono text-[8px] uppercase tracking-[0.14em] text-white/55">
+        {hangRefLabel(id)}
+      </span>
       <input
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        placeholder="grok.com/imagine/post/…"
-        className="min-w-0 flex-1 rounded-full border border-white/22 bg-black/55 px-3 py-2 font-mono text-[10px] text-white outline-none"
-        autoFocus
+        value={value}
+        onChange={(e) => onSlot(id, e.target.value)}
+        placeholder="mp4 or grok.com/imagine/post/…"
+        data-hang-url={id}
+        className="min-w-0 flex-1 rounded-full border border-white/22 bg-black/55 px-3 py-2 font-mono text-[10px] text-white outline-none placeholder:text-white/28"
       />
-      <StillChip type="submit" tone="ice">
-        lock
+      <StillChip
+        tone={value ? "ice" : "quiet"}
+        data-hang-upload={id}
+        className="min-h-9 px-3"
+        onPointerDown={(e) => e.stopPropagation()}
+        {...press(onFile)}
+      >
+        mp4
       </StillChip>
-    </form>
+    </div>
   );
 }
