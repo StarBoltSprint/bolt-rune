@@ -262,6 +262,24 @@ describe("play frame after cook", () => {
     assert.equal(hungPlayBankFrost([], bank), "");
   });
 
+  it("hung breath-A at the door is playable arrival — not cook, not HALL_LOOP", () => {
+    const hungWalk = "blob:http://localhost/walk-a";
+    const hungBreath = "blob:http://localhost/breath-a";
+    const bank = {
+      "idle-spawn": { url: "blob:http://localhost/spawn" },
+      "idle-m1": { url: hungBreath },
+      "idle-m1←spawn": { url: hungBreath },
+      "spawn→m1": { url: hungWalk },
+      "idle-m2": { url: HALL_LOOP, end: HALL_STILL },
+    };
+    assert.equal(holdBreathUrl(bank, "m1", "spawn", hungWalk), hungBreath);
+    assert.equal(arrivalBreathUrl(bank, "m1", "spawn", hungWalk), hungBreath);
+    assert.equal(doorBreathPlayable({ url: hungBreath }, hungWalk), true);
+    assert.equal(doorArrivalNeedsCook({ url: hungBreath }, hungWalk), false);
+    assert.equal(isHungPlayUrl(hungBreath), true);
+    assert.equal(isHungPlayUrl(HALL_LOOP), false);
+  });
+
   it("fails loud when Hang wrote roles but the play bank is still stock", () => {
     const hungArts = [
       {
@@ -441,6 +459,9 @@ describe("A↔B last-frame seed chain", () => {
     assert.match(playWalk, /setPose\(null\)/);
     assert.doesNotMatch(playWalk, /setPose\(walkLastFrameSeed/);
     const enterBreath = src.slice(src.indexOf("async function enterDoorBreath"), src.indexOf("async function saveFilms"));
+    assert.match(enterBreath, /applyHungRefBank\(\)/);
+    assert.match(enterBreath, /hungShelf/);
+    assert.match(enterBreath, /isHungPlayUrl\(shelfBreath\)/);
     assert.match(enterBreath, /cookIdleAt\(node, seed, walkUrl, via, true\)/);
     assert.match(enterBreath, /arrivalBreathUrl\(/);
     assert.match(enterBreath, /doorArrivalNeedsCook\(/);

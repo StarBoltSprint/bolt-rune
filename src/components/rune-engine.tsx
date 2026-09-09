@@ -2984,10 +2984,16 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     if (!shown) holdIdle();
   }
 
-  /** Walk ends → loop node idle at arrival pose. Stock/missing door idle cooks from landed. Never freeze still. Never spawn/HALL_LOOP at m1/m2. */
+  /** Walk ends → loop node idle at arrival pose. Hung breath-A/B wins stock. Stock/missing door idle cooks from landed. Never freeze still. Never spawn/HALL_LOOP at m1/m2. */
   async function enterDoorBreath(node: string, via: string, walkUrl: string, landed: string) {
+    applyHungRefBank();
+    const shelf = poseShelf();
+    const shelfBreath =
+      node === "m1" ? shelf["breath-A"] : node === "m2" ? shelf["breath-B"] : shelf["breath-spawn"];
+    const hungShelf = shelfBreath && isHungPlayUrl(shelfBreath) ? shelfBreath : "";
     let idle = idleFor(node, via) || bank.current.get(`idle-${node}`);
-    if (doorArrivalNeedsCook(idle, walkUrl)) {
+    /* Filled Hang breath is the arrival loop. Never cook over it. */
+    if (!hungShelf && doorArrivalNeedsCook(idle, walkUrl)) {
       const seed = walkLastFrameSeed(landed, lastLive.current, refsMap.current.get(`pose-${node}`)) || landed;
       if (seed) {
         await cookIdleAt(node, seed, walkUrl, via, true);
@@ -2996,6 +3002,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
     if ((node === "m1" || node === "m2") && hungDoorReady(node)) warmHungBiome(node);
     const url =
+      hungShelf ||
       holdBreathUrl(bank.current, node, via, walkUrl, idle) ||
       arrivalBreathUrl(bank.current, node, via, walkUrl) ||
       (doorBreathPlayable(idle, walkUrl) ? idle!.url : "");

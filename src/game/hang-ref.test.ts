@@ -391,6 +391,10 @@ describe("Hang ref — UI + engine wire + README", () => {
     assert.match(engine, /hungPlayBankFrost/);
     assert.match(engine, /stockMustYield/);
     assert.match(engine, /isHungPlayUrl\(clip\.url\)/);
+    const enterBreath = engine.slice(engine.indexOf("async function enterDoorBreath"), engine.indexOf("async function saveFilms"));
+    assert.match(enterBreath, /hungShelf/);
+    assert.match(enterBreath, /isHungPlayUrl\(shelfBreath\)/);
+    assert.match(enterBreath, /applyHungRefBank\(\)/);
     const playFrame = readFileSync(join(here, "play-frame.ts"), "utf8");
     assert.match(playFrame, /hang missed play bank/);
     const playFn = vault.slice(vault.indexOf("function playHungGraph"), vault.indexOf("function askHangGraph"));
