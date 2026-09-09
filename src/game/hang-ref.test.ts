@@ -12,6 +12,9 @@ import {
   bankKeysOfHangRole,
   bankPatchesFromHung,
   bindHangRefRoom,
+  filledHungPlayRoles,
+  hangPlaySrc,
+  hungRefsForPlay,
   clipIdOfHangRole,
   continuityReasons,
   doorOfHangRole,
@@ -276,6 +279,62 @@ describe("Hang ref — Human Hang wins stock shelf", () => {
     assert.equal(moved.find((a) => a.id === "art-walk-a")?.room?.role, "walk-A");
     assert.equal(overlayHungShelf(stock, moved, 1, "cit-2")["walk-spawn-A"], "/films/walk-mine.mp4");
   });
+
+  it("PLAY overlay finds hall-1 Hang when living hall / citadel drifted", () => {
+    const hung = [
+      art({
+        id: "art-spawn",
+        playlist: ["blob:http://localhost/breath-spawn"],
+        room: bindHangRefRoom("breath-spawn", { hall: 1 }),
+      }),
+      art({
+        id: "art-walk-a",
+        playlist: ["blob:http://localhost/walk-a"],
+        room: bindHangRefRoom("walk-A", { hall: 1 }),
+      }),
+      art({
+        id: "art-breath-a",
+        playlist: ["blob:http://localhost/breath-a"],
+        room: bindHangRefRoom("breath-A", { hall: 1 }),
+      }),
+      art({
+        id: "art-walk-b",
+        playlist: ["blob:http://localhost/walk-b"],
+        room: bindHangRefRoom("walk-B", { hall: 1 }),
+      }),
+      art({
+        id: "art-breath-b",
+        playlist: ["blob:http://localhost/breath-b"],
+        room: bindHangRefRoom("breath-B", { hall: 1 }),
+      }),
+    ];
+    const stock = {
+      "breath-spawn": "/ui/citadel.mp4?v=aaa",
+      "breath-A": "/ui/citadel.mp4?v=aaa",
+      "breath-B": "/ui/citadel.mp4?v=aaa",
+      "walk-spawn-A": "/ui/citadel.mp4?v=aaa",
+      "walk-spawn-B": "/ui/citadel.mp4?v=aaa",
+    };
+    const drifted = overlayHungShelf(stock, hung, 3, "citadel-new");
+    assert.equal(drifted["breath-spawn"], "blob:http://localhost/breath-spawn");
+    assert.equal(drifted["walk-spawn-A"], "blob:http://localhost/walk-a");
+    assert.equal(drifted["walk-spawn-B"], "blob:http://localhost/walk-b");
+    assert.equal(drifted["breath-A"], "blob:http://localhost/breath-a");
+    assert.equal(drifted["breath-B"], "blob:http://localhost/breath-b");
+    const refs = hungRefsForPlay(hung, 3, "citadel-new");
+    assert.equal(refs["breath-spawn"]?.url, "blob:http://localhost/breath-spawn");
+    assert.deepEqual(filledHungPlayRoles(hung, 3, "citadel-new").sort(), [
+      "breath-A",
+      "breath-B",
+      "breath-spawn",
+      "walk-A",
+      "walk-B",
+    ]);
+    const patches = bankPatchesFromHung(hung, 3, "citadel-new");
+    assert.ok(patches.some((p) => p.key === "idle-spawn" && p.url.startsWith("blob:")));
+    assert.ok(patches.some((p) => p.key === "spawn→m1" && p.url.startsWith("blob:")));
+    assert.equal(hangPlaySrc("blob:http://localhost/x"), "blob:http://localhost/x");
+  });
 });
 
 describe("Hang ref — UI + engine wire + README", () => {
@@ -328,6 +387,12 @@ describe("Hang ref — UI + engine wire + README", () => {
     assert.match(rune, /s\.stills === "false"/);
     assert.match(rune, /first && \(!tour \|\| plan\)/);
     assert.match(engine, /Human Hang wins stock/);
+    assert.match(engine, /hungArtsNow/);
+    assert.match(engine, /hungPlayBankFrost/);
+    assert.match(engine, /stockMustYield/);
+    assert.match(engine, /isHungPlayUrl\(clip\.url\)/);
+    const playFrame = readFileSync(join(here, "play-frame.ts"), "utf8");
+    assert.match(playFrame, /hang missed play bank/);
     const playFn = vault.slice(vault.indexOf("function playHungGraph"), vault.indexOf("function askHangGraph"));
     assert.match(playFn, /history\.push\(href\)/);
     assert.doesNotMatch(playFn, /location\.assign/);

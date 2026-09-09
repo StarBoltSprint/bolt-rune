@@ -322,6 +322,19 @@ export function hangMediaSrc(raw?: string | null): string {
   return "";
 }
 
+/**
+ * Src the play bank may store. Hydrated hangblob → live blob.
+ * Unhydrated hangblob stays a key so the role is not dropped — kickPlay resolves after hydrate.
+ */
+export function hangPlaySrc(raw?: string | null): string {
+  const u = String(raw || "").trim();
+  if (!u) return "";
+  const live = hangMediaSrc(u);
+  if (live) return live;
+  if (u.startsWith("blob:") || u.startsWith("data:video") || isHangBlobKey(u)) return u;
+  return "";
+}
+
 export function continuityReasons(reasons: string[] = []): string[] {
   return reasons.filter((r) => /^continuity[-:]/i.test(String(r || "")));
 }
@@ -386,6 +399,19 @@ export function hungOnRole(
     .sort((p, q) => (q.hungAt || 0) - (p.hungAt || 0))[0];
 }
 
+function hungRefFromArt(art: HungArtifact, role: HangRefRole): HungRoomRef | undefined {
+  const raw = firstHungUrl(art);
+  const url = hangPlaySrc(raw);
+  if (!url) return undefined;
+  return {
+    role,
+    pose: poseOfHangRole(role),
+    url,
+    source: hangRefSourceOf(art.playlist?.[0] || art.still || raw),
+    flags: art.room?.flags,
+  };
+}
+
 export function hungRefsForHall(
   arts: HungArtifact[] = [],
   hall = 1,
@@ -395,16 +421,38 @@ export function hungRefsForHall(
   for (const role of HANG_REF_ALL) {
     const art = hungOnRole(arts, role, hall, citadel);
     if (!art) continue;
-    const raw = firstHungUrl(art);
-    const url = hangMediaSrc(raw);
-    if (!url) continue;
-    out[role] = {
-      role,
-      pose: poseOfHangRole(role),
-      url,
-      source: hangRefSourceOf(art.playlist?.[0] || art.still),
-      flags: art.room?.flags,
-    };
+    const hit = hungRefFromArt(art, role);
+    if (hit) out[role] = hit;
+  }
+  return out;
+}
+
+/**
+ * Pose-role refs for PLAY. Filled Hang wins stock even when:
+ * - living hall jumped (latestHungHall / leftover biome Room N)
+ * - play minted a new citadel id (Hang PLAY href has no session=)
+ * Empty roles stay missing so stock can fill that slot only.
+ */
+export function hungRefsForPlay(
+  arts: HungArtifact[] = [],
+  hall = 1,
+  citadel?: string,
+): Partial<Record<HangRefRole, HungRoomRef>> {
+  const out: Partial<Record<HangRefRole, HungRoomRef>> = {};
+  const take = (n: number, cit?: string) => {
+    const refs = hungRefsForHall(arts, n, cit);
+    for (const role of HANG_REF_ALL) {
+      if (out[role]?.url) continue;
+      const hit = refs[role];
+      if (hit?.url) out[role] = hit;
+    }
+  };
+  const want = hallOfRoom({ hall }, HANG_REF_GRAPH_HALL);
+  take(want, citadel);
+  take(want, undefined);
+  if (want !== HANG_REF_GRAPH_HALL) {
+    take(HANG_REF_GRAPH_HALL, citadel);
+    take(HANG_REF_GRAPH_HALL, undefined);
   }
   return out;
 }
@@ -417,7 +465,7 @@ export function overlayHungShelf(
   citadel?: string,
 ): PoseClipShelf {
   const next: PoseClipShelf = { ...stock };
-  const refs = hungRefsForHall(arts, hall, citadel);
+  const refs = hungRefsForPlay(arts, hall, citadel);
   for (const role of HANG_REF_ALL) {
     const hit = refs[role];
     if (!hit?.url) continue;
@@ -431,7 +479,7 @@ export function bankPatchesFromHung(
   hall = 1,
   citadel?: string,
 ): Array<{ key: string; url: string; role: HangRefRole }> {
-  const refs = hungRefsForHall(arts, hall, citadel);
+  const refs = hungRefsForPlay(arts, hall, citadel);
   const out: Array<{ key: string; url: string; role: HangRefRole }> = [];
   for (const role of HANG_REF_ALL) {
     const hit = refs[role];
@@ -441,6 +489,16 @@ export function bankPatchesFromHung(
     }
   }
   return out;
+}
+
+/** Filled Hang roles that PLAY must show — empty if Hang never wrote pose refs. */
+export function filledHungPlayRoles(
+  arts: HungArtifact[] = [],
+  hall = 1,
+  citadel?: string,
+): HangRefRole[] {
+  const refs = hungRefsForPlay(arts, hall, citadel);
+  return HANG_REF_ALL.filter((role) => Boolean(refs[role]?.url));
 }
 
 export function bindHangRefRoom(

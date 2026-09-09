@@ -1,3 +1,5 @@
+import type { HungArtifact } from "./artifacts.ts";
+import { filledHungPlayRoles, hangPlaySrc } from "./hang-ref.ts";
 import { playableClipSrc, sameClipSrc } from "./play-clip.ts";
 import { BOLT_BODY, TOUR_PLATE } from "./rune.ts";
 import { HALL_STILL, isHallFilm, isLivingHallLoop } from "./stock-room.ts";
@@ -427,25 +429,44 @@ export function cookHasWalks(bank: PlayBank): boolean {
   return walkClips(bank).length > 0;
 }
 
-/** Human Hang local mp4 (blob / hangblob / data:video) — not stock citadel / hall loops. */
+/** Human Hang clip — local mp4 / hangblob / data:video. Never stock citadel / hall loops. */
 export function isHungPlayUrl(url?: string | null): boolean {
   const raw = String(url || "").trim();
   if (!raw) return false;
-  const play = playableClipSrc(raw);
+  if (isHallFilm(raw) || isLivingHallLoop(raw)) return false;
+  const play = playableClipSrc(raw) || hangPlaySrc(raw);
+  if (play && (isHallFilm(play) || isLivingHallLoop(play))) return false;
   const local =
     raw.startsWith("blob:") ||
     raw.startsWith("hangblob:") ||
     raw.startsWith("data:video") ||
     Boolean(play && (play.startsWith("blob:") || play.startsWith("data:video")));
-  if (!local) return false;
-  const src = play || raw;
-  return !isHallFilm(src) && !isLivingHallLoop(src) && !isHallFilm(raw) && !isLivingHallLoop(raw);
+  return local;
 }
 
 /** Hung breath-spawn or hung walk is enough to stay in play — no Retry. */
 export function hungHallPlayable(bank: PlayBank, _smoke?: { smoke?: string } | null): boolean {
   if (breathClips(bank).some((row) => isHungPlayUrl(row.url))) return true;
   return walkClips(bank).some((row) => isHungPlayUrl(row.url));
+}
+
+/**
+ * Hang wrote pose roles but the play bank has no live hung src.
+ * Fail loud — never silently loop stock HALL_LOOP as if it were the hung room.
+ */
+export function hungPlayBankFrost(
+  arts: HungArtifact[] = [],
+  bank: PlayBank,
+  hall = 1,
+  citadel?: string,
+): string {
+  const filled = filledHungPlayRoles(arts, hall, citadel);
+  if (!filled.length) return "";
+  if (hungHallPlayable(bank)) return "";
+  const entries = bankEntries(bank);
+  const hung = entries.some(([, v]) => isHungPlayUrl(v?.url));
+  if (hung) return "";
+  return "hang missed play bank · hung urls gone";
 }
 
 export function hallStillOf(input: {
