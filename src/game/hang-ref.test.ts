@@ -12,6 +12,7 @@ import {
   bankKeysOfHangRole,
   bankPatchesFromHung,
   bindHangRefRoom,
+  canPlayHungGraph,
   filledHungPlayRoles,
   hangPlaySrc,
   hungRefsForPlay,
@@ -405,6 +406,32 @@ describe("Hang ref — UI + engine wire + README", () => {
     assert.match(playFn, /history\.push\(href\)/);
     assert.doesNotMatch(playFn, /location\.assign/);
     assert.match(playFn, /walkHangHallHref\(undefined, HANG_REF_GRAPH_HALL/);
+    assert.match(playFn, /slotWrites\(refSlots\)/);
+    assert.match(playFn, /hangPlayerRef\(\)/);
+    assert.match(playFn, /canPlayHungGraph/);
+    assert.match(playFn, /hang first/);
+    assert.match(sheet, /hung \|\| filled/);
+    assert.match(sheet, /data-hang-play-ready/);
+    assert.equal(canPlayHungGraph({ "breath-spawn": "blob:http://localhost/a" }), "slots");
+    assert.equal(canPlayHungGraph({}), "");
+    assert.equal(
+      canPlayHungGraph(
+        {},
+        [
+          {
+            id: "art-spawn",
+            name: "breath-spawn",
+            still: "",
+            playlist: ["blob:http://localhost/spawn"],
+            prompt: "",
+            hungAt: 1,
+            grade: null,
+            room: bindHangRefRoom("breath-spawn", { hall: 1 }),
+          },
+        ],
+      ),
+      "hung",
+    );
     for (const line of HANG_REF_LAW) {
       assert.match(readme, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").slice(0, 28)));
     }

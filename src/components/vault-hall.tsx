@@ -5,6 +5,7 @@ import { continuePrompt, cookFilm, readClipSpec, shiftPrompt, stockBiomeFilm, SH
 import { bindHungRoom, doorLetterOf, hangThumbStill, hungPlayChrome, vaultHangCaption, walkHangHallHref, walkHungHref } from "@/game/enter-graph";
 import {
   bindHangRefRoom,
+  canPlayHungGraph,
   hangMediaSrc,
   hangRefFlags,
   hangRefKind,
@@ -390,6 +391,16 @@ export function VaultHall() {
   function playHungGraph() {
     const href = walkHangHallHref(undefined, HANG_REF_GRAPH_HALL, 1);
     if (!href) return;
+    const writes = slotWrites(refSlots);
+    /* Last edit in the slots wins — A↔B expand / skip Hang must not play a stale leftover graph. */
+    if (writes.length) {
+      if (!hangPlayerRef()) return;
+    } else if (!canPlayHungGraph(refSlots, hungRef.current.length ? hungRef.current : readArtifacts())) {
+      setFrost("hang first");
+      setRefFlag("hang first");
+      window.setTimeout(() => setFrost(""), 2400);
+      return;
+    }
     sfxForge("enter");
     void (async () => {
       const arts = hungRef.current.length ? hungRef.current : readArtifacts();
@@ -426,7 +437,7 @@ export function VaultHall() {
     if (!writes.length) {
       setFrost("hang missed — paste a clip");
       window.setTimeout(() => setFrost(""), 2400);
-      return;
+      return false;
     }
     const passed: Array<{ role: HangRefRole; url: string }> = [];
     const blocked: string[] = [];
@@ -448,7 +459,7 @@ export function VaultHall() {
         setRefFlag(`${role} · Continuity FAIL · KEEP to hang`);
         setFrost(`${role} · Continuity FAIL · KEEP to hang`);
         window.setTimeout(() => setFrost(""), 2800);
-        return;
+        return false;
       }
       blocked.push(`${role} · ${smokeForgeFrost(smoke.reasons) || "smoke FAIL"}`);
     }
@@ -456,7 +467,7 @@ export function VaultHall() {
       setRefFlag(blocked[0] || "hang missed — paste a clip");
       setFrost(blocked[0] || "hang missed — paste a clip");
       window.setTimeout(() => setFrost(""), 2800);
-      return;
+      return false;
     }
     let arts = hungRef.current.length ? hungRef.current : readArtifacts();
     for (const { role, url } of passed) {
@@ -531,6 +542,7 @@ export function VaultHall() {
       hungRef.current = next;
       setHung(next);
     });
+    return true;
   }
 
   function playArt(a: HungArtifact) {

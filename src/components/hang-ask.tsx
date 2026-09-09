@@ -807,10 +807,11 @@ export function HangRefSheet({
                     one hall · breath / walk
                   </span>
                 </StillChip>
-                {hung && onPlay ? (
+                {(hung || filled) && onPlay ? (
                   <StillChip
                     tone="gold"
                     data-hang-play=""
+                    data-hang-play-ready={hung ? "hung" : "slots"}
                     onPointerDown={(e) => e.stopPropagation()}
                     {...press(onPlay)}
                   >

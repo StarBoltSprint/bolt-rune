@@ -145,6 +145,13 @@ export function slotWrites(slots: HangRefSlots = {}): Array<{ role: HangRefRole;
   });
 }
 
+/** PLAY may fire from filled slots (auto-hang) or a last hung graph. Empty → hang first. */
+export function canPlayHungGraph(slots: HangRefSlots = {}, arts: HungArtifact[] = []): "slots" | "hung" | "" {
+  if (slotWrites(slots).length) return "slots";
+  if (filledHungPlayRoles(arts, HANG_REF_GRAPH_HALL).length) return "hung";
+  return "";
+}
+
 export function hangSlotPreview(slots: HangRefSlots = {}): string {
   for (const role of [...HANG_REF_PRIMARY, ...HANG_REF_OPTIONAL]) {
     const vid = hangMediaSrc(slots[role]);
