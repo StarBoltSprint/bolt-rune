@@ -2202,6 +2202,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const hid = hidFilm();
     hideSlot(hid && hid !== vis ? hid : null);
     if (vis && sameClipSrc(slotSrc(vis), play) && filmHasPaint(vis)) {
+      notePaint(vis);
       vis.loop = Boolean(loop);
       void vis.play().catch(() => {});
       setFilmOn(true);
@@ -2213,6 +2214,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const go = () => {
       if (loadGen.current !== gen) return;
       if (!filmHasPaint(el)) return;
+      notePaint(el);
       if (el !== visFilm()) showIncoming();
       hideSlot(hidFilm() && hidFilm() !== visFilm() ? hidFilm() : null);
       setFilmOn(true);
