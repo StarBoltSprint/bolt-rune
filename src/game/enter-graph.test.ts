@@ -455,6 +455,10 @@ describe("hung biome play · Room N chrome and quiet QTE", () => {
     assert.match(walkHangHallHref("cit-8", 4), /session=cit-8/);
     assert.match(walkHangHallHref("cit-8", 4), /hall=4/);
     assert.ok(!walkHangHallHref("cit-8", 4).includes("first="));
+    assert.match(walkHangHallHref(undefined, 1, 1), /first=m1/);
+    assert.match(walkHangHallHref(undefined, 1, 1), /hall=1/);
+    assert.match(walkHangHallHref(undefined, 1, 1), /stills=0/);
+    assert.ok(!walkHangHallHref(undefined, 1, 1).includes("session="));
     assert.equal(walkHangHallHref("cit-8", 0), "");
     assert.notEqual(walkHungHref({ hall: 3, door: "A" }), walkHungHref({ hall: 8, door: "A" }));
     const here = dirname(fileURLToPath(import.meta.url));

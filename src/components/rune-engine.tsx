@@ -132,6 +132,7 @@ import { playDoorAt, playHitRects, playPaintsChrome, playPaintsDoorBox } from "@
 import { isDeadEndPin, pinsForCitadel, rewriteOnEnter } from "@/game/pcg-grammar";
 import { placeHallChunks, resolveChunkEnter } from "@/game/pcg-chunk";
 import { bankPatchesFromHung, overlayHungShelf } from "@/game/hang-ref";
+import { hydrateHungArtifacts } from "@/game/hang-blob";
 import { BootScreen } from "@/components/citadel-hub";
 import { HangAskSheet, HangCitadelStrip, HangRoomStrip } from "@/components/hang-ask";
 import { HANG_LEFTOVER_SWALLOW_MS, hangActEnters, hangBindHall, hangDoorAct, readHangPending, swallowOpeningTap, takeHangPending, writeHangPending } from "@/game/hang-ask";
@@ -5656,6 +5657,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
   function refreshHung() {
     const local = readArtifacts();
     setHungArts(local);
+    void hydrateHungArtifacts(local).then(() => {
+      const live = readArtifacts();
+      if (live.length) setHungArts(live);
+      applyHungRefBank();
+      if (phaseRef.current === "play") startHall();
+    });
     void listHall()
       .then((hall) => setHungArts(mergeHall(hall || [], readArtifacts())))
       .catch(() => setHungArts(readArtifacts()));

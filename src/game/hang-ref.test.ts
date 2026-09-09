@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HungArtifact } from "./artifacts.ts";
-import { hangArtifactOnDoor } from "./enter-graph.ts";
+import { hangArtifactOnDoor, walkHangHallHref } from "./enter-graph.ts";
+import { hangBlobSrc, persistHangUrl, rememberHangFile, resetHangBlobs, rewriteHungBlobKeys } from "./hang-blob.ts";
 import { hungOnDoor } from "./pcg-chunk.ts";
 import { mayHang } from "./smoke-gate.ts";
 import {
@@ -128,6 +129,32 @@ describe("Hang ref import — roles + Imagine URLs", () => {
     assert.equal(hangMediaSrc("/films/forge-forest.mp4"), "/films/forge-forest.mp4");
     assert.equal(hangMediaSrc("blob:http://localhost/2"), "blob:http://localhost/2");
     assert.equal(hangMediaSrc("https://grok.com/imagine/post/abc123xyz"), "");
+    assert.match(walkHangHallHref(undefined, 1, 1), /first=m1/);
+  });
+});
+
+describe("Hang ref — local mp4 blob persist", () => {
+  it("rewrites blob: urls to hangblob keys and hangMediaSrc resolves the live src", async () => {
+    resetHangBlobs();
+    const blobUrl = "blob:http://localhost/hang-clip";
+    const file = new Blob(["mp4-bytes"], { type: "video/mp4" });
+    const key = rememberHangFile(blobUrl, file);
+    assert.equal(key.startsWith("hangblob:"), true);
+    assert.equal(await persistHangUrl(blobUrl), key);
+    const hung = [
+      art({
+        id: "art-blob",
+        playlist: [blobUrl],
+        room: bindHangRefRoom("breath-spawn", { hall: 1, trans: blobUrl }),
+      }),
+    ];
+    const rewritten = rewriteHungBlobKeys(hung, new Map([[blobUrl, key]]));
+    assert.equal(rewritten[0]?.playlist[0], key);
+    assert.equal(rewritten[0]?.room?.trans, key);
+    assert.equal(hangBlobSrc(key), blobUrl);
+    assert.equal(hangMediaSrc(key), blobUrl);
+    assert.equal(isHangMediaUrl(key), true);
+    resetHangBlobs();
   });
 });
 
@@ -282,13 +309,22 @@ describe("Hang ref — UI + engine wire + README", () => {
     assert.match(vault, /slotWrites\(refSlots\)/);
     assert.match(vault, /HANG_REF_GRAPH_HALL/);
     assert.match(vault, /playHungGraph/);
+    assert.match(vault, /useNavigate/);
+    assert.match(vault, /persistAndRewriteHung/);
+    assert.match(vault, /rememberHangFile/);
+    assert.match(vault, /first: "m1"/);
     assert.match(vault, /askHangGraph/);
     assert.match(vault, /rehomeHungGraph/);
     assert.match(vault, /HANG_GRAPH_PROMPT/);
     assert.match(vault, /isLegacyDoorHang/);
     assert.match(engine, /overlayHungShelf/);
     assert.match(engine, /applyHungRefBank/);
+    assert.match(engine, /hydrateHungArtifacts/);
     assert.match(engine, /Human Hang wins stock/);
+    const playFn = vault.slice(vault.indexOf("function playHungGraph"), vault.indexOf("function askHangGraph"));
+    assert.match(playFn, /nav\(/);
+    assert.doesNotMatch(playFn, /location\.assign/);
+    assert.match(playFn, /first: "m1"/);
     for (const line of HANG_REF_LAW) {
       assert.match(readme, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").slice(0, 28)));
     }

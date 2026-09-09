@@ -132,7 +132,7 @@ export function stockTransUrl(_door: DoorLetter | DoorId = "A", _biome?: BiomeNa
 
 function keepClip(u?: string) {
   if (!u) return "";
-  if (u.startsWith("blob:") || u.startsWith("data:video")) return u;
+  if (u.startsWith("hangblob:") || u.startsWith("blob:") || u.startsWith("data:video")) return u;
   if (/^https:\/\/(?:www\.)?grok\.com\/imagine\/post\//i.test(u)) return u;
   if (/\.mp4(\?|$)/i.test(u) || u.includes("xai-vidgen") || u.startsWith("/api/clip") || u.includes("/films/clips/") || u.includes("/films/") || u.includes("/ui/")) {
     if (/\.(jpe?g|png|webp|gif)(\?|$)/i.test(u) && !u.includes(".mp4")) return "";
@@ -594,7 +594,7 @@ export function walkHungHref(
   return `/rune?first=${first}&drive=engine&rooms=${cap}&hall=${hall}&stills=0`;
 }
 
-/** After Hang room lock — walk that living hall so door A/B can hang. No door yet. */
+/** After Hang room lock — living hall play. first=m1 boots RuneEngine when there is no citadel session. */
 export function walkHangHallHref(citadel?: string | null, hall?: number | string | null, rooms = 1): string {
   const raw = typeof hall === "number" ? hall : Number(hall);
   const n = Number.isFinite(raw) && raw >= 1 && raw <= 8 ? Math.round(raw) : 0;
@@ -602,7 +602,7 @@ export function walkHangHallHref(citadel?: string | null, hall?: number | string
   const cap = Math.max(n, Math.min(8, Math.round(rooms) || n));
   const cit = String(citadel || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
   if (cit) return `/rune?session=${encodeURIComponent(cit)}&hall=${n}&drive=engine`;
-  return `/rune?drive=engine&rooms=${cap}&hall=${n}&stills=0`;
+  return `/rune?first=m1&drive=engine&rooms=${cap}&hall=${n}&stills=0`;
 }
 
 /** Vault card / unhang line — Room N • Door A Play Sprint from the bound artefact. */
