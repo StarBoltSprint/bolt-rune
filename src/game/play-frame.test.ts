@@ -462,6 +462,7 @@ describe("A↔B last-frame seed chain", () => {
     assert.match(enterBreath, /applyHungRefBank\(\)/);
     assert.match(enterBreath, /hungShelf/);
     assert.match(enterBreath, /isHungPlayUrl\(shelfBreath\)/);
+    assert.match(enterBreath, /showHungPicture\(url, true\)/);
     assert.match(enterBreath, /cookIdleAt\(node, seed, walkUrl, via, true\)/);
     assert.match(enterBreath, /arrivalBreathUrl\(/);
     assert.match(enterBreath, /doorArrivalNeedsCook\(/);

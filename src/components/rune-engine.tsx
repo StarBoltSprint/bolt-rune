@@ -2168,18 +2168,63 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     }
   }
 
+  function hideSlot(el: HTMLVideoElement | null) {
+    if (!el) return;
+    el.loop = false;
+    try {
+      el.pause();
+    } catch {
+      /* */
+    }
+    if (el === film.current) setPaintA(false);
+    else if (el === filmB.current) setPaintB(false);
+  }
+
   function showIncoming() {
     const outgoing = visFilm();
     useBRef.current = !useBRef.current;
     setUseB(useBRef.current);
-    if (outgoing) {
-      outgoing.loop = false;
-      try {
-        outgoing.pause();
-      } catch {
-        /* */
-      }
+    /* Outgoing must leave the picture — both slots at opacity 1 leaves Hang under stock/walk. */
+    hideSlot(outgoing);
+  }
+
+  /** Hung clip wins the visible <video>. Never leave walk/stock painted on top of the other buffer. */
+  function showHungPicture(url: string, loop: boolean) {
+    const play = playableClipSrc(url) || url;
+    if (!play || !isHungPlayUrl(play)) return false;
+    const gen = ++loadGen.current;
+    filmLoop.current = loop;
+    skipIn.current = true;
+    setFilmUrl(play);
+    setLoopOn(loop);
+    setPlayFrameKind(loop ? "breath" : "walk");
+    const vis = visFilm();
+    const hid = hidFilm();
+    hideSlot(hid && hid !== vis ? hid : null);
+    if (vis && sameClipSrc(slotSrc(vis), play) && filmHasPaint(vis)) {
+      vis.loop = Boolean(loop);
+      void vis.play().catch(() => {});
+      setFilmOn(true);
+      setCoverFade(true);
+      return true;
     }
+    const el = vis || hid;
+    if (!el) return false;
+    const go = () => {
+      if (loadGen.current !== gen) return;
+      if (!filmHasPaint(el)) return;
+      if (el !== visFilm()) showIncoming();
+      hideSlot(hidFilm() && hidFilm() !== visFilm() ? hidFilm() : null);
+      setFilmOn(true);
+      setCoverFade(true);
+    };
+    armSlot(el, play, loop);
+    if (slotSrc(el) === play && el.readyState >= 2) {
+      go();
+      return true;
+    }
+    el.addEventListener("loadeddata", go, { once: true });
+    return true;
   }
 
   function freezeVis(keep = false) {
@@ -2677,6 +2722,12 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
       filmLoop.current = true;
       setLoopOn(true);
       setPlayFrameKind("breath");
+      if (isHungPlayUrl(breathUrl) && showHungPicture(breathUrl, true)) {
+        if ((hereRef.current === "m1" || hereRef.current === "m2") && hungDoorReady(hereRef.current)) {
+          warmHungBiome(hereRef.current);
+        }
+        return;
+      }
       const first = !visSrc();
       const breathPlan = planTransition(
         currentTransitionPlate(),
@@ -3020,6 +3071,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     setLoopOn(true);
     setPlayFrameKind("breath");
     setPose(null);
+    if (isHungPlayUrl(url) && showHungPicture(url, true)) return true;
     const hid = hidFilm();
     const joinPlan = planTransition(
       { clip: walkUrl, stillEnd: landed, pose: poseRef.current.pose, act: "walk", biome: hallKeep.current },
