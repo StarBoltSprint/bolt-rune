@@ -394,6 +394,9 @@ function writeCookie(list: HungArtifact[]) {
             hall: a.room.hall,
             citadel: a.room.citadel,
             biome: a.room.biome,
+            role: a.room.role,
+            pose: a.room.pose,
+            trans: keepArt(a.room.trans) || undefined,
           }
         : undefined,
     }));
