@@ -16,6 +16,7 @@ import {
   filledHungPlayRoles,
   hangPlaySrc,
   hungRefsForPlay,
+  isHungLocalPlayUrl,
   clipIdOfHangRole,
   continuityReasons,
   doorOfHangRole,
@@ -335,6 +336,61 @@ describe("Hang ref — Human Hang wins stock shelf", () => {
     assert.ok(patches.some((p) => p.key === "idle-spawn" && p.url.startsWith("blob:")));
     assert.ok(patches.some((p) => p.key === "spawn→m1" && p.url.startsWith("blob:")));
     assert.equal(hangPlaySrc("blob:http://localhost/x"), "blob:http://localhost/x");
+    assert.equal(hangPlaySrc("/ui/citadel.mp4?v=aaa"), "");
+    assert.equal(isHungLocalPlayUrl("blob:http://localhost/x"), true);
+    assert.equal(isHungLocalPlayUrl("/ui/citadel.mp4?v=aaa"), false);
+  });
+
+  it("hall-1 blob Hang wins leftover Room N citadel stock on the shelf", () => {
+    const leftover = [
+      art({
+        id: "old-spawn",
+        playlist: ["/ui/citadel.mp4?v=aaa"],
+        hungAt: 99,
+        room: bindHangRefRoom("breath-spawn", { hall: 3, citadel: "cit-old" }),
+      }),
+      art({
+        id: "old-walk",
+        playlist: ["/ui/citadel.mp4?v=aaa"],
+        hungAt: 99,
+        room: bindHangRefRoom("walk-A", { hall: 3, citadel: "cit-old" }),
+      }),
+      art({
+        id: "old-breath-a",
+        playlist: ["/ui/citadel.mp4?v=aaa"],
+        hungAt: 99,
+        room: bindHangRefRoom("breath-A", { hall: 3, citadel: "cit-old" }),
+      }),
+    ];
+    const sheet = [
+      art({
+        id: "art-spawn",
+        playlist: ["blob:http://localhost/breath-spawn"],
+        hungAt: 1,
+        room: bindHangRefRoom("breath-spawn", { hall: 1 }),
+      }),
+      art({
+        id: "art-walk-a",
+        playlist: ["blob:http://localhost/walk-a"],
+        hungAt: 1,
+        room: bindHangRefRoom("walk-A", { hall: 1 }),
+      }),
+      art({
+        id: "art-breath-a",
+        playlist: ["blob:http://localhost/breath-a"],
+        hungAt: 1,
+        room: bindHangRefRoom("breath-A", { hall: 1 }),
+      }),
+    ];
+    const stock = {
+      "breath-spawn": "/ui/citadel.mp4?v=aaa",
+      "breath-A": "/ui/citadel.mp4?v=aaa",
+      "walk-spawn-A": "/ui/citadel.mp4?v=aaa",
+    };
+    const shelf = overlayHungShelf(stock, [...leftover, ...sheet], 3, "citadel-new");
+    assert.equal(shelf["breath-spawn"], "blob:http://localhost/breath-spawn");
+    assert.equal(shelf["walk-spawn-A"], "blob:http://localhost/walk-a");
+    assert.equal(shelf["breath-A"], "blob:http://localhost/breath-a");
   });
 });
 
@@ -384,6 +440,7 @@ describe("Hang ref — UI + engine wire + README", () => {
     assert.match(living, /await hydrateHungArtifacts/);
     assert.ok(living.indexOf("hydrateHungArtifacts") < living.indexOf("holdIdle()"));
     assert.ok(living.indexOf("applyHungRefBank") < living.indexOf("holdIdle()"));
+    assert.doesNotMatch(living, /hallHold\.current = hungLive/);
     const rune = readFileSync(join(here, "../routes/rune.tsx"), "utf8");
     assert.match(rune, /s\.stills === "false"/);
     assert.match(rune, /first && \(!tour \|\| plan\)/);

@@ -8,15 +8,16 @@ import type { HungArtifact, HungRoom } from "./artifacts.ts";
 import type { CitadelPose, PoseClipId, PoseClipShelf } from "./pcg-pose.ts";
 import { hangBlobSrc, isHangBlobKey } from "./hang-blob.ts";
 import { playableClipSrc } from "./play-clip.ts";
+import { isHallFilm, isLivingHallLoop } from "./stock-room.ts";
 type HangSmoke = { smoke?: string; reasons?: string[] } | null | undefined;
 
 function firstHungUrl(art: Pick<HungArtifact, "playlist" | "still" | "room">): string {
   for (const raw of [...(art.playlist || []), art.room?.trans, art.still]) {
     const u = String(raw || "").trim();
-    if (!u) continue;
+    if (!u || isHallFilm(u) || isLivingHallLoop(u)) continue;
     if (u.startsWith("hangblob:") || u.startsWith("blob:") || u.startsWith("data:video")) return u;
     const play = hangMediaSrc(u);
-    if (play) return play;
+    if (play && !isHallFilm(play) && !isLivingHallLoop(play)) return play;
     if (isImaginePostUrl(u)) return u;
   }
   return "";
@@ -335,11 +336,18 @@ export function hangMediaSrc(raw?: string | null): string {
  */
 export function hangPlaySrc(raw?: string | null): string {
   const u = String(raw || "").trim();
-  if (!u) return "";
+  if (!u || isHallFilm(u) || isLivingHallLoop(u)) return "";
   const live = hangMediaSrc(u);
-  if (live) return live;
+  if (live && !isHallFilm(live) && !isLivingHallLoop(live)) return live;
   if (u.startsWith("blob:") || u.startsWith("data:video") || isHangBlobKey(u)) return u;
   return "";
+}
+
+/** Local Hang file — blob / hangblob / data:video. Never citadel HALL_LOOP. */
+export function isHungLocalPlayUrl(raw?: string | null): boolean {
+  const u = hangPlaySrc(raw);
+  if (!u) return false;
+  return u.startsWith("blob:") || u.startsWith("hangblob:") || u.startsWith("data:video");
 }
 
 export function continuityReasons(reasons: string[] = []): string[] {
@@ -409,7 +417,7 @@ export function hungOnRole(
 function hungRefFromArt(art: HungArtifact, role: HangRefRole): HungRoomRef | undefined {
   const raw = firstHungUrl(art);
   const url = hangPlaySrc(raw);
-  if (!url) return undefined;
+  if (!url || isHallFilm(url) || isLivingHallLoop(url)) return undefined;
   return {
     role,
     pose: poseOfHangRole(role),
@@ -446,20 +454,31 @@ export function hungRefsForPlay(
   citadel?: string,
 ): Partial<Record<HangRefRole, HungRoomRef>> {
   const out: Partial<Record<HangRefRole, HungRoomRef>> = {};
-  const take = (n: number, cit?: string) => {
+  const take = (n: number, cit: string | undefined, localOnly: boolean) => {
     const refs = hungRefsForHall(arts, n, cit);
     for (const role of HANG_REF_ALL) {
-      if (out[role]?.url) continue;
       const hit = refs[role];
-      if (hit?.url) out[role] = hit;
+      if (!hit?.url) continue;
+      if (localOnly && !isHungLocalPlayUrl(hit.url)) continue;
+      const have = out[role];
+      if (!have?.url) {
+        out[role] = hit;
+        continue;
+      }
+      if (isHungLocalPlayUrl(hit.url) && !isHungLocalPlayUrl(have.url)) out[role] = hit;
     }
   };
   const want = hallOfRoom({ hall }, HANG_REF_GRAPH_HALL);
-  take(want, citadel);
-  take(want, undefined);
+  /* Hall-1 sheet blobs win leftover Room N / citadel stock that latestHungHall jumped onto. */
+  take(HANG_REF_GRAPH_HALL, undefined, true);
+  take(HANG_REF_GRAPH_HALL, citadel, true);
+  take(want, citadel, true);
+  take(want, undefined, true);
+  take(want, citadel, false);
+  take(want, undefined, false);
   if (want !== HANG_REF_GRAPH_HALL) {
-    take(HANG_REF_GRAPH_HALL, citadel);
-    take(HANG_REF_GRAPH_HALL, undefined);
+    take(HANG_REF_GRAPH_HALL, citadel, false);
+    take(HANG_REF_GRAPH_HALL, undefined, false);
   }
   return out;
 }

@@ -6620,10 +6620,7 @@ export function RuneEngine({ onBack, boot }: { onBack: () => void; boot?: Citade
     const hungLive = latestHungHall(readArtifacts());
     if (hungLive) {
       roomsHold.current = Math.max(roomsHold.current, hungLive);
-      hallHold.current = hungLive;
-      hangRoomRef.current = hungLive;
-      setHangRoomN(hungLive);
-      setLiveHall(hungLive);
+      /* Leftover biome Room N must not steal Hang PLAY overlay. Sheet is hall 1. */
     }
     titleHold.current = titleHold.current || "Citadel";
     seedHold.current = beginRunSeed(sid.current);
