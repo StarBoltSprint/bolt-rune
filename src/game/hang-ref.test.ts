@@ -309,10 +309,10 @@ describe("Hang ref — UI + engine wire + README", () => {
     assert.match(vault, /slotWrites\(refSlots\)/);
     assert.match(vault, /HANG_REF_GRAPH_HALL/);
     assert.match(vault, /playHungGraph/);
-    assert.match(vault, /useNavigate/);
+    assert.match(vault, /useRouter/);
     assert.match(vault, /persistAndRewriteHung/);
     assert.match(vault, /rememberHangFile/);
-    assert.match(vault, /first: "m1"/);
+    assert.match(vault, /history\.push\(href\)/);
     assert.match(vault, /askHangGraph/);
     assert.match(vault, /rehomeHungGraph/);
     assert.match(vault, /HANG_GRAPH_PROMPT/);
@@ -320,11 +320,14 @@ describe("Hang ref — UI + engine wire + README", () => {
     assert.match(engine, /overlayHungShelf/);
     assert.match(engine, /applyHungRefBank/);
     assert.match(engine, /hydrateHungArtifacts/);
+    const rune = readFileSync(join(here, "../routes/rune.tsx"), "utf8");
+    assert.match(rune, /s\.stills === "false"/);
+    assert.match(rune, /first && \(!tour \|\| plan\)/);
     assert.match(engine, /Human Hang wins stock/);
     const playFn = vault.slice(vault.indexOf("function playHungGraph"), vault.indexOf("function askHangGraph"));
-    assert.match(playFn, /nav\(/);
+    assert.match(playFn, /history\.push\(href\)/);
     assert.doesNotMatch(playFn, /location\.assign/);
-    assert.match(playFn, /first: "m1"/);
+    assert.match(playFn, /walkHangHallHref\(undefined, HANG_REF_GRAPH_HALL/);
     for (const line of HANG_REF_LAW) {
       assert.match(readme, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").slice(0, 28)));
     }

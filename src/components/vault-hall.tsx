@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useRouter } from "@tanstack/react-router";
 import { dropClipAt, dropRoom, familiesOf, familyHead, filmOf, hangArtifact, hangOnRoom, lastClip, mergeHall, readArtifacts, replaceAll, setPlaylist, uniqueClips, type HungArtifact } from "@/game/artifacts";
 import { continuePrompt, cookFilm, readClipSpec, shiftPrompt, stockBiomeFilm, SHIFTS } from "@/game/cook";
 import { bindHungRoom, doorLetterOf, hangThumbStill, hungPlayChrome, vaultHangCaption, walkHangHallHref, walkHungHref } from "@/game/enter-graph";
@@ -76,7 +76,7 @@ function when(ms: number) {
 }
 
 export function VaultHall() {
-  const nav = useNavigate();
+  const router = useRouter();
   const [hung, setHung] = useState<HungArtifact[]>([]);
   const [ready, setReady] = useState(false);
   const [play, setPlay] = useState<HungArtifact | null>(null);
@@ -400,23 +400,7 @@ export function VaultHall() {
         setHung(next);
       }
       await hydrateHungArtifacts(next);
-      void nav({
-        to: "/rune",
-        search: {
-          first: "m1",
-          drive: "engine",
-          rooms: 1,
-          hall: HANG_REF_GRAPH_HALL,
-          stills: false,
-          tour: false,
-          fresh: false,
-          plan: false,
-          session: undefined,
-          art: undefined,
-          do: "play",
-          forge: undefined,
-        },
-      });
+      router.history.push(href);
     })();
   }
 
